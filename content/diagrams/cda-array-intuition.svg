@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="300" viewBox="0 0 920 300" fill="none">
+  <rect width="920" height="300" fill="#ffffff"/>
+  <g transform="translate(90 44)">
+    <rect x="0" y="0" width="112" height="66" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="112" y="0" width="112" height="66" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="224" y="0" width="112" height="66" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="0" y="66" width="112" height="66" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="112" y="66" width="112" height="66" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="224" y="66" width="112" height="66" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="0" y="132" width="112" height="66" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="112" y="132" width="112" height="66" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="224" y="132" width="112" height="66" fill="#faf8f3" stroke="#bdb7ae"/>
+    <text x="168" y="-14" text-anchor="middle" font-family="IBM Plex Sans" font-size="18" fill="#171717">coded distributed array</text>
+  </g>
+  <path d="M500 144H640" stroke="#6b5847" stroke-width="1.5"/>
+  <path d="M640 144L628 136V152L640 144Z" fill="#6b5847"/>
+  <rect x="660" y="92" width="170" height="104" fill="#faf8f3" stroke="#bdb7ae"/>
+  <text x="745" y="128" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">retrieval path</text>
+  <text x="745" y="152" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">reconstruction rule</text>
+  <text x="90" y="274" font-family="IBM Plex Sans" font-size="15" fill="#575757">array structure is treated as the retrieval object, not only as stored redundancy</text>
+</svg>

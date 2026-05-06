@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="260" viewBox="0 0 920 260" fill="none">
+  <rect width="920" height="260" fill="#ffffff"/>
+  <circle cx="130" cy="132" r="48" fill="#faf8f3" stroke="#bdb7ae"/>
+  <circle cx="374" cy="82" r="40" fill="#faf8f3" stroke="#bdb7ae"/>
+  <circle cx="374" cy="186" r="40" fill="#faf8f3" stroke="#bdb7ae"/>
+  <circle cx="614" cy="82" r="40" fill="#faf8f3" stroke="#bdb7ae"/>
+  <circle cx="614" cy="186" r="40" fill="#faf8f3" stroke="#bdb7ae"/>
+  <circle cx="820" cy="132" r="48" fill="#faf8f3" stroke="#bdb7ae"/>
+  <text x="130" y="138" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">Requester</text>
+  <text x="820" y="138" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">Needed piece</text>
+  <text x="374" y="88" text-anchor="middle" font-family="IBM Plex Sans" font-size="14" fill="#171717">Peer A</text>
+  <text x="374" y="192" text-anchor="middle" font-family="IBM Plex Sans" font-size="14" fill="#171717">Peer B</text>
+  <text x="614" y="88" text-anchor="middle" font-family="IBM Plex Sans" font-size="14" fill="#171717">Peer C</text>
+  <text x="614" y="192" text-anchor="middle" font-family="IBM Plex Sans" font-size="14" fill="#171717">Peer D</text>
+  <path d="M178 132H314" stroke="#6b5847" stroke-width="1.5" stroke-dasharray="5 5"/>
+  <path d="M418 82H570" stroke="#6b5847" stroke-width="1.5" stroke-dasharray="5 5"/>
+  <path d="M418 186H570" stroke="#6b5847" stroke-width="1.5" stroke-dasharray="5 5"/>
+  <path d="M654 132H772" stroke="#6b5847" stroke-width="1.5"/>
+</svg>

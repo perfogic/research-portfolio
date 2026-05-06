@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="240" viewBox="0 0 920 240" fill="none">
+  <rect width="920" height="240" fill="#ffffff"/>
+  <rect x="40" y="70" width="180" height="88" fill="#faf8f3" stroke="#bdb7ae"/>
+  <rect x="368" y="70" width="180" height="88" fill="#faf8f3" stroke="#bdb7ae"/>
+  <rect x="696" y="70" width="180" height="88" fill="#faf8f3" stroke="#bdb7ae"/>
+  <text x="130" y="112" text-anchor="middle" font-family="IBM Plex Sans" font-size="18" fill="#171717">Execution tx</text>
+  <text x="458" y="104" text-anchor="middle" font-family="IBM Plex Sans" font-size="18" fill="#171717">Blob sidecar</text>
+  <text x="458" y="130" text-anchor="middle" font-family="IBM Plex Sans" font-size="14" fill="#575757">data lane</text>
+  <text x="786" y="112" text-anchor="middle" font-family="IBM Plex Sans" font-size="18" fill="#171717">Availability checks</text>
+  <path d="M220 114H348" stroke="#6b5847" stroke-width="1.5"/>
+  <path d="M548 114H676" stroke="#6b5847" stroke-width="1.5"/>
+  <path d="M338 108L348 114L338 120" stroke="#6b5847" stroke-width="1.5" fill="none"/>
+  <path d="M666 108L676 114L666 120" stroke="#6b5847" stroke-width="1.5" fill="none"/>
+</svg>

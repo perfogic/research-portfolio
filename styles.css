@@ -1,0 +1,414 @@
+:root {
+  --bg: #fcfbf8;
+  --paper: #ffffff;
+  --ink: #171717;
+  --muted: #575757;
+  --line: #d9d5ce;
+  --line-strong: #bdb7ae;
+  --accent: #6b5847;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", sans-serif;
+  line-height: 1.7;
+}
+
+a {
+  color: #1f3f67;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+img {
+  max-width: 100%;
+}
+
+.site {
+  width: min(1040px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 72px;
+}
+
+.site-header {
+  padding: 8px 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.site-kicker,
+.site-nav,
+.publication-meta,
+.writing-meta,
+.log-subtitle,
+.details-subtitle {
+  color: var(--muted);
+}
+
+.section-heading h2,
+.about-header h3,
+.academic-section-header h3,
+.publication-header h3,
+.writing-main h3,
+.narrative-header h4,
+details summary,
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  font-family: "Source Serif 4", serif;
+}
+
+.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-size: 0.95rem;
+}
+
+.site-nav a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.site-nav a.is-active {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.site-nav a:hover,
+.site-nav a:focus-visible {
+  text-decoration: underline;
+}
+
+.document {
+  padding-top: 10px;
+}
+
+.document-section {
+  padding: 28px 0 36px;
+  border-bottom: 1px solid var(--line);
+}
+
+.section-heading {
+  margin-bottom: 18px;
+}
+
+.section-heading h2 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.15;
+  font-weight: 600;
+}
+
+.loading-block,
+.error-block {
+  color: var(--muted);
+}
+
+.error-block {
+  color: #842d2d;
+}
+
+.about-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.profile-image {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+}
+
+.about-header h3 {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 600;
+}
+
+.about-subtitle {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.about-links {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.about-links h4 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.link-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.link-list li {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 12px;
+}
+
+.publication-list,
+.writing-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.publication-item,
+.writing-item {
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+
+.publication-item:first-child,
+.writing-item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.publication-header h3,
+.writing-main h3 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.publication-meta,
+.writing-meta {
+  margin: 4px 0 0;
+  font-size: 0.95rem;
+}
+
+.publication-abstract {
+  margin: 12px 0;
+}
+
+.publication-links,
+.artifact-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 0.95rem;
+}
+
+.research-intro {
+  margin-bottom: 18px;
+  max-width: 62rem;
+}
+
+.reading-log-list {
+  display: grid;
+  gap: 18px;
+}
+
+.details-block {
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.details-block summary {
+  padding: 14px 16px;
+  cursor: pointer;
+  font-size: 1.35rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.details-block summary::-webkit-details-marker {
+  display: none;
+}
+
+.details-block summary::before {
+  content: "+";
+  display: inline-block;
+  width: 1.1rem;
+  margin-right: 10px;
+  color: var(--accent);
+}
+
+.details-block[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.details-block[open] summary::before {
+  content: "−";
+}
+
+.details-body {
+  padding: 18px 20px 20px;
+}
+
+.reading-log-sections,
+.topic-list {
+  display: grid;
+  gap: 12px;
+}
+
+.reading-log-sections {
+  margin-top: 16px;
+}
+
+.narrative-article {
+  padding-top: 4px;
+}
+
+.narrative-header h4 {
+  margin: 0 0 6px;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.narrative-header p {
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+
+.topic-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.topic-section h4 {
+  margin: 0 0 12px;
+  font-size: 1.08rem;
+}
+
+.diagram-block {
+  margin: 0 0 16px;
+  padding: 10px 0 4px;
+}
+
+.diagram-block img,
+.markdown-body img {
+  display: block;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.markdown-body {
+  color: var(--ink);
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body p,
+.markdown-body li,
+.markdown-body td,
+.markdown-body th,
+.markdown-body blockquote {
+  color: var(--muted);
+}
+
+.markdown-body h1 {
+  font-size: 1.8rem;
+}
+
+.markdown-body h2 {
+  margin-top: 26px;
+  margin-bottom: 10px;
+  font-size: 1.45rem;
+  font-weight: 600;
+}
+
+.markdown-body h3 {
+  margin-top: 22px;
+  margin-bottom: 8px;
+  font-size: 1.12rem;
+  font-weight: 600;
+}
+
+.markdown-body h4 {
+  margin-top: 18px;
+  margin-bottom: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 22px;
+}
+
+.markdown-body code {
+  padding: 0.08rem 0.28rem;
+  border: 1px solid var(--line);
+  background: #f7f4ef;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.92em;
+}
+
+.markdown-body pre {
+  overflow-x: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: #faf8f3;
+}
+
+.markdown-body blockquote {
+  margin: 14px 0;
+  padding-left: 14px;
+  border-left: 2px solid var(--line-strong);
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 0.96rem;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  text-align: left;
+}
+
+.writing-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 780px) {
+  .site {
+    width: min(100% - 20px, 1040px);
+  }
+
+  .about-layout,
+  .writing-item {
+    grid-template-columns: 1fr;
+  }
+
+  .link-list li {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}

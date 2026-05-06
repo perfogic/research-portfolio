@@ -1,0 +1,7 @@
+{
+  "name": "research-portfolio",
+  "private": true,
+  "scripts": {
+    "build:content": "node scripts/generate-content-manifest.mjs"
+  }
+}

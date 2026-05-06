@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="250" viewBox="0 0 920 250" fill="none">
+  <rect width="920" height="250" fill="#ffffff"/>
+  <rect x="120" y="90" width="150" height="70" fill="#faf8f3" stroke="#bdb7ae"/>
+  <rect x="385" y="90" width="150" height="70" fill="#faf8f3" stroke="#bdb7ae"/>
+  <rect x="650" y="90" width="150" height="70" fill="#faf8f3" stroke="#bdb7ae"/>
+  <text x="195" y="118" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">block n</text>
+  <text x="460" y="118" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">block n+1</text>
+  <text x="725" y="118" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">block n+2</text>
+  <text x="195" y="142" text-anchor="middle" font-family="IBM Plex Sans" font-size="14" fill="#575757">QC</text>
+  <text x="460" y="142" text-anchor="middle" font-family="IBM Plex Sans" font-size="14" fill="#575757">QC</text>
+  <text x="725" y="142" text-anchor="middle" font-family="IBM Plex Sans" font-size="14" fill="#575757">QC</text>
+  <path d="M270 125H365" stroke="#6b5847" stroke-width="1.5"/>
+  <path d="M535 125H630" stroke="#6b5847" stroke-width="1.5"/>
+  <text x="460" y="206" text-anchor="middle" font-family="IBM Plex Sans" font-size="15" fill="#575757">a three-chain of certified descendants makes commitment simple for the next leader</text>
+</svg>

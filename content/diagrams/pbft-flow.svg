@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="220" viewBox="0 0 920 220" fill="none">
+  <rect width="920" height="220" fill="#ffffff"/>
+  <rect x="60" y="76" width="180" height="72" fill="#faf8f3" stroke="#bdb7ae"/>
+  <rect x="370" y="76" width="180" height="72" fill="#faf8f3" stroke="#bdb7ae"/>
+  <rect x="680" y="76" width="180" height="72" fill="#faf8f3" stroke="#bdb7ae"/>
+  <text x="150" y="118" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">PRE-PREPARE</text>
+  <text x="460" y="118" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">PREPARE</text>
+  <text x="770" y="118" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">COMMIT</text>
+  <path d="M240 112H350" stroke="#6b5847" stroke-width="1.5"/>
+  <path d="M550 112H660" stroke="#6b5847" stroke-width="1.5"/>
+</svg>

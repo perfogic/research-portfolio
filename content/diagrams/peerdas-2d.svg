@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="320" viewBox="0 0 920 320" fill="none">
+  <rect width="920" height="320" fill="#ffffff"/>
+  <g transform="translate(180 40)">
+    <rect x="0" y="0" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="84" y="0" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="168" y="0" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="252" y="0" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="0" y="84" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="84" y="84" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="168" y="84" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="252" y="84" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="0" y="168" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="84" y="168" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="168" y="168" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <rect x="252" y="168" width="84" height="84" fill="#faf8f3" stroke="#bdb7ae"/>
+    <circle cx="42" cy="126" r="9" fill="#6b5847"/>
+    <circle cx="126" cy="210" r="9" fill="#6b5847"/>
+    <circle cx="210" cy="42" r="9" fill="#6b5847"/>
+    <circle cx="294" cy="126" r="9" fill="#6b5847"/>
+  </g>
+  <text x="180" y="24" font-family="IBM Plex Sans" font-size="18" fill="#171717">coded matrix</text>
+  <text x="180" y="292" font-family="IBM Plex Sans" font-size="15" fill="#575757">sampling across rows and columns exposes a more explicit reconstruction geometry</text>
+</svg>

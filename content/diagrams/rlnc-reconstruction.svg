@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="260" viewBox="0 0 920 260" fill="none">
+  <rect width="920" height="260" fill="#ffffff"/>
+  <rect x="80" y="74" width="130" height="74" fill="#faf8f3" stroke="#bdb7ae"/>
+  <rect x="260" y="74" width="130" height="74" fill="#faf8f3" stroke="#bdb7ae"/>
+  <rect x="440" y="74" width="130" height="74" fill="#faf8f3" stroke="#bdb7ae"/>
+  <rect x="620" y="74" width="130" height="74" fill="#faf8f3" stroke="#bdb7ae"/>
+  <text x="145" y="118" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">coded mix 1</text>
+  <text x="325" y="118" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">coded mix 2</text>
+  <text x="505" y="118" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">coded mix 3</text>
+  <text x="685" y="118" text-anchor="middle" font-family="IBM Plex Sans" font-size="16" fill="#171717">recover source</text>
+  <path d="M210 111H240" stroke="#6b5847" stroke-width="1.5"/>
+  <path d="M390 111H420" stroke="#6b5847" stroke-width="1.5"/>
+  <path d="M570 111H600" stroke="#6b5847" stroke-width="1.5"/>
+  <text x="80" y="198" font-family="IBM Plex Sans" font-size="15" fill="#575757">enough independent coded combinations make reconstruction possible</text>
+</svg>
