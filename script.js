@@ -617,14 +617,14 @@ async function renderResearchNarrative(manifest) {
     "content/research/das-reading-log",
     manifest,
     {
-      topicFolder: true,
-      open: true,
+      topicFolder: false,
+      open: false,
     }
   );
   const consensus = await renderReadingLog(
     "content/research/consensus-reading-log",
     manifest,
-    { open: false }
+    { open: true, topicFolder: true }
   );
 
   roots.research.innerHTML = `
@@ -659,16 +659,17 @@ async function renderWriting(manifest) {
                   entry.data.title || stripNumericPrefix(baseName(entry.path))
                 }</h3>
                 <p class="writing-meta">
-                  ${[dateLabelFromFilename(entry.path) || entry.data.year, entry.data.platform]
+                  ${[
+                    dateLabelFromFilename(entry.path) || entry.data.year,
+                    entry.data.platform,
+                  ]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
                 ${renderDescription(entry.data.description)}
               </div>
               <div class="writing-link">
-                ${
-                  entry.data.link ? externalLink(entry.data.link, "Read") : ""
-                }
+                ${entry.data.link ? externalLink(entry.data.link, "Read") : ""}
               </div>
             </li>
           `

@@ -22,7 +22,7 @@ Studying Cosmos consensus more closely made me realize that I wanted to pursue r
 
 ## My First Research Paper
 
-In 2025, I had the opportunity to work with Professor [David Tran](https://scholar.google.com/citations?user=Wi02UQoAAAAJ&hl=en).
+In 2025, I had the opportunity to work with Professor. [David Tran](https://scholar.google.com/citations?user=Wi02UQoAAAAJ&hl=en).
 Through that collaboration, I was able to study distributed networks more deeply through the lens of Data Availability Sampling.
 One outcome of that work was my first paper, **Efficient Data Availability Sampling via Coded Distributed Arrays**, coauthored with Hung Vuong Huu and Duc A. Tran, which was accepted to ICBC 2026.
 
