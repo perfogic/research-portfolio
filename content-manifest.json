@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-06T18:10:45.766Z",
+  "generatedAt": "2026-05-07T15:03:52.488Z",
   "files": [
     "content/about.md",
     "content/contact.md",
@@ -25,7 +25,10 @@
     "content/research/das-reading-log/topics/06-rda.md",
     "content/research/das-reading-log/topics/07-rlnc.md",
     "content/research/das-reading-log/topics/08-coded-distributed-arrays.md",
-    "content/writing/2025-bitcoin-application.md",
-    "content/writing/2025-blockchain-basics.md"
+    "content/writing/08-24-2025-layer-two-explained.md",
+    "content/writing/09-01-2025-ethereum-scaling.md",
+    "content/writing/09-09-2025-inside-rlnc.md",
+    "content/writing/09-22-2025-ethereum-p2p.md",
+    "content/writing/11-05-2025-galois-gossip.md"
   ]
 }

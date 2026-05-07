@@ -1,7 +1,9 @@
 {
   "name": "research-portfolio",
   "private": true,
+  "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "build:content": "node scripts/generate-content-manifest.mjs"
+    "build:content": "node scripts/generate-content-manifest.mjs",
+    "watch:content": "node scripts/watch-content-manifest.mjs"
   }
 }

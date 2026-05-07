@@ -33,7 +33,7 @@ img {
 .site {
   width: min(1040px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 28px 0 72px;
+  padding: 28px 0 42px;
 }
 
 .site-header {
@@ -90,8 +90,12 @@ details summary,
   padding-top: 10px;
 }
 
+.writing-page {
+  padding-top: 28px;
+}
+
 .document-section {
-  padding: 28px 0 36px;
+  padding: 28px 0 32px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -173,14 +177,25 @@ details summary,
 
 .publication-item,
 .writing-item {
-  padding: 18px 0;
   border-top: 1px solid var(--line);
+}
+
+.publication-item {
+  padding: 18px 0;
+}
+
+.writing-item {
+  padding: 14px 0 12px;
 }
 
 .publication-item:first-child,
 .writing-item:first-child {
   padding-top: 0;
   border-top: 0;
+}
+
+.writing-item:last-child {
+  padding-bottom: 0;
 }
 
 .publication-header h3,
@@ -194,6 +209,11 @@ details summary,
 .writing-meta {
   margin: 4px 0 0;
   font-size: 0.95rem;
+}
+
+.writing-main p {
+  margin-top: 12px;
+  margin-bottom: 0;
 }
 
 .publication-abstract {
@@ -392,9 +412,19 @@ details summary,
 
 .writing-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  column-gap: 24px;
+  row-gap: 8px;
   align-items: start;
+}
+
+.writing-main p:last-child {
+  margin-bottom: 0;
+}
+
+.writing-link {
+  padding-top: 2px;
+  white-space: nowrap;
 }
 
 @media (max-width: 780px) {

@@ -3,7 +3,7 @@ const roots = {
   publications: document.getElementById("publications-root"),
   research: document.getElementById("research-root"),
   writing: document.getElementById("writing-root"),
-  contact: document.getElementById("contact-root")
+  contact: document.getElementById("contact-root"),
 };
 
 function escapeHtml(value) {
@@ -24,6 +24,23 @@ function baseName(path) {
 
 function filenameSortKey(path) {
   return stripNumericPrefix(baseName(path)).toLowerCase();
+}
+
+function externalLink(href, label) {
+  return `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+}
+
+function renderDescription(description) {
+  if (!description) {
+    return "";
+  }
+
+  return description
+    .split("\\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `<p>${escapeHtml(line)}</p>`)
+    .join("");
 }
 
 function parseFrontmatter(markdown) {
@@ -47,7 +64,12 @@ function parseFrontmatter(markdown) {
     }
 
     if (/^\s*-\s+/.test(line) && activeListKey) {
-      data[activeListKey].push(line.replace(/^\s*-\s+/, "").trim().replace(/^"(.*)"$/, "$1"));
+      data[activeListKey].push(
+        line
+          .replace(/^\s*-\s+/, "")
+          .trim()
+          .replace(/^"(.*)"$/, "$1")
+      );
       continue;
     }
 
@@ -117,7 +139,10 @@ function parseTable(lines, startIndex) {
       </thead>
       <tbody>
         ${bodyRows
-          .map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`)
+          .map(
+            (row) =>
+              `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`
+          )
           .join("")}
       </tbody>
     </table>
@@ -129,7 +154,10 @@ function parseTable(lines, startIndex) {
 function formatInline(text) {
   return escapeHtml(text)
     .replace(/!\[(.*?)\]\((.*?)\)/g, '<img alt="$1" src="$2" />')
-    .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>')
+    .replace(
+      /\[(.*?)\]\((.*?)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+    )
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.*?)\*/g, "<em>$1</em>")
     .replace(/`([^`]+)`/g, "<code>$1</code>");
@@ -175,7 +203,12 @@ function fallbackMarkdownParser(markdown) {
       continue;
     }
 
-    if (trimmed.startsWith("<details") || trimmed.startsWith("</details") || trimmed.startsWith("<summary") || trimmed.startsWith("</summary")) {
+    if (
+      trimmed.startsWith("<details") ||
+      trimmed.startsWith("</details") ||
+      trimmed.startsWith("<summary") ||
+      trimmed.startsWith("</summary")
+    ) {
       html.push(lines[index]);
       index += 1;
       continue;
@@ -204,7 +237,11 @@ function fallbackMarkdownParser(markdown) {
     if (/^\d+\.\s+/.test(trimmed)) {
       const items = [];
       while (index < lines.length && /^\d+\.\s+/.test(lines[index].trim())) {
-        items.push(`<li>${formatInline(lines[index].trim().replace(/^\d+\.\s+/, ""))}</li>`);
+        items.push(
+          `<li>${formatInline(
+            lines[index].trim().replace(/^\d+\.\s+/, "")
+          )}</li>`
+        );
         index += 1;
       }
       html.push(`<ol>${items.join("")}</ol>`);
@@ -263,17 +300,42 @@ async function getMarkdownFile(path) {
   return {
     path,
     filename: path.split("/").pop() || path,
-    ...parsed
+    ...parsed,
   };
 }
 
-function sortByOrderOrFilename(files) {
-  return [...files].sort((a, b) => {
-    const aOrder = typeof a.data.order === "number" ? a.data.order : Number.POSITIVE_INFINITY;
-    const bOrder = typeof b.data.order === "number" ? b.data.order : Number.POSITIVE_INFINITY;
+function datedFilenameValue(path) {
+  const match = baseName(path).match(/^(\d{2})-(\d{2})-(\d{4})-/);
+  if (!match) {
+    return null;
+  }
 
-    if (aOrder !== bOrder) {
-      return aOrder - bOrder;
+  const [, month, day, year] = match;
+  return Number(`${year}${month}${day}`);
+}
+
+function dateLabelFromFilename(path) {
+  const match = baseName(path).match(/^(\d{2})-(\d{2})-(\d{4})-/);
+  if (!match) {
+    return null;
+  }
+
+  const [, month, day, year] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
+function sortByFilename(files) {
+  return [...files].sort((a, b) => {
+    const aDate = datedFilenameValue(a.path);
+    const bDate = datedFilenameValue(b.path);
+
+    if (aDate !== null || bDate !== null) {
+      return (bDate || 0) - (aDate || 0);
     }
 
     return filenameSortKey(a.path).localeCompare(filenameSortKey(b.path));
@@ -285,8 +347,10 @@ async function getMarkdownCollection(folder, manifest) {
   const matches = manifest.files.filter(
     (path) => path.startsWith(normalizedFolder) && path.endsWith(".md")
   );
-  const loaded = await Promise.all(matches.map((path) => getMarkdownFile(path)));
-  return sortByOrderOrFilename(loaded);
+  const loaded = await Promise.all(
+    matches.map((path) => getMarkdownFile(path))
+  );
+  return sortByFilename(loaded);
 }
 
 function renderFrontmatterDiagram(data) {
@@ -343,7 +407,7 @@ function renderLinkList(items) {
           (item) => `
             <li>
               <span>${item.label}</span>
-              <a href="${item.href}">${item.value}</a>
+              ${externalLink(item.href, item.value)}
             </li>
           `
         )
@@ -357,12 +421,6 @@ async function renderAbout(manifest) {
     return;
   }
   const about = await getMarkdownFile("content/about.md");
-  const links = [
-    { label: "Email", href: `mailto:${about.data.email || ""}`, value: about.data.email || "" },
-    { label: "GitHub", href: about.data.github || "#", value: about.data.github_label || "GitHub" },
-    { label: "LinkedIn", href: about.data.linkedin || "#", value: about.data.linkedin_label || "LinkedIn" },
-    { label: "CV", href: about.data.cv || "#", value: about.data.cv_label || "Curriculum Vitae" }
-  ].filter((item) => item.value);
 
   roots.about.innerHTML = `
     <div class="about-layout">
@@ -379,10 +437,6 @@ async function renderAbout(manifest) {
           <p class="about-subtitle">${about.data.title || ""}</p>
         </header>
         ${MarkdownRenderer(about)}
-        <section class="about-links">
-          <h4>Links</h4>
-          ${renderLinkList(links)}
-        </section>
       </div>
     </div>
   `;
@@ -390,10 +444,11 @@ async function renderAbout(manifest) {
 
 function publicationMeta(entry) {
   const bits = [
+    entry.data.authors,
     entry.data.venue,
     entry.data.year,
     entry.data.role,
-    entry.data.status
+    entry.data.status,
   ].filter(Boolean);
 
   return bits.join(" · ");
@@ -403,7 +458,10 @@ async function renderPublications(manifest) {
   if (!roots.publications) {
     return;
   }
-  const publications = await getMarkdownCollection("content/publications", manifest);
+  const publications = await getMarkdownCollection(
+    "content/publications",
+    manifest
+  );
 
   roots.publications.innerHTML = `
     <ol class="publication-list">
@@ -413,15 +471,33 @@ async function renderPublications(manifest) {
             <li class="publication-item">
               <article>
                 <header class="publication-header">
-                  <h3>${entry.data.title || stripNumericPrefix(baseName(entry.path))}</h3>
+                  <h3>${
+                    entry.data.title || stripNumericPrefix(baseName(entry.path))
+                  }</h3>
                   <p class="publication-meta">${publicationMeta(entry)}</p>
                 </header>
-                ${entry.data.abstract ? `<p class="publication-abstract">${entry.data.abstract}</p>` : ""}
+                ${
+                  entry.data.abstract
+                    ? `<p class="publication-abstract">${entry.data.abstract}</p>`
+                    : ""
+                }
                 ${MarkdownRenderer(entry)}
                 <div class="publication-links">
-                  ${entry.data.paper_link ? `<a href="${entry.data.paper_link}">Paper</a>` : ""}
-                  ${entry.data.notes ? `<a href="${entry.data.notes}">Notes</a>` : ""}
-                  ${entry.data.slides ? `<a href="${entry.data.slides}">Slides</a>` : ""}
+                  ${
+                    entry.data.paper_link
+                      ? externalLink(entry.data.paper_link, "Paper")
+                      : ""
+                  }
+                  ${
+                    entry.data.notes
+                      ? externalLink(entry.data.notes, "Notes")
+                      : ""
+                  }
+                  ${
+                    entry.data.slides
+                      ? externalLink(entry.data.slides, "Slides")
+                      : ""
+                  }
                 </div>
               </article>
             </li>
@@ -436,9 +512,14 @@ function renderCollectionAsDetails(entries, openFirst = false) {
   return entries
     .map((entry, index) =>
       DetailsBlock(
-        entry.data.title || stripNumericPrefix(baseName(entry.path)).replace(/\-/g, " "),
+        entry.data.title ||
+          stripNumericPrefix(baseName(entry.path)).replace(/\-/g, " "),
         `
-          ${entry.data.subtitle ? `<p class="details-subtitle">${entry.data.subtitle}</p>` : ""}
+          ${
+            entry.data.subtitle
+              ? `<p class="details-subtitle">${entry.data.subtitle}</p>`
+              : ""
+          }
           ${MarkdownRenderer(entry)}
         `,
         openFirst && index === 0
@@ -451,12 +532,17 @@ function renderTopicDetails(entries) {
   return entries
     .map((entry) =>
       DetailsBlock(
-        entry.data.title || stripNumericPrefix(baseName(entry.path)).replace(/\-/g, " "),
+        entry.data.title ||
+          stripNumericPrefix(baseName(entry.path)).replace(/\-/g, " "),
         `
-          ${entry.data.subtitle ? `<p class="details-subtitle">${entry.data.subtitle}</p>` : ""}
+          ${
+            entry.data.subtitle
+              ? `<p class="details-subtitle">${entry.data.subtitle}</p>`
+              : ""
+          }
           ${MarkdownRenderer(entry)}
           <p class="artifact-line">
-            ${entry.data.notes ? `<a href="${entry.data.notes}">Notes</a>` : ""}
+            ${entry.data.notes ? externalLink(entry.data.notes, "Notes") : ""}
           </p>
         `
       )
@@ -466,30 +552,40 @@ function renderTopicDetails(entries) {
 
 async function renderReadingLog(logFolder, manifest, options = {}) {
   const indexEntry = await getMarkdownFile(`${logFolder}/index.md`);
-  const sectionEntries = await getMarkdownCollection(`${logFolder}/sections`, manifest);
+  const sectionEntries = await getMarkdownCollection(
+    `${logFolder}/sections`,
+    manifest
+  );
   const topicEntries = options.topicFolder
     ? await getMarkdownCollection(`${logFolder}/topics`, manifest)
     : [];
 
   const renderedSections = sectionEntries.map((entry) => {
-    const title = entry.data.title || stripNumericPrefix(baseName(entry.path)).replace(/\-/g, " ");
+    const title =
+      entry.data.title ||
+      stripNumericPrefix(baseName(entry.path)).replace(/\-/g, " ");
     const isTopicsSection =
       options.topicFolder && title.toLowerCase().includes("topics i studied");
 
-    const nestedTopics = isTopicsSection && topicEntries.length
-      ? `
+    const nestedTopics =
+      isTopicsSection && topicEntries.length
+        ? `
         <div class="topic-section">
           <div class="topic-list">
             ${renderTopicDetails(topicEntries)}
           </div>
         </div>
       `
-      : "";
+        : "";
 
     return DetailsBlock(
       title,
       `
-        ${entry.data.subtitle ? `<p class="details-subtitle">${entry.data.subtitle}</p>` : ""}
+        ${
+          entry.data.subtitle
+            ? `<p class="details-subtitle">${entry.data.subtitle}</p>`
+            : ""
+        }
         ${MarkdownRenderer(entry)}
         ${nestedTopics}
       `
@@ -499,7 +595,11 @@ async function renderReadingLog(logFolder, manifest, options = {}) {
   return DetailsBlock(
     indexEntry.data.title || stripNumericPrefix(baseName(logFolder)),
     `
-      ${indexEntry.data.subtitle ? `<p class="log-subtitle">${indexEntry.data.subtitle}</p>` : ""}
+      ${
+        indexEntry.data.subtitle
+          ? `<p class="log-subtitle">${indexEntry.data.subtitle}</p>`
+          : ""
+      }
       ${MarkdownRenderer(indexEntry)}
       <div class="reading-log-sections">
         ${renderedSections.join("")}
@@ -513,10 +613,14 @@ async function renderResearchNarrative(manifest) {
   if (!roots.research) {
     return;
   }
-  const das = await renderReadingLog("content/research/das-reading-log", manifest, {
-    topicFolder: true,
-    open: true
-  });
+  const das = await renderReadingLog(
+    "content/research/das-reading-log",
+    manifest,
+    {
+      topicFolder: true,
+      open: true,
+    }
+  );
   const consensus = await renderReadingLog(
     "content/research/consensus-reading-log",
     manifest,
@@ -551,14 +655,20 @@ async function renderWriting(manifest) {
           (entry) => `
             <li class="writing-item">
               <div class="writing-main">
-                <h3>${entry.data.title || stripNumericPrefix(baseName(entry.path))}</h3>
+                <h3>${
+                  entry.data.title || stripNumericPrefix(baseName(entry.path))
+                }</h3>
                 <p class="writing-meta">
-                  ${[entry.data.year, entry.data.platform].filter(Boolean).join(" · ")}
+                  ${[dateLabelFromFilename(entry.path) || entry.data.year, entry.data.platform]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </p>
-                ${entry.data.description ? `<p>${entry.data.description}</p>` : ""}
+                ${renderDescription(entry.data.description)}
               </div>
               <div class="writing-link">
-                ${entry.data.link ? `<a href="${entry.data.link}">Read</a>` : ""}
+                ${
+                  entry.data.link ? externalLink(entry.data.link, "Read") : ""
+                }
               </div>
             </li>
           `
@@ -588,23 +698,35 @@ async function init() {
     const manifest = await loadManifest();
     const tasks = [];
     if (roots.about) {
-      tasks.push(renderAbout(manifest).catch((error) => renderError(roots.about, error)));
+      tasks.push(
+        renderAbout(manifest).catch((error) => renderError(roots.about, error))
+      );
     }
     if (roots.publications) {
       tasks.push(
-        renderPublications(manifest).catch((error) => renderError(roots.publications, error))
+        renderPublications(manifest).catch((error) =>
+          renderError(roots.publications, error)
+        )
       );
     }
     if (roots.research) {
       tasks.push(
-        renderResearchNarrative(manifest).catch((error) => renderError(roots.research, error))
+        renderResearchNarrative(manifest).catch((error) =>
+          renderError(roots.research, error)
+        )
       );
     }
     if (roots.writing) {
-      tasks.push(renderWriting(manifest).catch((error) => renderError(roots.writing, error)));
+      tasks.push(
+        renderWriting(manifest).catch((error) =>
+          renderError(roots.writing, error)
+        )
+      );
     }
     if (roots.contact) {
-      tasks.push(renderContact().catch((error) => renderError(roots.contact, error)));
+      tasks.push(
+        renderContact().catch((error) => renderError(roots.contact, error))
+      );
     }
     await Promise.all(tasks);
   } catch (error) {
