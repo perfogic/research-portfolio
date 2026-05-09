@@ -1,6 +1,5 @@
 ---
 title: "Why this problem matters"
-order: 1
 ---
 
 Data availability becomes a research question as soon as execution and data stop being treated as one object. Once block data is separated, the problem is no longer only whether validators agree on a header. It also becomes whether the underlying data can be sampled, reconstructed, and retrieved under practical network constraints.

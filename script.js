@@ -26,6 +26,14 @@ function filenameSortKey(path) {
   return stripNumericPrefix(baseName(path)).toLowerCase();
 }
 
+function leadingNumericPrefix(path) {
+  const match = baseName(path).match(/^(\d+)-/);
+  if (!match) {
+    return null;
+  }
+  return Number(match[1]);
+}
+
 function externalLink(href, label) {
   return `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
 }
@@ -336,6 +344,15 @@ function sortByFilename(files) {
 
     if (aDate !== null || bDate !== null) {
       return (bDate || 0) - (aDate || 0);
+    }
+
+    const aPrefix = leadingNumericPrefix(a.path);
+    const bPrefix = leadingNumericPrefix(b.path);
+
+    if (aPrefix !== null || bPrefix !== null) {
+      if (aPrefix === null) return 1;
+      if (bPrefix === null) return -1;
+      if (aPrefix !== bPrefix) return aPrefix - bPrefix;
     }
 
     return filenameSortKey(a.path).localeCompare(filenameSortKey(b.path));

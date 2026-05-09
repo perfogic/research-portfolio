@@ -1,6 +1,5 @@
 ---
 title: "How my idea evolved"
-order: 3
 ---
 
 The shift was gradual:

@@ -14,3 +14,7 @@ I end with **future reading directions** that extend the same questions into new
 
 The figure below shows how this reading path branched over time:
 ![Consensus reading roadmap](assets/images/reading_mindmap.png)
+
+## Let's start!!!
+
+Before going into individual protocols, I want to start with a short “what is consensus?” section, so that readers who are newer to the area can still build the basic intuition needed for the rest of the page.
