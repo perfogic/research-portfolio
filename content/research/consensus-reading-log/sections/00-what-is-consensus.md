@@ -47,9 +47,16 @@ There are two kinds of failure:
 
 A consensus protocol is usually expected to preserve two important properties: **safety** and **liveness**.
 
-**Safety** means that nothing bad happens. In the blockchain setting, this means honest nodes should not accept two conflicting histories, and the system should not allow outcomes such as double spending.
+**Safety** means that nothing bad happens. In the blockchain setting, this means honest nodes should not accept two conflicting histories, and the system should not allow outcomes such as double spending./
+In more classical consensus language, this side usually includes:
 
-**Liveness** means that something good eventually happens. In practice, this means the chain should keep making progress, and valid transactions should eventually be included instead of the system stalling forever.
+- **Validity**: any decided value should be valid.
+- **Agreement**: no two correct nodes should decide differently.
+
+**Liveness** means that something good eventually happens. In practice, this means the chain should keep making progress, and valid transactions should eventually be included instead of the system stalling forever./
+In classical consensus language, this is the **Termination** side:
+
+- **Termination**: every correct node should eventually decide.
 
 These two properties are both important, but they are not always easy to preserve at the same time. Under unreliable network conditions, practical consensus protocols often have to make trade-offs between stronger safety and stronger liveness.
 

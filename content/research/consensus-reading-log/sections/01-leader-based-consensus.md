@@ -93,31 +93,114 @@ The **prepare** phase gives strong support in the current view, but the **commit
 
 ### Further detail:
 
-For a more detailed PBFT walkthrough, including additional paper-level details, I keep a longer version here:
+For a more detailed PBFT walkthrough, including additional paper-level details, I keep a longer version here: [Link](https://coded-distributed-arrays.notion.site/PBFT-32f0f6a329b4803b97faeab7e3eea45b)
 
-- [My detailed PBFT reading](https://coded-distributed-arrays.notion.site/PBFT-32f0f6a329b4803b97faeab7e3eea45b)
 </details>
 
 <!-- OTHER PART -->
 <details>
 <summary>Tendermint</summary>
 
-Tendermint interested me because it keeps a PBFT-like voting shape while changing the setting quite a lot. Instead of assuming a tightly connected replica set, it works in a blockchain validator environment with gossip, repeated rounds, and timeout-driven progress.
+Tendermint is a modified PBFT-style protocol for practical blockchain deployment. If you have touched Cosmos before, the name is probably already familiar: [Tendermint](https://tendermint.com/).
 
-What stood out to me was the way safety is carried across rounds. Tendermint does not use a PBFT-style new-view proof. Instead, it relies on local locks, `validValue`, `validRound`, and the gradual spread of vote evidence through gossip. That made me see it as more than “PBFT with renamed phases.” The deeper change is in how round advancement and safety evidence are handled.
+Compared with PBFT, there are two big changes:
 
-This paper helped me separate two questions that I had previously blurred together: how to vote safely in one round of progress, and how to preserve that safety information when the network is only partially synchronized and communication is indirect.
+1. Tendermint does not have a separate **view-change** subprotocol. Instead, each round already has its own new proposer, and moving to the next round is part of normal execution.
+2. Tendermint does not assume every validator directly talks to every other validator. It works over a **gossip-based peer-to-peer network**, where a validator only knows a subset of peers.
+   If you want a more concrete networking picture, I used to write a medium blog on how message probagation works in Ethereum [Link](content/writing/09-22-2025-ethereum-p2p.md).
 
-**Open questions**
+At the vote-shape level, Tendermint still looks very close to PBFT:
 
-- How far can local-gossip safety evidence scale?
-- Which Ethereum-facing designs inherit this logic and which reject it?
+- PBFT: `PRE-PREPARE -> PREPARE -> COMMIT`
+- Tendermint: `PROPOSAL -> PREVOTE -> PRECOMMIT`
 
-**Artifacts**
+So the real difference is not the number of vote phases. The deeper difference is how proposer change is handled, and why it has to be handled differently in this network model.
 
-- Notes: [Tendermint vs PBFT, SBFT, HotStuff](reaper-workspace/notes/tendermint-vs-pbft-sbft-hotstuff.md)
+### Why This Is Different From PBFT View Change
 
-![Tendermint propose, prevote, precommit](content/diagrams/tendermint-flow.svg)
+PBFT assumes that a new leader can explicitly collect status information from the others, then redistribute enough proof so that everyone can verify the next proposal is safe. That works, but it also makes proposer change heavy.
+
+In a blockchain-style setting, requiring one validator to directly know and communicate with every other validator already creates heavier communication and heavier workload. A PBFT-style design is still possible, but it scales poorly as the validator set grows.
+
+Instead of using a separate proof-heavy view-change protocol as pBFT, Tendermint changes the design at exactly that point:
+
+- it removes the dedicated `VIEW-CHANGE / NEW-VIEW` subprotocol;
+- it keeps one repeated round structure;
+- it lets safety move across rounds through four local variables:
+  `lockedValue`, `lockedRound`, `validValue`, and `validRound`;
+- when a new proposer proposes a block, the important pair is `validValue` and `validRound`, which act as the proposer’s memory of the latest safe candidate.
+
+For example, if a proposer wants to propose block `B+1`, it have to piggyback a value that was already supported earlier, together with the round where that support happened.
+Other validators then check whether that proposal is still safe to vote for, based on their local lock state.
+
+### Timeout and Round Movement
+
+Tendermint adds three timeouts:
+
+- `timeoutPropose`
+- `timeoutPrevote`
+- `timeoutPrecommit`
+
+They are the reason the protocol keeps moving instead of waiting forever.
+
+- If no acceptable proposal arrives in time, a validator sends `PREVOTE(nil)`.
+  This means: in this round, I am not voting for any block.
+- If no value gets enough prevotes in time, it sends `PRECOMMIT(nil)`.
+  This means: in this round, I am not precommitting any block.
+- If no decision happens after precommit, it starts the next round.
+
+If a round does not lead to a decision, Tendermint moves to a higher round with a larger timeout. The idea is that when the network is slow, validators should wait longer before giving up.
+
+Overall, this one contrasts with PBFT. PBFT uses timeouts too, but a timeout there triggers a separate view-change protocol. In Tendermint, a timeout is part of the normal round structure and simply moves the protocol into the next round.
+
+### State Variables That Preserve Safety
+
+The two variable pairs that matter most are:
+
+- `lockedValue`, `lockedRound`
+- `validValue`, `validRound`
+
+The **lock** is the safety side. Once a validator locks a value `v` in round `r`, it should not later vote for a conflicting value unless the new proposal carries enough evidence from a round at least as new as that lock.
+
+The `validValue` / `validRound` pair is the proposer’s memory. If a proposer has already seen a value that looked decidable before, it re-proposes that value together with the round where it was justified.
+
+**So the short mental model is:**
+
+- `lockedValue` protects **Agreement**
+- `validValue` helps **Termination**
+
+The deeper dilemma is not only whether the new proposer knows what is safe. The harder question is whether the other validators can also be convinced to vote for that proposal safely.
+
+In PBFT, this is handled explicitly. The new leader gathers status information and carries enough proof so that honest replicas can verify that the proposal is safe to support.
+
+Tendermint reduces that proof-carrying burden, but it does not get this for free. The trade-off is time. After GST, waiting long enough allows the proposer to learn the highest relevant lock and propose a value that honest validators can safely accept.
+
+**So one useful way to compare them is:**
+
+- PBFT pays more in explicit recovery communication
+- Tendermint pays more in timeout-based waiting
+
+This is the reason Tendermint is simpler than PBFT at proposer change, but the proposer may have to wait longer before the next safe round can move.
+
+### Complexity
+
+Compared with PBFT, Tendermint can be summarized in the same three columns:
+
+| Scenario                          | Complexity |
+| --------------------------------- | ---------- |
+| Correct leader                    | `O(n^2)`   |
+| Leader failure (one failed round) | `O(n^2)`   |
+| `f` leader failures               | `O(fn^2)`  |
+
+Tendermint does not have a separate complexity spike for view change. If one proposer fails, the protocol just times out and repeats the same round structure again, so the communication pattern stays the same as in the correct-leader case.
+
+One trade-off is that Tendermint is not **responsive**. Here, responsiveness means that once the network becomes good again, the protocol can immediately progress at the actual network speed, without waiting for a preconfigured timeout to expire. Tendermint still depends on those timeout waits when moving across rounds.
+
+This leads naturally to HotStuff, which also tries to avoid PBFT’s heavy view-change cost, but does so by redesigning the proof structure rather than relying on timeout-based waiting.
+
+### Further details
+
+For a more detailed PBFT walkthrough, including additional paper-level details, I keep a longer version here: [Link](https://coded-distributed-arrays.notion.site/Tendermint-34e0f6a329b4801db987d603ca242b0f?source=copy_link)
 
 </details>
 
