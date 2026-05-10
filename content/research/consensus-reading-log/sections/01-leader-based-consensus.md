@@ -116,7 +116,7 @@ At the vote-shape level, Tendermint still looks very close to PBFT:
 
 So the real difference is not the number of vote phases. The deeper difference is how proposer change is handled, and why it has to be handled differently in this network model.
 
-### Why This Is Different From PBFT View Change
+### Trade-Offs From PBFT View Change
 
 PBFT assumes that a new leader can explicitly collect status information from the others, then redistribute enough proof so that everyone can verify the next proposal is safe. That works, but it also makes proposer change heavy.
 
@@ -581,29 +581,216 @@ For a more detailed walkthrough, I keep a longer version here: [Link](https://co
 </details>
 
 <details>
-<summary>Simplex<span class="paper-status">Notes in progress</span></summary>
+<summary>Simplex Protocol Family</summary>
 
 After sBFT, the next branch of protocols keeps the one-round idea but tries to rethink the relationship between the fast path and the fallback path more cleanly.
 
-Three algorithms are especially useful to keep in mind here:
+The protocols in this branch are not all optimizing the same thing.
+They differ mainly in how they balance five design choices:
 
-- **Alpenglow**: works under the same `n >= 5f + 1` assumption. It discusses a setting with additional crash tolerance, but that extra story depends on assumptions that break once a Byzantine leader can equivocate on proposals under partial synchrony.
-- **Kudzu**: works in the more general `n >= 3f + 2p + 1` model, where `p` is a tunable parameter. During synchrony, a correct leader can finalise after one voting round as long as the number of faulty processors is at most `p`. If the number of faulty processors is strictly between `p` and `f`, the protocol falls back to a slow path. This also means the fast-path quorum in Kudzu is larger than in Minimmit: `n - p` rather than `n - f`.
-- **Hydrangea**: pushes harder on crash resilience. For `n = 3f + 2c + k + 1`, it can still finalise after one voting round when the number of faulty processors is at most `p = floor((c + k) / 2)`. In more adversarial settings with up to `f` Byzantine faults and `c` crash faults, it still has a two-round fallback.
+- **fast-path assumption**: what quorum or resilience model is needed for one-round finality;
+- **fallback design**: whether the slow path runs after the fast path fails, in parallel with it, or is removed entirely;
+- **faulty-leader behavior**: whether a bad leader only costs a timeout or can create extra protocol/message complexity;
+- **crash flexibility**: whether the protocol only optimizes Byzantine resilience or also keeps room for crash-heavy failures;
+- **data dissemination**: whether the protocol also attacks the leader bandwidth bottleneck with erasure coding or similar techniques.
 
-So the main differences among these protocols are not just “who has a fast path”.
-They differ in:
+The most useful protocols to keep in mind here are:
 
-- how much resilience they keep in the one-round regime;
-- when they fall back to a slower path;
-- and how much crash-failure flexibility they retain.
+- **Banyan**: focuses on rotating leaders and integrates the fast path directly with the slow path, rather than waiting for the fast path to fail before starting recovery. Its useful idea is that the first slow-path round can run together with the fast-path round. The trade-off is that faulty leaders can still make the message pattern more complicated.
+- **Kudzu**: combines an optimistic `2δ` fast path with a simultaneous `3δ` slow path, and also uses erasure coding to reduce the leader bandwidth bottleneck. It works in the more general `n = 3f + 2p + 1` model, where `p` is tunable. If at most `p` replicas fail to cooperate, the fast path can finalise after one voting round; if more than `p` but at most `f` replicas fail, the slow path preserves `3δ` latency.
+- **Alpenglow**: is Solana-oriented and combines two components: **Votor** for voting/finality and **Rotor** for erasure-coded block dissemination. Votor finalises in one voting round if roughly `80%` of stake participates, and otherwise uses a two-round path with roughly `60%` participation. Alpenglow also builds in fixed slots, leader windows, fast handoff between leaders, and erasure-coded streaming as part of the protocol design.
+- **Hydrangea**: pushes hardest on mixed Byzantine-and-crash resilience. For `n = 3f + 2c + k + 1`, it gets optimistic two-round commit when the number of faulty parties is at most `p = floor((c + k) / 2)`, whether those faults are Byzantine or crash. If the system reaches the heavier adversarial case with up to `f` Byzantine faults and `c` crash faults, it falls back to a three-round path.
 
-The next section will move to a newer protocol in this same line of work: **Minimmit**, a more recent protocol from the Commonware line that explores this design space further.
+I will come back later with separate sections for **Banyan**, **Kudzu**, **Alpenglow**, and **Hydrangea**, since each of them deserves its own comparison.
 
-I will come back later with separate sections for **Banyan**, **Kudzu**, and **Alpenglow**, since each of them deserves its own comparison.
+The next section will move to a newer protocol in this same line of work: **Minimmit**, from Commonware.
+That comparison is easier to make there, because Minimmit can be read as a reaction to this branch:
+
+- it keeps one-round finality
+- removes the slow path
+- uses smaller view-progression certificates instead.
 
 </details>
 
 <details>
 <summary>Minimmit</summary>
+
+After sBFT and the protocols in the Simplex family, Minimmit pushes the idea one step further.
+It is a newer protocol from **Commonware**, and its main move is simple:
+
+> keep one-round finality, but remove the slow path altogether.
+
+Most earlier 2-round finality protocols still keep a fallback path when the optimistic case fails.
+Minimmit does not.
+Instead, it separates **finality** from **view progression**.
+
+### The Main Idea
+
+Minimmit works under:
+
+- `n >= 5f + 1`
+- at most `f` Byzantine processors
+- partial synchrony
+
+This is a more expensive committee assumption than the classic `3f + 1` world.
+The point of paying that cost is that Minimmit separates two jobs that many earlier protocols tie together:
+
+- **L-notarisation**: `n - f` votes for a block, which is enough to finalise it
+- **M-notarisation**: `2f + 1` votes for a block, which is enough to move to the next view safely
+
+So processors do not need to wait for the full `n - f` votes before starting the next view.
+They can move earlier as soon as they see an `M-notarisation`.
+
+Minimmit then adds one more object:
+
+- **nullification**: `2f + 1` `nullify(v)` messages, which prove that no block in view `v` can still safely become final
+
+So every view ends in one of two ways:
+
+- some block gets an `M-notarisation`
+- or the view gets a nullification
+
+This is exactly what replaces the slow path.
+Instead of saying "the optimistic case failed, so do one more voting round", Minimmit says:
+
+- either a mini quorum proves which branch is safe to continue from
+- or a mini quorum proves that the whole view is dead
+
+#### Why Still Safe?
+
+The protocol relies on two safety facts.
+
+**First**, if some block `B` in view `v` gets an `L-notarisation`, then no conflicting block in that same view can get an `M-notarisation`.
+The overlap between those two sets is:
+
+`(n - f) + (2f + 1) - n = f + 1`
+
+Since at most `f` processors are Byzantine, that overlap contains at least one correct processor, and a correct processor does not vote for two different blocks in one view.
+
+**That gives the first invariant**:
+
+- **X1**: if a block in view `v` can still become final, then no conflicting block in view `v` can get an `M-notarisation`
+
+**Second**, if some block in view `v` gets an `L-notarisation`, then the same view cannot also be nullified.
+
+The reason is different from `X1`.
+An `L-notarisation` means `n - f` processors voted for that block.
+Among them, at least
+
+`(n - f) - f = 3f + 1`
+
+must be correct.
+
+Those correct processors have already voted in view `v`, so they will not also help nullify the same view.
+That leaves at most
+
+`n - (3f + 1) = 2f`
+
+processors that could still contribute to nullification, which is not enough to reach the `2f + 1` threshold.
+
+**That gives the second invariant**:
+
+- **X2**: if some block in view `v` gets an `L-notarisation`, then view `v` cannot also be nullified
+
+These two facts are enough to answer the next question:
+
+> when views advance early, how does a new leader know what it is still safe to build on?
+
+When the leader of view `v` proposes a block, it chooses as parent the highest-view block it knows with an `M-notarisation`.
+If that parent comes from an earlier view `v'`, then the leader must also provide nullifications for every skipped view in `(v', v)`.
+
+Proof:
+
+```Markdown
+Assume there is an existing block b', and then a fork:
+b' -> b1
+b' -> ... -> b2
+where b1 in view v1 has an L-notarisation, and b2 in view v2 has an M-notarisation but does not extend b1.
+
+Case 1: v2 = v1
+b' -> b1
+b' -> b2
+This cannot happen because of X1: once b1 has an L-notarisation in view v1, no other block in the same view can receive an M-notarisation.
+
+Case 2: v2 > v1
+b' -> b1
+b' -> b -> ... -> b2
+
+There are only two possibilities:
+1. There is a block b on the lower branch with b.view = v1.
+2. The lower branch skips view v1.
+
+If there is a block b with b.view = v1, then we have case 1.
+Therefore, it should be the second possibility.
+But to skip view v1, processors must have a nullification for view v1.
+This is impossible by X2, because b1 already has an L-notarisation in view v1, so view v1 cannot be nullified.
+```
+
+In short, the safety story across views is:
+
+- `M-notarisation` proves which earlier block is still safe to extend
+- nullifications prove which intervening views are dead and safe to skip
+
+### Algorithm
+
+Before the steps, two local rules matter:
+
+- `SelectParent(S, v)`: pick the highest-view block in local state `S` that already has an `M-notarisation`, and if that block is not from the immediately previous view, include nullifications for the skipped views.
+- **no-progress evidence**: a processor has already voted in the current view and then sees `2f + 1` total messages for that same view, where these messages can be either `nullify(v)` messages or votes for a different block.
+
+With that in mind, the full algorithm can be read as follows:
+
+1. If a processor sees a new nullification or `M-notarisation`, it forwards that proof to everyone else.
+2. If it is the leader of view `v`, it proposes one child block using `SelectParent(S, v)`.
+3. If it sees a valid proposal and has not already voted or nullified in that view, it votes for the block.
+4. If its timer expires before voting, it sends `nullify(v)`.
+5. If it sees a nullification for the current view, it moves to `v + 1`.
+6. If it sees an `M-notarisation` for the current view, it may first vote for that block if needed, and then moves to `v + 1`.
+7. If it already voted, but then sees no-progress evidence, it sends `nullify(v)`.
+8. If it sees an `L-notarisation`, it finalises that block.
+
+The important point is still the same:
+the next view may start before the previous block is finalised.
+That is exactly where Minimmit gets its latency win.
+The protocol no longer waits for the slower `n - f` quorum just to keep view progression moving.
+
+### Trade-Offs
+
+Earlier 2-round protocols often keep a slow path:
+
+- if the optimistic case fails, do another voting round
+
+Minimmit removes that extra path completely.
+Instead, it makes every view end with one of two certificates:
+
+- an `M-notarisation`, which says which block is still safe to build on;
+- or a nullification, which says that nothing in this view can still become final.
+
+That is why the protocol can move on without a fallback voting round.
+
+The trade-off is also clear:
+
+- lower view latency
+- cleaner protocol structure
+- more expensive committee assumption `n >= 5f + 1`
+- less flexibility than protocols that still keep a slow path, especially in crash-heavy settings
+
+### Complexity
+
+Compared with sBFT, the asymptotic picture is:
+
+| Scenario                     |      sBFT |  Minimmit |
+| ---------------------------- | --------: | --------: |
+| Correct leader               |    `O(n)` |  `O(n^2)` |
+| Leader failure / view change |  `O(n^2)` |  `O(n^2)` |
+| `f` leader failures          | `O(fn^2)` | `O(fn^2)` |
+
+The reason is simple.
+sBFT uses collectors and threshold proofs to make the common path linear.
+Minimmit removes the slow path to improve latency, but its basic message pattern is still all-to-all.
+
+### Further details
+
+For a more detailed walkthrough, I keep a longer version here: [Link](https://coded-distributed-arrays.notion.site/Minimmit-3560f6a329b4809fa97fe6cdc7f46ae4)
+
 </details>
