@@ -130,7 +130,7 @@ Instead of using a separate proof-heavy view-change protocol as pBFT, Tendermint
   `lockedValue`, `lockedRound`, `validValue`, and `validRound`;
 - when a new proposer proposes a block, the important pair is `validValue` and `validRound`, which act as the proposer’s memory of the latest safe candidate.
 
-For example, if a proposer wants to propose block `B+1`, it have to piggyback a value that was already supported earlier, together with the round where that support happened.
+For example, if a proposer wants to propose block `B+1`, it has to piggyback a value that was already supported earlier, together with the round where that support happened.
 Other validators then check whether that proposal is still safe to vote for, based on their local lock state.
 
 ### Timeout and Round Movement
@@ -150,6 +150,14 @@ They are the reason the protocol keeps moving instead of waiting forever.
 - If no decision happens after precommit, it starts the next round.
 
 If a round does not lead to a decision, Tendermint moves to a higher round with a larger timeout. The idea is that when the network is slow, validators should wait longer before giving up.
+
+This increasing-timeout mechanism is necessary for progress under partial synchrony. If the current round fails, the next round waits longer. That gives proposals and votes more time to propagate through the network, until the proposer can finally learn a `validValue` and `validRound` that honest validators can safely accept.
+
+A short way to picture it is:
+
+- **Prevote does not finish**: the proposal arrives, but not enough `PREVOTE` messages are collected in time. Validators move to the next round, which waits longer. If the new proposer has already learned a `validValue`, it must re-propose that value with its `validRound`; otherwise it may propose a fresh value.
+- **Precommit does not finish**: enough prevotes may have existed for some validators, but not enough `PRECOMMIT` messages are seen in time. In the next round, a correct proposer that already learned `validValue` and `validRound` can re-propose that same value, so validators can safely prevote for it again.
+- **No decision after precommit**: even after precommit, if the round still does not produce a decision, validators start the next round with a larger timeout. Eventually, a correct proposer has enough information to re-propose a safe candidate through `validValue` and `validRound`, and the protocol tries again in the normal `PROPOSAL -> PREVOTE -> PRECOMMIT` flow.
 
 Overall, this one contrasts with PBFT. PBFT uses timeouts too, but a timeout there triggers a separate view-change protocol. In Tendermint, a timeout is part of the normal round structure and simply moves the protocol into the next round.
 
@@ -200,28 +208,186 @@ This leads naturally to HotStuff, which also tries to avoid PBFT’s heavy view-
 
 ### Further details
 
-For a more detailed PBFT walkthrough, including additional paper-level details, I keep a longer version here: [Link](https://coded-distributed-arrays.notion.site/Tendermint-34e0f6a329b4801db987d603ca242b0f?source=copy_link)
+For a more detailed Tendermint walkthrough, including additional paper-level details, I keep a longer version here: [Link](https://coded-distributed-arrays.notion.site/Tendermint-34e0f6a329b4801db987d603ca242b0f?source=copy_link)
 
 </details>
 
 <details>
 <summary>HotStuff</summary>
 
-HotStuff became important in this reading path because it reframed the PBFT question more cleanly: maybe the core issue is not the number of phases alone, but the structure of the safety handoff between leaders. In human terms, my understanding is that HotStuff keeps the same resilience target as PBFT, but reorganizes the protocol around quorum certificates so that a new leader can safely continue from the highest known QC.
+HotStuff is a protocol that can reach **linear complexity**, while PBFT and Tendermint remain **quadratic**.
+The other important point is responsiveness. Tendermint avoids PBFT's heavy view-change protocol, but it still depends on waiting long enough for timeout-based round progression.
+HotStuff tries to get both things at the same time: simpler leader replacement and **optimistic responsiveness**.
 
-The extra phase is what made the paper click for me. At first it looked like “PBFT plus one more phase,” which did not seem like an obvious simplification. But the point is that this extra step buys a much cleaner proof structure for leader replacement. Instead of carrying bulky view-change evidence, the next leader can extend the highest QC and continue in a way that stays simple and linear.
+The price it pays is one extra voting phase.
 
-That made HotStuff feel less like a small optimization and more like a structural answer to the view-change problem exposed by PBFT and approached differently by Tendermint.
+That extra phase solves one problem:
 
-**Open questions**
+> when a new leader takes over, how can it quickly learn the highest safe parent block to build from, without using a heavy PBFT-style recovery proof and without waiting like Tendermint?
 
-- Which parts of HotStuff’s gain remain meaningful under Ethereum-like deployment assumptions?
-- When does QC compression hide assumptions that should be compared explicitly?
+HotStuff answers that question with a QC chain.
+These phases do different jobs.
 
-**Artifacts**
+The `PREPARE` phase produces the certificate that tells the next leader which block is the safest parent to build on.
+The `PRE-COMMIT` phase strengthens that proposal enough for replicas to lock on it, so they will not later vote for a conflicting block.
+The `COMMIT` phase turns that locked proposal into a final decision. Once enough `COMMIT` votes are collected, the leader forms `commitQC` and broadcasts `DECIDE`, so replicas can safely treat that block as committed and execute it.
 
-- Notes: [HotStuff vs PBFT](reaper-workspace/report-hotstuff-vs-pbft.md)
+Before going into the algorithm, there are five names worth keeping in mind.
 
-![HotStuff three-chain commit](content/diagrams/hotstuff-3chain.svg)
+- `prepareQC`: the certificate formed after enough `PREPARE` votes. It shows that a proposal already has enough support to be considered the best safe candidate so far.
+- `highQC`: the highest `prepareQC` the new leader learns from `NEW-VIEW` messages. This is what the leader uses to decide which parent block to extend next.
+- `precommitQC`: the certificate formed after enough `PRE-COMMIT` votes. This is the point where the proposal becomes strong enough for replicas to lock on it.
+- `lockedQC`: the local lock a replica stores after receiving a valid `precommitQC`. It prevents the replica from later voting for a conflicting branch unless a higher justified QC appears.
+- `commitQC`: the certificate formed after enough `COMMIT` votes. Once the leader broadcasts `DECIDE` with this certificate, the block can be executed.
 
+In short, we have:
+
+- `prepareQC / highQC` are about choosing the highest safe parent block to build from;
+- `precommitQC / lockedQC` are about turning support into a lock;
+- `commitQC` is about finalizing the decision.
+
+### Algorithm
+
+HotStuff is easiest to read as a handoff protocol between leaders.
+
+The core question is:
+
+> if the current leader disappears at a bad moment, what exact piece of information should the next leader collect so it can continue from the right block?
+
+HotStuff's answer is: collect the highest `prepareQC`.
+
+That is why the algorithm begins with `NEW-VIEW` messages.
+
+#### Phase 1. PREPARE
+
+At the start of a view, the leader waits for `NEW-VIEW` messages from `n - f` replicas.
+Each replica sends its highest known `prepareQC`.
+The leader picks the highest one and calls it `highQC`.
+
+This gives the leader a concrete parent block to build on.
+In blockchain language, `highQC.node` is the highest safe parent block the leader currently knows how to extend.
+
+Only after learning `highQC` does the leader create a new proposal.
+It extends `highQC.node`, broadcasts a `PREPARE` message, and includes `highQC` as the justification for why this proposal is safe.
+
+Replicas then check two things:
+
+- does this proposal extend a branch I am already locked on?
+- if not, does the attached QC come from a higher view than my current lock?
+
+If the answer is yes, they send `PREPARE` votes back to the leader.
+Once enough of these votes are collected, the leader forms a new `prepareQC`.
+
+So the `PREPARE` phase does one precise job:
+it creates the certificate that future leaders will later use to decide which block is safest to continue from.
+
+#### Phase 2. PRE-COMMIT
+
+Now the leader takes that `prepareQC` and broadcasts it in a `PRE-COMMIT` message.
+At this point, the protocol is no longer asking replicas whether the proposal is safe to start from.
+That question was already answered in the `PREPARE` phase.
+
+The purpose of `PRE-COMMIT` is narrower:
+every replica that accepts this message now learns the same `prepareQC`, keeps it locally, and sends a `PRE-COMMIT` vote for the same proposal.
+
+This detail matters because `prepareQC` is exactly what replicas later send forward in `NEW-VIEW`.
+So by the end of this phase, the protocol is making sure that the certificate behind the proposal is no longer known only by the leader.
+It is now known by a wide enough set of replicas that a later leader can recover it too.
+
+This is also why the phase still needs a new vote.
+The protocol is not only rebroadcasting `prepareQC`; it is also collecting a fresh quorum showing that enough replicas have now seen that certificate and are still willing to continue with the same proposal.
+
+This is the extra phase HotStuff adds after the first support certificate is formed, but before the proposal becomes locked and then committed.
+
+Its purpose is not merely “more confirmation”.
+Its real purpose is to spread the `prepareQC` widely enough before any replica locks on the block.
+
+**That matters because the leader may fail immediately after this point.**
+If some replicas are later going to lock on this proposal, the next leader must still be able to learn about the same `prepareQC` from a quorum of replicas.
+The `PRE-COMMIT` phase is what makes that possible.
+
+So the `PRE-COMMIT` phase does one precise job:
+it turns “the leader has a `prepareQC`” into “enough replicas also know that same `prepareQC` for the next leader to recover it later”.
+
+#### Phase 3. Commit
+
+Once the leader has enough `PRE-COMMIT` votes, it forms `precommitQC` and broadcasts a `COMMIT` message carrying it.
+
+When replicas receive this message, they do two things:
+
+- they store `precommitQC` locally as `lockedQC`;
+- they send `COMMIT` votes back to the leader.
+
+This is the moment where the proposal becomes lock-protected.
+From this point on, a replica should not vote for a conflicting branch unless it later sees a higher justified QC.
+
+So the `COMMIT` phase does one precise job:
+it converts a supported proposal into a locked proposal.
+
+#### Phase 4. Decide
+
+Finally, once the leader has enough `COMMIT` votes, it forms `commitQC` and broadcasts `DECIDE`.
+
+After receiving `DECIDE`, replicas:
+
+- treat the proposal as committed;
+- execute the commands in the committed branch;
+- move to the next view.
+
+So the `DECIDE` step does one precise job:
+it tells replicas that the block is no longer just safe to lock, but safe to execute.
+
+#### Visualization
+
+![alt text](/assets/images/consensus/01/01.png)
+
+### Complexity
+
+Compared with PBFT and Tendermint, HotStuff can be summarized in the same three columns:
+
+| Scenario                     |      PBFT | Tendermint | HotStuff |
+| ---------------------------- | --------: | ---------: | -------: |
+| Correct leader               |  `O(n^2)` |   `O(n^2)` |   `O(n)` |
+| Leader failure / view change |  `O(n^3)` |   `O(n^2)` |   `O(n)` |
+| `f` leader failures          | `O(fn^3)` |  `O(fn^2)` |  `O(fn)` |
+
+In each phase:
+
+- the leader broadcasts once;
+- each replica responds once;
+- the quorum can be compressed into one QC.
+
+So even when the leader changes, HotStuff does not create a separate quadratic or cubic recovery spike the way PBFT does.
+
+### Further details
+
+For a more detailed walkthrough, including chained HotStuff and additional paper-level details, I keep a longer version here: [Link](https://coded-distributed-arrays.notion.site/Hotstuff-34d0f6a329b48061a2c6df0cf80750ac?source=copy_link)
+
+</details>
+
+<details>
+<summary><span class="paper-title">HotStuff-2</span><span class="paper-status">Notes in progress</span></summary>
+
+As discussed in the previous section, HotStuff uses a three-phase voting mechanism.
+
+HotStuff-2 demonstrates that this can be reduced to two phases without adding substantive complexity to the original protocol.
+
+Crucially, this simplification does not come at the cost of optimistic responsiveness or optimistic linear communication, while still maintaining an O(n²) worst-case communication complexity.
+
+**// TODO: Finish this in recent future.**
+
+</details>
+
+## One-Round Voting Consensus
+
+<details>
+<summary>sBFT</summary>
+</details>
+
+<details>
+<summary>Simplex</summary>
+</details>
+
+<details>
+<summary>Minimmit</summary>
 </details>

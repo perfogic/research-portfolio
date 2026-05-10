@@ -336,6 +336,25 @@ details summary,
   margin-bottom: 0;
 }
 
+.paper-title {
+  min-width: 0;
+}
+
+.paper-status {
+  display: inline-block;
+  margin-left: 10px;
+  vertical-align: middle;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 .markdown-body p,
 .markdown-body li,
 .markdown-body td,
