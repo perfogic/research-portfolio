@@ -581,7 +581,7 @@ For a more detailed walkthrough, I keep a longer version here: [Link](https://co
 </details>
 
 <details>
-<summary>Simplex</summary>
+<summary>Simplex<span class="paper-status">Notes in progress</span></summary>
 
 After sBFT, the next branch of protocols keeps the one-round idea but tries to rethink the relationship between the fast path and the fallback path more cleanly.
 
@@ -601,8 +601,6 @@ They differ in:
 The next section will move to a newer protocol in this same line of work: **Minimmit**, a more recent protocol from the Commonware line that explores this design space further.
 
 I will come back later with separate sections for **Banyan**, **Kudzu**, and **Alpenglow**, since each of them deserves its own comparison.
-
-**// Notes in progress.**
 
 </details>
 
