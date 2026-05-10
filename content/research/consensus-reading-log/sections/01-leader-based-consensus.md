@@ -262,7 +262,7 @@ That is why the algorithm begins with `NEW-VIEW` messages.
 
 At the start of a view, the leader waits for `NEW-VIEW` messages from `n - f` replicas.
 Each replica sends its highest known `prepareQC`.
-The leader picks the highest one and calls it `highQC`.
+The leader picks the highest one and calls it `hihttps://file+.vscode-resource.vscode-cdn.net/Users/perfogic/Workspace/Research/consensus-papers/assets/images/consensus/01/01.png?version%3D1778411744426ghQC`.
 
 This gives the leader a concrete parent block to build on.
 In blockchain language, `highQC.node` is the highest safe parent block the leader currently knows how to extend.
@@ -309,7 +309,7 @@ The `PRE-COMMIT` phase is what makes that possible.
 So the `PRE-COMMIT` phase does one precise job:
 it turns “the leader has a `prepareQC`” into “enough replicas also know that same `prepareQC` for the next leader to recover it later”.
 
-#### Phase 3. Commit
+#### Phase 3. COMMIT
 
 Once the leader has enough `PRE-COMMIT` votes, it forms `precommitQC` and broadcasts a `COMMIT` message carrying it.
 
@@ -324,7 +324,7 @@ From this point on, a replica should not vote for a conflicting branch unless it
 So the `COMMIT` phase does one precise job:
 it converts a supported proposal into a locked proposal.
 
-#### Phase 4. Decide
+#### Phase 4. DECIDE
 
 Finally, once the leader has enough `COMMIT` votes, it forms `commitQC` and broadcasts `DECIDE`.
 
@@ -382,10 +382,228 @@ Crucially, this simplification does not come at the cost of optimistic responsiv
 
 <details>
 <summary>sBFT</summary>
+
+sBFT is one of the early PBFT-family protocols that explicitly tries to add a **fast path**.
+This means: in the optimistic case, one sequence slot can finish with only **one real voting round**.
+
+It has two modes:
+
+- a fast path that tries to finish in one voting round;
+- a slower fallback path that keeps PBFT's backbone, but in a more optimized form.
+
+### Main Changes From PBFT
+
+#### From PBFT To Linear PBFT
+
+The first change is the communication pattern.
+PBFT is expensive because its normal path is all-to-all:
+
+- the leader broadcasts a proposal;
+- replicas broadcast votes to other replicas;
+- replicas broadcast again in the second voting phase.
+
+sBFT starts by dealing with that cost.
+
+Instead of every replica talking to every other replica, replicas send their signature shares to a small set of **collectors**.
+Those collectors **aggregate the shares into one threshold proof**, then broadcast the aggregated proof back to the replicas.
+
+So the message shape changes from:
+
+- PBFT: all-to-all voting
+
+to:
+
+- sBFT: replica-to-collector, then collector-to-all
+
+That is the core idea behind what the paper calls **linear PBFT**.
+
+Once this collector structure is in place, the same design direction is reused in two more places.
+
+First, sBFT uses threshold signatures both in the voting path and in the execution path, so client acknowledgement can also be aggregated into one proof.
+
+Second, instead of relying on only one collector, sBFT uses `c + 1` collectors so that the common path is less fragile when a few collectors are slow or faulty.
+
+#### Adding A Fast Path
+
+The second big change is the fast path.
+
+PBFT needs two voting phases before commit.
+sBFT asks whether the optimistic case can finish after only one voting round.
+
+This fast path works with:
+
+`n = 3f + 2c + 1`
+
+Here:
+
+- `f` is still the Byzantine threshold for **safety**;
+- `c` is extra slack for the optimistic path, so a small number of crashed or straggler replicas do not immediately kill it.
+
+Overall, this means that if the collectors can gather `3f + c + 1` matching signatures, the protocol can finish on the fast path. But keep in mind that the real Byzantine safety bound is still `f`: once there are more than `f` Byzantine replicas, safety is no longer guaranteed.
+
+Its fast path has three communication steps:
+
+- `PRE-PREPARE`
+- `SIGN-SHARE`
+- `COMMIT-PROOF`
+
+The primary first broadcasts `PRE-PREPARE` with the decision block.
+
+Then replicas do the only real vote of the fast path:
+each replica signs the block hash once and sends that signature share to the commit collectors.
+
+When a collector receives enough shares, it combines them into one threshold proof `σ(h)` and broadcasts a `full-commit-proof`.
+After receiving that proof, replicas can commit.
+
+#### Why One Voting Round Is Safe Here
+
+With:
+
+- `n = 3f + 2c + 1`
+- fast-path threshold `n - c = 3f + c + 1`
+
+a fast commit proof `σ(h)` means at least
+
+`(3f + c + 1) - f = 2f + c + 1`
+
+honest replicas signed that value.
+
+That is the key difference from PBFT.
+The fast certificate leaves behind a much larger honest witness set.
+
+Now look at the next view change.
+The new primary collects:
+
+`2f + 2c + 1`
+
+view-change messages.
+
+Let `FC` be the `2f + c + 1` honest replicas that signed the old fast-path value, and let `I` be the `2f + 2c + 1` view-change messages collected by the next leader.
+
+Both sets live inside a system of size:
+
+`n = 3f + 2c + 1`
+
+so they cannot avoid overlapping.
+
+More precisely:
+
+`|FC ∩ I| >= |FC| + |I| - n`
+
+`= (2f + c + 1) + (2f + 2c + 1) - (3f + 2c + 1)`
+
+`= f + c + 1`
+
+Since `f + c + 1 > f`, this overlap cannot be entirely Byzantine.
+So every valid new-view quorum must still contain honest witnesses for the old fast-path value, and that is why safety survives view change.
+
+### Algorithm
+
+The algorithm is easiest to read as two cases.
+
+Before that, there is one notation detail worth fixing.
+
+- `σ(h)` is the **fast-path threshold proof**. It needs the larger threshold `3f + c + 1`, so if a collector can form `σ(h)`, the protocol can finish on the fast path.
+- `τ(h)` is the **slow-path threshold proof**. It needs the smaller threshold `2f + c + 1`, so it is easier to form, but it is not enough to commit immediately. Instead, it is used to start the slower PBFT-style fallback path.
+
+So the distinction is simple:
+
+- `σ(h)` tries to finish in one voting round;
+- `τ(h)` is the certificate that lets the protocol safely continue in the slower path.
+
+#### Case 1. Fast path
+
+The fast path communication pattern is:
+
+- leader broadcasts `PRE-PREPARE`;
+- replicas send `SIGN-SHARE` messages to the commit collectors;
+- a collector aggregates enough shares into `σ(h)` and broadcasts `full-commit-proof`.
+
+This is the optimistic case: one voting round is enough, and collectors turn those shares into one commit proof.
+If that proof cannot be formed in time, the protocol does not abandon the collector structure. It keeps the same communication pattern and falls back to a slower PBFT-style path.
+
+#### Case 2. Fallback slow path
+
+If the fast path does not finish, sBFT falls back to Linear-PBFT.
+
+The slow path still starts from the same `PRE-PREPARE`.
+Replicas send `SIGN-SHARE` messages as before, but now the collectors use those shares to start the slower PBFT-style path.
+
+Its message flow is:
+
+- a collector that can form `τ(h)` but not `σ(h)` waits for a timeout, then broadcasts `PREPARE`;
+- replicas send `COMMIT` shares back to the collectors;
+- a collector aggregates those shares into `full-commit-proof-slow` and broadcasts it.
+
+So even the slower path is still trying to remove PBFT's all-to-all communication cost.
+
+The important point is that sBFT is not "fast path or completely different protocol".
+It is PBFT's commit logic rebuilt on top of collectors and threshold signatures.
+
+#### Visualization
+
+![alt text](/assets/images/consensus/01/02.png)
+
+### Complexity
+
+Compared with PBFT, the common asymptotic picture is:
+
+| Scenario                     |      PBFT |      sBFT |
+| ---------------------------- | --------: | --------: |
+| Correct leader               |  `O(n^2)` |    `O(n)` |
+| Leader failure / view change |  `O(n^3)` |  `O(n^2)` |
+| `f` leader failures          | `O(fn^3)` | `O(fn^2)` |
+
+The main improvement comes from the collector pattern:
+
+- replicas send shares to collectors;
+- collectors aggregate them into one threshold proof;
+- the rest of the system sees one compact certificate instead of many separate votes.
+
+### Why sBFT Still Was Not The End
+
+sBFT is important because it makes the one-round idea concrete inside a PBFT-family system.
+
+And if you push its parameter all the way to `c = f`, then:
+
+`n = 3f + 2c + 1 = 5f + 1`
+
+That is the more important takeaway.
+The point of the fast path is not that it somehow keeps PBFT's full `33%` Byzantine tolerance and then becomes faster for free.
+The point is that if we are willing to move from the usual `3f + 1` world, where the system tolerates up to one-third Byzantine faults, into a `5f + 1` world, where the effective one-round regime only tolerates about `20%` Byzantine faults, then one-round fast finality becomes achievable.
+
+However, this protocol is still not widely used in practice, because its view-change mechanism remains large and complicated. Even though the common path becomes linear, the protocol still has to reconcile fast-path evidence and slow-path evidence during leader change, and that makes recovery heavy.
+
+### Further details
+
+For a more detailed walkthrough, I keep a longer version here: [Link](https://coded-distributed-arrays.notion.site/sBFT-34e0f6a329b4805c9687c6d52b470029)
+
 </details>
 
 <details>
 <summary>Simplex</summary>
+
+After sBFT, the next branch of protocols keeps the one-round idea but tries to rethink the relationship between the fast path and the fallback path more cleanly.
+
+Three algorithms are especially useful to keep in mind here:
+
+- **Alpenglow**: works under the same `n >= 5f + 1` assumption. It discusses a setting with additional crash tolerance, but that extra story depends on assumptions that break once a Byzantine leader can equivocate on proposals under partial synchrony.
+- **Kudzu**: works in the more general `n >= 3f + 2p + 1` model, where `p` is a tunable parameter. During synchrony, a correct leader can finalise after one voting round as long as the number of faulty processors is at most `p`. If the number of faulty processors is strictly between `p` and `f`, the protocol falls back to a slow path. This also means the fast-path quorum in Kudzu is larger than in Minimmit: `n - p` rather than `n - f`.
+- **Hydrangea**: pushes harder on crash resilience. For `n = 3f + 2c + k + 1`, it can still finalise after one voting round when the number of faulty processors is at most `p = floor((c + k) / 2)`. In more adversarial settings with up to `f` Byzantine faults and `c` crash faults, it still has a two-round fallback.
+
+So the main differences among these protocols are not just “who has a fast path”.
+They differ in:
+
+- how much resilience they keep in the one-round regime;
+- when they fall back to a slower path;
+- and how much crash-failure flexibility they retain.
+
+The next section will move to a newer protocol in this same line of work: **Minimmit**, a more recent protocol from the Commonware line that explores this design space further.
+
+I will come back later with separate sections for **Banyan**, **Kudzu**, and **Alpenglow**, since each of them deserves its own comparison.
+
+**// Notes in progress.**
+
 </details>
 
 <details>
