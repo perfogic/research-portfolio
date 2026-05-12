@@ -1,5 +1,5 @@
 ---
-title: "DAS Reading Log: From Data Availability Sampling to Coded Distributed Arrays"
+title: "DAS Research Log: From Data Availability Sampling to Coded Distributed Arrays"
 order: 1
 ---
 
@@ -10,7 +10,7 @@ I wrote it for two reasons:
 - to leave behind a reference that others can use when they want a clearer overview of DAS;
 - and to preserve part of the path that eventually led me to the CDA paper.
 
-This reading log moves through four steps:
+This research log moves through four steps:
 
 - **Proto-Danksharding**:
   Explain why Ethereum moved from `calldata` to blob transactions for temporary rollup data and why Data Availability is needed.
