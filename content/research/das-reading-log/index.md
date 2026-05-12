@@ -12,9 +12,11 @@ I wrote it for two reasons:
 
 This reading log moves through four steps:
 
-- **History of Ethereum**:
+- **Proto-Danksharding**:
   Explain why Ethereum moved from `calldata` to blob transactions for temporary rollup data and why Data Availability is needed.
-- **DAS Solutions**:
+- **Data Availability Sampling**:
   Discuss about what is Data Availability Sampling (DAS) and how to encode data.
 - **Network for DAS**:
-  Explore all current proposed network layer solutions for DAS. - Draft Version
+  Explore all current proposed network layer solutions for DAS.
+- **Coded Distributed Array**:
+  Explore how idea of CDA is shaped - Draft Version
