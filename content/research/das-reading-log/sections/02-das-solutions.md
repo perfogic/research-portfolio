@@ -6,13 +6,14 @@ Before talking about specific protocols, it helps to start from the most naive i
 
 Suppose we simply split a block into many pieces and distribute those pieces across the network.
 At first glance, that sounds enough: each node only stores a small part, so the storage burden is reduced.
+![alt text](/assets/images/das/05.png)
 
-The problem appears immediately once even a single part goes missing.
-If the data was only split, but not encoded with redundancy, then losing one piece may already make the whole block unrecoverable.
-And in a large network, this is not a strange corner case.
+However, **The problem appears immediately once even a single part goes missing**.
 It is easy to imagine a small cluster of Byzantine nodes deliberately refusing to store or serve one part of the block.
-
+At this case, we can't reconstruct back to our original block from parts.
 So plain splitting is not enough.
+![alt text](/assets/images/das/06.png)
+
 We need a way to distribute the data such that even if some pieces are missing, the original block can still be recovered.
 
 ## Erasure coding
@@ -21,40 +22,60 @@ This is why DAS designs start with erasure coding.
 
 At a high level, erasure coding takes:
 
-- `k` original pieces of data,
-- and encodes them into `n` coded pieces,
+- `k` original parts of data,
+- and encodes them into `n` coded parts,
 
-in such a way that any `k` out of those `n` coded pieces are enough to reconstruct the original data.
+in such a way that any `k` out of those `n` coded parts are enough to reconstruct the original data.
+
+I don't talk in detail about how it is implemented. But you can imagine, the way it do is:
+
+> Creating a function from n points, with k/n points only we can find the old functions.\
+> From that we can find the origin k points by index.
 
 That is the key improvement over simple splitting.
-The network no longer depends on every specific piece staying online.
-Instead, it only needs enough coded pieces to remain available.
+The network no longer depends on every specific part staying online.\
+By improving the redundancy of each coded parts, it only needs enough coded parts to remain available.
 
 This changes the data-availability question completely.
 We are no longer asking:
 
-- is every original piece still there?
+- is every original part still there?
 
 We are asking:
 
-- is there still a large enough set of coded pieces to recover the block?
+- is there still a large enough set of coded parts to recover the block?
 
 That is the door that opens the way to sampling.
 
-## 1D sampling: PeerDAS
+![alt text](/assets/images/das/07.png)
 
-Once erasure coding is in place, the next idea is straightforward:
+## 1D sampling:
 
-- instead of downloading the full block,
-- a node can sample a small subset of coded data and use that to gain confidence that the whole block is available.
+Once erasure coding is in place, the next idea becomes possible: a validator no longer needs to download the full encoded block just to test availability.
 
-This is the basic idea behind PeerDAS in its current Ethereum form.
+Instead, it can sample a small subset of coded data and use that to gain confidence that the whole block is still recoverable.
 
-The data is first erasure-coded in one direction.
-Then validators or peers are assigned responsibility for certain coded parts, and a sampling node queries only a subset of them.
+The first concrete form of this idea is **1D sampling**.
 
-In practice, current PeerDAS is best understood as a **1D sampling** design.
-The sampling unit is effectively a column, not an arbitrary cell in a two-dimensional coded matrix.
+In the 1D setting, the data is erasure-coded in only one direction, usually pictured as a horizontal extension of the original block into a longer coded strip. In Ethereum's current design, those coded pieces are then grouped into columns, and sampling is done column by column.
+
+Suppose the original data is encoded from `k` parts into `2k` coded parts. Since the block can still be reconstructed from any `k` available coded parts, an adversary must withhold more than half of the coded data to make the block unrecoverable.
+
+![alt text](/assets/images/das/08.png)
+
+If a validator makes `n` independent random sampling requests by columns, then the probability that all of them still miss the unavailable region is at most:
+
+`(1/2)^n`
+
+So the probability of detecting data withholding is at least:
+
+`1 - (1/2)^n`
+
+For example, with `n = 20`, the probability of detection is already:
+
+`1 - (1/2)^20 ≈ 0.999999`
+
+In practice, current **[PeerDAS](https://github.com/ethereum/consensus-specs/blob/9d377fd53d029536e57cfda1a4d2c700c59f86bf/specs/fulu/peer-sampling.md)** is best understood as a 1D sampling design, where the sampling unit is effectively a column rather than an arbitrary cell in a two-dimensional coded matrix.
 
 <img src="/assets/images/das/03.png" alt="03" width="720" />
 
@@ -70,96 +91,81 @@ But as an engineering design, this is still only a temporary solution.
 
 ### Why 1D PeerDAS is not the end
 
-The main issue is not the sampling idea itself.
-The main issue is how the data is disseminated and retrieved.
+**The first limitation of 1D PeerDAS is its recovery structure.**
+
+In PeerDAS, nodes store and sample data by columns.
+That is enough for availability checking, but it is not a good structure for repair.
+Even If a few cells go missing, the system does not recover those cells locally.
+Instead, it has to fall back to reconstructing the whole encoded block.
+
+That is expensive, both in bandwidth and in computation.
+So 1D sampling is a useful first step for DAS, but it is not yet a good long-term structure for distributed recovery.
+
+<img src="/assets/images/das/09.png" alt="03" width="720" />
+
+**The second limitation is the network layer.**
 
 PeerDAS currently relies on:
 
 - `GossipSub` for dissemination,
 - and DHT-style retrieval for finding the data to sample.
 
-Both parts are costly and fragile.
-
-For broadcast, `GossipSub` is still a multi-hop dissemination mechanism.
-For retrieval, DHT-based routing is efficient under benign assumptions, but it is much more vulnerable once Byzantine nodes are present.
-
-This is the weakness you should keep in mind:
-
-- if sampling requires multi-hop routing,
-- then a Byzantine node on the route can delay, drop, or misdirect the request,
-- and the availability check starts depending not only on the data layout, but also on the behavior of the routing substrate.
-
-That is why DHT-based sampling looks good in theory but becomes much more fragile in adversarial settings.
+For broadcast, `GossipSub` is still a multi-hop dissemination mechanism, and this algorithm is pretty well-known for high data duplication.
+For retrieval, DHT-based routing is efficient under benign assumptions, but it becomes much more vulnerable once Byzantine nodes are present.
 
 So 1D PeerDAS is an important step, but it is not yet the final shape of a strong DAS design.
-The sampling logic exists, but the retrieval and dissemination layers are still doing too much heavy lifting.
+Its coding structure is not ideal for localized recovery, and its networking layer is still carrying too much complexity.
 
 ## 2D sampling: from columns to cells
 
-This is where the next idea becomes interesting.
-Instead of erasure-coding only in one direction, we can erasure-code the data in two dimensions.
+The main reason to move from 1D to 2D is **recovery**.
+With 1D erasure coding, reconstruction is global: if some data is missing, recovery tends to require reconstructing the whole encoded block.
+With 2D erasure coding, recovery becomes much more local and structured.
 
-In other words:
+Instead of encoding the data in only one direction, we encode it in two:
 
-- first encode rows,
-- then encode columns as well.
+- first across rows,
+- then across columns.
 
-Now the data is no longer just a long coded strip.
-It becomes a coded matrix.
+So the encoded block becomes a matrix rather than a single long strip.
 
-That changes two things at once.
+<img src="/assets/images/das/10.png" alt="04" width="720" />
 
-First, the sampling unit can now become a **cell** instead of a whole column.
-Second, reconstruction becomes more resilient, because a missing part can be recovered either through its row or through its column.
+This changes the recovery structure in an important way.
 
-<img src="/assets/images/das/04.png" alt="04" width="720" />
-
-This is the main reason 2D coding is more attractive.
-With 1D coding, recovery pressure lives in one direction only.
-With 2D coding, the system has two independent repair paths:
+A missing cell can now be recovered from:
 
 - recover through the row,
 - or recover through the column.
 
-That gives better resilience against selective loss.
-If some cells are missing, the network is no longer forced to rely on one single recovery direction.
+<img src="/assets/images/das/11.png" alt="04" width="720" />
 
-### Why 2D helps more than 1D
+So if one recovery direction becomes weak, the other may still be enough.
+That is the real advantage of 2D coding: it gives the system two repair paths instead of one.
 
-The advantage of 2D is not only that it feels more redundant.
-It changes the recovery structure in a concrete way.
+This is also the direction proposed in **[2D PeerDAS](https://ethresear.ch/t/from-4844-to-danksharding-a-path-to-scaling-ethereum-da/18046)**.
+The data is arranged as a matrix, nodes are assigned columns to store, and sampling is done at the level of individual cells.
 
-With 2D coding:
+If a node samples a cell and that cell is missing, it does not immediately fall back to reconstructing the whole encoded block.
+Instead, it first only needs to find the node responsible for the column containing that cell and request the data from there.
 
-- a row that is partially missing can be repaired from the remaining cells in that row;
-- a column that is partially missing can be repaired from the remaining cells in that column;
-- and if one direction becomes weak, the other direction may still be enough to repair the data.
+So compared with 1D sampling, 2D sampling gives a much more **local recovery structure**.
+The system no longer has to treat every small loss as a whole-block reconstruction problem.
 
-That is why 2D designs are usually discussed as stronger candidates for distributed reconstruction.
-They are not just doing DAS.
-They are also making repair and recovery much more structured.
+<img src="/assets/images/das/04.png" alt="04" width="720" />
 
-At the same time, this area is still relatively underexplored.
-There is much less mature research and implementation work here than in the simpler 1D story.
+However, 2D coding does not make the whole problem easy.
+It mainly fixes the recovery structure.
+The next bottleneck moves to the network layer.
 
-So the real picture is:
+Once sampling happens at the level of individual cells, the system now needs to answer harder questions:
 
-- 1D PeerDAS is the practical stepping stone;
-- 2D sampling is the more structurally promising direction;
-- but once you move to 2D, the design and networking questions become harder, not easier.
+- which validator stores which cells?
+- how does a node find the specific peer that holds the cell it wants to sample?
+- how do we make sure every cell is still recoverable in adversarial settings?
 
-## Where the later solutions fit
+This is where the design becomes much harder.
+A validator that wants to sample one cell must somehow find and contact the node responsible for that cell among a large set of peers.
+And if the publisher withholds data, agreement now depends on a stronger condition: each missing cell must still be recoverable through at least one honest direction, either from its row or from its column.
 
-This is also the right place to position the later designs.
-
-- `PeerDAS` gives Ethereum a practical path away from full download, but still inherits expensive multi-hop retrieval and broadcast.
-- `PANDAS` tries to reduce that inefficiency by moving toward more direct and deterministic dissemination.
-- `RDA` pushes further toward a design that is secure even in strongly adversarial settings, though it pays for that with substantial storage and communication duplication.
-
-So the DAS design space is not only about sampling.
-It is really about the whole package:
-
-- how data is encoded,
-- how data is assigned,
-- how sampling requests are routed,
-- and how missing data can be recovered.
+Overall, the harder question now is how to store, route, sample, and reconstruct those coded cells across a real adversarial network ?
