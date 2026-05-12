@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-12T05:48:48.466Z",
+  "generatedAt": "2026-05-12T12:13:34.528Z",
   "files": [
     "content/about.md",
     "content/contact.md",
@@ -11,8 +11,8 @@
     "content/research/consensus-reading-log/sections/03-leaderless-consensus.md",
     "content/research/consensus-reading-log/sections/04-future-reading.md",
     "content/research/das-reading-log/index.md",
-    "content/research/das-reading-log/sections/01-history-of-ethereum.md",
-    "content/research/das-reading-log/sections/02-das-solutions.md",
+    "content/research/das-reading-log/sections/01-proto-danksharding.md",
+    "content/research/das-reading-log/sections/02-das.md",
     "content/research/das-reading-log/sections/03-network-layer-for-das.md",
     "content/writing/08-24-2025-layer-two-explained.md",
     "content/writing/09-01-2025-ethereum-scaling.md",

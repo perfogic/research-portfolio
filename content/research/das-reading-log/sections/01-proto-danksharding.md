@@ -1,10 +1,10 @@
 ---
-title: "History of Ethereum: From CALLDATA to Blob Transaction"
+title: "Proto-Danksharding: From CALLDATA to Blob Transaction"
 ---
 
-## Before `PROTO-DANKSHARDING`
+## Before `Proto-Danksharding`
 
-Before `PROTO-DANKSHARDING`, rollups such as Optimism, Arbitrum, zkSync, and other L2s were already using Ethereum as their settlement layer.
+Before `Proto-Danksharding`, rollups such as Optimism, Arbitrum, zkSync, and other L2s were already using Ethereum as their settlement layer.
 They executed transactions offchain, but they still needed to publish enough data back to Ethereum so that the L2 could be checked from outside.
 
 For optimistic rollups, this published data is what makes fraud proofs possible.
@@ -69,11 +69,11 @@ So the problem with `CALLDATA` was really two problems at once:
 - the data was being stored on the wrong path for too long;
 - and the only obvious way to scale that path further was to make the ordinary block carry more and more data.
 
-That is the bottleneck `PROTO-DANKSHARDING` was trying to break.
+That is the bottleneck `Proto-Danksharding` was trying to break.
 
-## `PROTO-DANKSHARDING` and blob transactions
+## `Proto-Danksharding` and blob transactions
 
-`PROTO-DANKSHARDING` (`EIP-4844`) is Ethereum's first real answer to that mismatch.
+`Proto-Danksharding` (`EIP-4844`) is Ethereum's first real answer to that mismatch.
 
 After `EIP-4844`, rollups get a new data lane:
 
@@ -86,7 +86,7 @@ In `EIP-4844`, the minimum retention window for blob sidecars is `4096` epochs, 
 
 <img src="/assets/images/das/01.png" alt="01" width="640" />
 
-After `PROTO-DANKSHARDING`, Ethereum no longer treats rollup data and ordinary execution data as the same thing.
+After `Proto-Danksharding`, Ethereum no longer treats rollup data and ordinary execution data as the same thing.
 
 Before going into that a bit more, it helps to clarify two terms.
 
@@ -100,7 +100,7 @@ Inside the beacon block, there is a field called `blob_kzg_commitments`, which i
 
 <img src="/assets/images/das/02.png" alt="02" width="640" />
 
-`PROTO-DANKSHARDING` does solve the first bottleneck:
+`Proto-Danksharding` does solve the first bottleneck:
 
 - rollup data no longer has to live forever on the ordinary execution path.
 
