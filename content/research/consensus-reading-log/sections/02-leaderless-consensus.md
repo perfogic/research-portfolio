@@ -270,4 +270,305 @@ The important behavior to watch is:
 
 ## DBFT
 
+<details>
+<summary>DBFT: Deterministic Leaderless Consensus</summary>
+
+Randomized binary consensus solves liveness with a common coin. `DBFT` tries to solve the same problem without one. That single change ends up shifting the whole protocol:
+
+> From full asynchrony to partial synchrony, and from probabilistic termination to deterministic termination.
+
+In the randomized algorithm, liveness comes from:
+
+- full asynchrony,
+- `BV-broadcast`,
+- `AUX`,
+- and a **Common Coin**.
+
+In `DBFT`, the safe binary core still looks very similar, but the common coin disappears. Instead, liveness now comes from:
+
+- **Partial synchrony**,
+- **Timers**,
+- and a **Weak coordinator**.
+
+So the real comparison is:
+
+| Protocol                    | Liveness ingredient       | Network assumption |
+| --------------------------- | ------------------------- | ------------------ |
+| Randomized binary consensus | common coin               | fully asynchronous |
+| DBFT                        | weak coordinator + timers | partial synchrony  |
+
+### Model and Parameters
+
+`DBFT` works with:
+
+- `n` processes;
+- up to `t` Byzantine processes;
+- authenticated point-to-point channels, so a Byzantine process cannot impersonate another process;
+- resilience condition `t < n/3`, equivalently `n >= 3t + 1`;
+- no signatures;
+- no randomization.
+
+The paper uses the model:
+
+```text
+BAMP_n,t[t < n/3]
+```
+
+for the asynchronous Byzantine message-passing setting with `t < n/3`.
+In that model, `DBFT` first gives only a **safe** binary consensus algorithm.
+Safe here means:
+
+- agreement,
+- validity,
+- but not guaranteed termination.
+
+To get termination, DBFT adds eventual synchrony:
+
+```text
+BAMP_n,t[t < n/3, 3Synch]
+```
+
+The `3Synch` assumption means that after some unknown finite time, message delays and computation delays become bounded.
+This is the point where `DBFT` leaves the fully asynchronous world of the previous paper.
+
+The important thresholds are:
+
+| Threshold | Meaning                                                                     |
+| --------- | --------------------------------------------------------------------------- |
+| `t + 1`   | at least one sender is non-faulty, so the value is not only Byzantine noise |
+| `2t + 1`  | enough support to BV-deliver a value into `bin_values`                      |
+| `n - t`   | enough AUX messages to ignore up to `t` faulty processes                    |
+
+When `n = 3t + 1`, notice that:
+
+```text
+n - t = 2t + 1
+```
+
+So the familiar `2t+1` quorum appears again.
+
+### The Safe Binary Core
+
+The safe binary core is the part that looks most similar to randomized binary consensus.
+Each process keeps:
+
+- `est`: its current estimate, initially its proposal;
+- `r`: the current asynchronous round;
+- `bin_values[r]`: values delivered by `BV-broadcast` in round `r`;
+- `values`: the set extracted from enough `AUX` messages.
+
+The round looks like this:
+
+```text
+est := initial value
+r := 0
+
+repeat:
+  r := r + 1
+
+  BV_broadcast EST[r](est)
+  wait until bin_values[r] is non-empty
+
+  broadcast AUX[r](bin_values[r])
+
+  wait for n-t AUX messages whose union forms a non-empty set values
+  such that values ⊆ bin_values[r]
+
+  b := r mod 2
+
+  if values = {v}:
+      est := v
+      if v = b:
+          decide(v)
+  else:
+      est := b
+```
+
+This is close to the previous algorithm, but two differences matter.
+
+First, `DBFT`'s `AUX` message carries a **set**:
+
+```text
+AUX[r](bin_values[r])
+```
+
+In the randomized algorithm, `AUX` carries one chosen value:
+
+```text
+AUX[r](w), where w ∈ bin_values[r]
+```
+
+Second, `DBFT` does not use:
+
+```text
+s := random()
+```
+
+It uses deterministic round parity:
+
+```text
+b := r mod 2
+```
+
+So if `values = {0,1}`, the process moves to `0` in even rounds and `1` in odd rounds.
+This gives a deterministic tie-breaker, but it is also exactly the weakness of the safe core:
+the adversary can predict it.
+
+### Why the safe core is not enough
+
+This is the crucial point.
+In randomized binary consensus, the split case:
+
+```text
+values = {0,1}
+```
+
+is resolved by the common coin.
+The adversary cannot know the coin result early enough to keep fighting it forever.
+
+In `DBFT`, the split case is resolved by a predictable rule:
+
+```text
+round 1 -> 1
+round 2 -> 0
+round 3 -> 1
+...
+```
+
+So in a fully asynchronous setting, the adversary can keep scheduling messages against this rule forever.
+Agreement and validity are still safe, but termination is no longer guaranteed.
+
+That is exactly the point where `DBFT` has to change the model.
+
+### Weak coordinator and timers
+
+To get liveness back, `DBFT` adds:
+
+- local timers;
+- increasing timeout values;
+- a rotating **weak coordinator**.
+
+The weak coordinator for round `r` is:
+
+```text
+coord(r) = ((r - 1) mod n) + 1
+```
+
+So the coordinator rotates deterministically:
+
+```text
+round 1 -> P1
+round 2 -> P2
+round 3 -> P3
+...
+```
+
+This is the most important design choice in the paper.
+The coordinator is **not** a PBFT-style leader.
+Processes do not wait for it before entering the round, and it cannot impose a value by itself.
+It only suggests a value that helps everyone converge if the network is timely enough.
+
+The live round now looks like this:
+
+```text
+BV-broadcast EST[r](est)
+wait until bin_values[r] is non-empty
+start / increase local timer
+
+coord := ((r - 1) mod n) + 1
+
+if I am coord:
+    pick the first value w that entered my bin_values[r]
+    broadcast COORD_VALUE[r](w)
+
+wait until bin_values[r] is non-empty and timer expires
+
+if valid COORD_VALUE[r](w) was received from coord
+and w ∈ bin_values[r]:
+    aux := {w}
+else:
+    aux := bin_values[r]
+
+broadcast AUX[r](aux)
+
+wait for n-t AUX messages
+wait until a valid values set exists and timer expires
+
+if multiple valid values sets exist
+and one of them is aux:
+    prefer aux
+
+then run the same decision logic:
+    b := r mod 2
+    if values = {v}: est := v; decide if v = b
+    else: est := b
+```
+
+The weak coordinator's job is only to help processes choose the same singleton set.
+If it is slow or faulty, the round can still continue from local `bin_values`.
+That is why the paper insists this is not a classic leader-based design.
+
+The liveness intuition is then:
+
+- after partial synchrony starts, message delays become bounded;
+- timers eventually become large enough;
+- eventually there is a round where the weak coordinator's value is received in time;
+- correct processes then send compatible `AUX` sets;
+- everyone converges to a singleton `values = {v}`;
+- when the singleton matches `r mod 2`, they decide.
+
+So `DBFT` trades the common coin for:
+
+- eventual synchrony,
+- timers,
+- and a weak coordinator that helps convergence but does not lead the protocol in the PBFT sense.
+
+### From binary consensus to blockchain values
+
+The binary core only decides `0` or `1`.
+But blockchains need to decide a full block, or at least a full proposal value.
+This is where the paper starts becoming a direct precursor to `Red Belly`.
+
+`DBFT` reduces multivalue consensus to many binary consensus instances.
+Very roughly:
+
+1. each process reliably broadcasts its proposal;
+2. there is one binary consensus object per process, `BIN_CONS[k]`;
+3. `BIN_CONS[k] = 1` means "process `Pk`'s proposal survives as a candidate";
+4. after the binary objects decide, processes extract the chosen proposal from that candidate set.
+
+The good-case latency is the part the paper highlights:
+
+- all non-faulty processes propose the same valid value;
+- reliable broadcast takes `3` message delays;
+- the binary consensus fast path takes `1` more message delay;
+- total is `4` message delays.
+
+This is the part that makes `DBFT` important for the next step.
+It is no longer just a binary consensus paper.
+It is already thinking like a blockchain protocol.
+
+### Why this modification matters
+
+So for me, the reason to read `DBFT` right after randomized binary consensus is not just historical.
+It shows exactly what has to change when we want to move from:
+
+- a clean randomized asynchronous binary protocol,
+
+to:
+
+- a deterministic protocol that can actually be pushed toward a blockchain setting.
+
+The main modification is therefore very specific:
+
+- remove the common coin,
+- accept partial synchrony,
+- add timers and a weak coordinator,
+- and keep the protocol leaderless in the sense that no classic leader controls the round.
+
+That is the step that makes `DBFT` the real setup for `Red Belly`.
+Without this step, the move from binary consensus to a deterministic leaderless blockchain protocol would feel much more abrupt.
+
+</details>
+
 ## Redbelly Blockchain
