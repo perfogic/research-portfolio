@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Randomized Binary Consensus Demo</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --surface: #0b1220;
+        --panel: #111827;
+        --panel-2: #182235;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --border: #334155;
+        --blue: #93c5fd;
+        --green: #34d399;
+        --pink: #fda4af;
+        --purple: #a78bfa;
+        --yellow: #fbbf24;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .demo {
+        width: min(1180px, calc(100vw - 32px));
+        height: 760px;
+        margin: 24px auto;
+        background: linear-gradient(180deg, #111827 0%, #0b1220 100%);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 18px;
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.82);
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 24px;
+        letter-spacing: -0.02em;
+      }
+
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+        max-width: 760px;
+        font-size: 14px;
+      }
+
+      .controls {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        max-width: 520px;
+      }
+
+      button,
+      select {
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+        padding: 9px 11px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 700;
+        font-size: 13px;
+      }
+
+      button:hover,
+      select:hover {
+        border-color: var(--blue);
+      }
+      button.primary {
+        background: #2563eb;
+        border-color: #3b82f6;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .content {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) 390px;
+        gap: 0;
+      }
+
+      .stage {
+        min-width: 0;
+        min-height: 0;
+        padding: 18px;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 14px;
+        border-right: 1px solid var(--border);
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        background: rgba(11, 18, 32, 0.88);
+        border-radius: 14px;
+        padding: 10px 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .card strong {
+        display: block;
+        color: var(--text);
+        font-size: 18px;
+        margin-top: 3px;
+      }
+
+      .ring {
+        position: relative;
+        min-height: 0;
+        height: 100%;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: radial-gradient(
+            circle at center,
+            rgba(96, 165, 250, 0.13),
+            transparent 34%
+          ),
+          linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.62));
+        overflow: hidden;
+      }
+
+      .ring::before {
+        content: "";
+        position: absolute;
+        inset: 64px;
+        border: 1px dashed rgba(148, 163, 184, 0.22);
+        border-radius: 999px;
+      }
+
+      .center {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 270px;
+        transform: translate(-50%, -50%);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 16px;
+        background: rgba(15, 23, 42, 0.92);
+        text-align: center;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+      }
+
+      .phase {
+        margin: 0 0 8px;
+        font-size: 22px;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+      }
+
+      .phase-pill {
+        display: inline-flex;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--purple);
+        color: #111827;
+        font-weight: 900;
+        font-size: 13px;
+        margin-bottom: 12px;
+      }
+
+      .center-note {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+        margin: 0;
+      }
+
+      .node {
+        --x: 50%;
+        --y: 50%;
+        position: absolute;
+        left: var(--x);
+        top: var(--y);
+        width: 164px;
+        transform: translate(-50%, -50%);
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .node.dense {
+        width: 132px;
+        gap: 5px;
+      }
+
+      .node-dot {
+        width: 46px;
+        height: 46px;
+        border-radius: 999px;
+        border: 2px solid var(--border);
+        background: #111827;
+        display: grid;
+        place-items: center;
+        font-weight: 900;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+      }
+
+      .node.decided .node-dot {
+        border-color: var(--green);
+        box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18);
+      }
+
+      .node-flag {
+        border: 1px solid var(--border);
+        background: rgba(11, 18, 32, 0.94);
+        border-radius: 12px;
+        padding: 7px 8px;
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.35;
+        white-space: nowrap;
+      }
+
+      .node.dense .node-flag {
+        font-size: 10px;
+        padding: 6px;
+      }
+
+      .flag-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .flag-row strong {
+        color: var(--text);
+      }
+
+      .value {
+        display: inline-flex;
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        color: #07111f;
+        font-size: 13px;
+      }
+
+      .v0 {
+        background: var(--pink);
+      }
+      .v1 {
+        background: var(--blue);
+      }
+      .set {
+        display: inline-flex;
+        gap: 2px;
+        align-items: center;
+      }
+
+      .trace {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        gap: 12px;
+        padding: 18px;
+      }
+
+      .trace h2 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      .rules {
+        display: grid;
+        gap: 8px;
+      }
+
+      .rule {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(11, 18, 32, 0.88);
+        padding: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .rule strong {
+        color: var(--text);
+      }
+
+      .log {
+        height: 310px;
+        overflow-y: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          monospace;
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        color: #d1d5db;
+        background: #070d19;
+        border-radius: 14px;
+        padding: 12px;
+        border: 1px solid var(--border);
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          monospace;
+        color: #c4b5fd;
+      }
+
+      @media (max-width: 980px) {
+        .demo {
+          height: auto;
+          min-height: 760px;
+        }
+        .topbar,
+        .content {
+          grid-template-columns: 1fr;
+        }
+        .controls {
+          justify-content: flex-start;
+          max-width: none;
+        }
+        .stage {
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+        }
+        .ring {
+          height: 560px;
+        }
+        .trace {
+          grid-template-rows: auto auto auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="demo">
+      <header class="topbar">
+        <div>
+          <h1>Randomized Binary Consensus Demo</h1>
+          <p class="subtitle">
+            A compact visualization of Lemma 5: each non-faulty process decides
+            with probability 1. Split estimates first converge through the
+            common coin; once estimates agree, each round has probability 1/2 of
+            deciding.
+          </p>
+        </div>
+        <div class="controls">
+          <button id="start" class="primary">Start</button>
+          <button id="next" disabled>Next step</button>
+          <button id="nextRound" disabled>Next round</button>
+          <button id="auto" disabled>Auto run</button>
+          <button id="reset">Reset</button>
+          <select id="nodeCount" aria-label="Node count">
+            <option value="4">4 nodes</option>
+            <option value="8">8 nodes</option>
+            <option value="12">12 nodes</option>
+          </select>
+          <select id="scenario" aria-label="Initial estimates">
+            <option value="split">Split estimates</option>
+            <option value="all1">All start 1</option>
+            <option value="all0">All start 0</option>
+            <option value="random" selected>Random estimates</option>
+          </select>
+        </div>
+      </header>
+
+      <section class="content">
+        <section class="stage">
+          <div id="summary" class="summary"></div>
+          <div id="ring" class="ring">
+            <div id="center" class="center"></div>
+          </div>
+        </section>
+
+        <aside class="trace">
+          <h2>Trace</h2>
+          <div id="rules" class="rules"></div>
+          <div id="log" class="log">Click Start to begin.</div>
+        </aside>
+      </section>
+    </main>
+
+    <script>
+      const phaseNames = [
+        "BV-broadcast",
+        "AUX broadcast",
+        "Collect AUX",
+        "Coin + update",
+      ];
+      const config = {
+        n: 4,
+        t: 1,
+        echoThreshold: 2,
+        deliverThreshold: 3,
+        auxThreshold: 3,
+        nodes: [],
+      };
+
+      let state;
+      let timer = null;
+
+      function clone(obj) {
+        return JSON.parse(JSON.stringify(obj));
+      }
+
+      function valueHtml(value) {
+        return `<span class="value v${value}">${value}</span>`;
+      }
+
+      function setHtml(values) {
+        if (!values || values.length === 0) return "∅";
+        return `<span class="set">{${values.map(valueHtml).join("")}}</span>`;
+      }
+
+      function sortedUnique(values) {
+        return [...new Set(values)].sort((a, b) => a - b);
+      }
+
+      function configure() {
+        config.n = Number(document.getElementById("nodeCount").value);
+        config.t = Math.floor((config.n - 1) / 3);
+        config.echoThreshold = config.t + 1;
+        config.deliverThreshold = 2 * config.t + 1;
+        config.auxThreshold = config.n - config.t;
+        config.nodes = Array.from(
+          { length: config.n },
+          (_, index) => `P${index + 1}`
+        );
+      }
+
+      function makeEstimates() {
+        const scenario = document.getElementById("scenario").value;
+        const estimates = {};
+        config.nodes.forEach((node, index) => {
+          if (scenario === "all1") estimates[node] = 1;
+          else if (scenario === "all0") estimates[node] = 0;
+          else if (scenario === "random")
+            estimates[node] = Math.random() < 0.5 ? 0 : 1;
+          else estimates[node] = index < Math.ceil(config.n / 2) ? 1 : 0;
+        });
+        return estimates;
+      }
+
+      function resetState() {
+        configure();
+        state = {
+          started: false,
+          round: 0,
+          step: 0,
+          estimates: makeEstimates(),
+          decided: {},
+          coin: null,
+          binValues: {},
+          auxSent: {},
+          values: {},
+          log: ["Click Start to begin."],
+        };
+        config.nodes.forEach((node) => (state.decided[node] = null));
+        stopAuto();
+        setButtons(false);
+        render();
+      }
+
+      function setButtons(enabled) {
+        document.getElementById("next").disabled = !enabled;
+        document.getElementById("nextRound").disabled = !enabled;
+        document.getElementById("auto").disabled = !enabled;
+      }
+
+      function addLog(line = "") {
+        state.log.push(line);
+        renderLog();
+      }
+
+      function renderLog() {
+        const el = document.getElementById("log");
+        el.textContent = state.log.join("\n");
+        el.scrollTop = el.scrollHeight;
+      }
+
+      function start() {
+        state.started = true;
+        state.round = 1;
+        state.step = 0;
+        state.log = [];
+        addLog(
+          `Start: n=${config.n}, t=${config.t}, thresholds: t+1=${config.echoThreshold}, 2t+1=${config.deliverThreshold}, n-t=${config.auxThreshold}`
+        );
+        addLog(`Initial estimates = ${formatEstimates()}`);
+        setButtons(true);
+        nextStep();
+      }
+
+      function commonCoin() {
+        return Math.random() < 0.5 ? 0 : 1;
+      }
+
+      function formatEstimates() {
+        return config.nodes
+          .map((node) => `${node}:${state.estimates[node]}`)
+          .join(", ");
+      }
+
+      function countEstimates() {
+        const counts = { 0: 0, 1: 0 };
+        config.nodes.forEach((node) => (counts[state.estimates[node]] += 1));
+        return counts;
+      }
+
+      function beginRound() {
+        state.coin = commonCoin();
+        state.binValues = {};
+        state.auxSent = {};
+        state.values = {};
+        config.nodes.forEach((node) => {
+          state.binValues[node] = [];
+          state.auxSent[node] = null;
+          state.values[node] = [];
+        });
+        addLog("");
+        addLog(`=== Round/View ${state.round} ===`);
+        addLog(`Common coin: s=${state.coin}`);
+        addLog(`Start estimates: ${formatEstimates()}`);
+      }
+
+      function bvBroadcastPhase() {
+        const counts = countEstimates();
+        const deliverable = [];
+        [0, 1].forEach((value) => {
+          if (counts[value] >= config.echoThreshold) deliverable.push(value);
+        });
+
+        config.nodes.forEach((node) => {
+          state.binValues[node] = deliverable.slice();
+        });
+
+        addLog("[Line 2-3] BV-broadcast EST");
+        addLog(`  Support: 0=${counts[0]}, 1=${counts[1]}`);
+        addLog(
+          `  Values with support >= t+1=${config.echoThreshold} are echoed and delivered to bin_values.`
+        );
+        addLog(`  Delivered values: {${deliverable.join(",")}}`);
+      }
+
+      function auxPhase() {
+        config.nodes.forEach((node) => {
+          const values = state.binValues[node];
+          state.auxSent[node] = values.includes(state.estimates[node])
+            ? state.estimates[node]
+            : values[0];
+        });
+
+        const auxCounts = { 0: 0, 1: 0 };
+        config.nodes.forEach((node) => (auxCounts[state.auxSent[node]] += 1));
+
+        addLog("[Line 4] AUX exchange");
+        addLog(`  AUX support: 0=${auxCounts[0]}, 1=${auxCounts[1]}`);
+      }
+
+      function valuesPhase() {
+        const auxMessages = config.nodes.map((node) => state.auxSent[node]);
+        const allAuxValues = sortedUnique(auxMessages);
+
+        config.nodes.forEach((node) => {
+          state.values[node] = allAuxValues.filter((value) =>
+            state.binValues[node].includes(value)
+          );
+        });
+
+        addLog(`[Line 5] Collect n-t=${config.auxThreshold} AUX messages`);
+        addLog(`  Visible AUX values: {${allAuxValues.join(",")}}`);
+        addLog(
+          "  Each node keeps only values already present in its bin_values set."
+        );
+      }
+
+      function updatePhase() {
+        addLog("[Line 6-10] Common coin + update/decide");
+        const nextEstimates = clone(state.estimates);
+
+        config.nodes.forEach((node) => {
+          const values = state.values[node];
+          if (values.length === 1) {
+            const value = values[0];
+            nextEstimates[node] = value;
+            if (value === state.coin && state.decided[node] === null) {
+              state.decided[node] = value;
+            }
+          } else {
+            nextEstimates[node] = state.coin;
+          }
+        });
+
+        state.estimates = nextEstimates;
+
+        const counts = countEstimates();
+        const allSame = config.nodes.every(
+          (node) => state.estimates[node] === state.estimates[config.nodes[0]]
+        );
+        const allDecided = config.nodes.every(
+          (node) => state.decided[node] !== null
+        );
+        addLog(`  End estimates: 0=${counts[0]}, 1=${counts[1]}`);
+
+        if (allDecided) {
+          addLog(`DONE: all nodes decided ${state.decided[config.nodes[0]]}.`);
+          addLog(
+            "Lemma 5 intuition: repeated common-coin rounds eventually hit the deciding coin value with probability 1."
+          );
+          setButtons(false);
+          stopAuto();
+        } else if (allSame) {
+          addLog(
+            "  All estimates agree. Future rounds decide when the coin matches this estimate."
+          );
+        } else {
+          addLog("  Estimates remain split. Continue to the next round/view.");
+        }
+      }
+
+      function nextStep() {
+        if (!state.started) return;
+
+        const phaseIndex = state.step % 4;
+        if (phaseIndex === 0) beginRound();
+        if (phaseIndex === 0) bvBroadcastPhase();
+        if (phaseIndex === 1) auxPhase();
+        if (phaseIndex === 2) valuesPhase();
+        if (phaseIndex === 3) {
+          updatePhase();
+          state.round += 1;
+        }
+
+        state.step += 1;
+        render();
+      }
+
+      function nextRound() {
+        if (!state.started) return;
+        const currentRound = state.round;
+        do {
+          nextStep();
+        } while (state.started && state.round === currentRound);
+      }
+
+      function stopAuto() {
+        if (timer) clearInterval(timer);
+        timer = null;
+        const auto = document.getElementById("auto");
+        if (auto) auto.textContent = "Auto run";
+      }
+
+      function toggleAuto() {
+        if (timer) {
+          stopAuto();
+          return;
+        }
+        document.getElementById("auto").textContent = "Stop auto";
+        timer = setInterval(() => {
+          nextRound();
+          const allDecided = config.nodes.every(
+            (node) => state.decided[node] !== null
+          );
+          if (allDecided || state.round > 40) stopAuto();
+        }, 850);
+      }
+
+      function currentPhaseName() {
+        return state.started ? phaseNames[state.step % 4] : "Not started";
+      }
+
+      function renderSummary() {
+        const counts = countEstimates();
+        const decidedCount = config.nodes.filter(
+          (node) => state.decided[node] !== null
+        ).length;
+        document.getElementById("summary").innerHTML = `
+        <div class="card">Round/View<strong>${
+          state.started ? state.round : "-"
+        }</strong></div>
+        <div class="card">Next Phase<strong>${currentPhaseName()}</strong></div>
+        <div class="card">Coin<strong>${
+          state.coin === null ? "-" : state.coin
+        }</strong></div>
+        <div class="card">Estimates<strong>0:${counts[0]} / 1:${
+          counts[1]
+        } / D:${decidedCount}</strong></div>
+      `;
+      }
+
+      function renderCenter() {
+        document.getElementById("center").innerHTML = `
+        <div class="phase">${
+          state.started ? `Round ${state.round}` : "Ready"
+        }</div>
+        <div class="phase-pill">Next: ${currentPhaseName()}</div>
+        <p class="center-note">
+          n=${config.n}, t=${config.t}<br />
+          thresholds: t+1=${config.echoThreshold}, 2t+1=${
+          config.deliverThreshold
+        }, n-t=${config.auxThreshold}
+        </p>
+      `;
+      }
+
+      function nodeClass() {
+        if (config.n >= 12) return "node dense";
+        return "node";
+      }
+
+      function renderNodes() {
+        const ring = document.getElementById("ring");
+        ring.querySelectorAll(".node").forEach((node) => node.remove());
+
+        const radius = config.n >= 12 ? 41 : config.n >= 8 ? 39 : 36;
+        const baseClass = nodeClass();
+
+        config.nodes.forEach((node, index) => {
+          const angle = -90 + (360 * index) / config.n;
+          const radians = (angle * Math.PI) / 180;
+          const x = 50 + radius * Math.cos(radians);
+          const y = 50 + radius * Math.sin(radians);
+          const decided = state.decided[node];
+
+          const el = document.createElement("div");
+          el.className = `${baseClass} ${decided !== null ? "decided" : ""}`;
+          el.style.setProperty("--x", `${x}%`);
+          el.style.setProperty("--y", `${y}%`);
+          el.title = `${node}: est=${state.estimates[node]}, bin=${
+            (state.binValues[node] || []).join(",") || "∅"
+          }, aux=${state.auxSent[node] ?? "-"}, values=${
+            (state.values[node] || []).join(",") || "∅"
+          }, decided=${decided ?? "-"}`;
+          el.innerHTML = `
+          <div class="node-dot">${node}</div>
+          <div class="node-flag">
+            <div class="flag-row"><strong>E</strong>${valueHtml(
+              state.estimates[node]
+            )}</div>
+            <div class="flag-row"><strong>B</strong>${setHtml(
+              state.binValues[node] || []
+            )}</div>
+            <div class="flag-row"><strong>A</strong>${
+              state.auxSent[node] === null || state.auxSent[node] === undefined
+                ? "-"
+                : valueHtml(state.auxSent[node])
+            }</div>
+            <div class="flag-row"><strong>V</strong>${setHtml(
+              state.values[node] || []
+            )}</div>
+            ${
+              decided !== null
+                ? `<div class="flag-row"><strong>D</strong>${valueHtml(
+                    decided
+                  )}</div>`
+                : ""
+            }
+          </div>
+        `;
+          ring.appendChild(el);
+        });
+      }
+
+      function renderRules() {
+        document.getElementById("rules").innerHTML = `
+        <div class="rule"><strong>BV:</strong> <code>t+1</code> support makes a value echoable; <code>2t+1</code> support puts it in <code>bin_values</code>.</div>
+        <div class="rule"><strong>AUX:</strong> a node sends one value already present in its <code>bin_values</code>.</div>
+        <div class="rule"><strong>Line 5:</strong> a node waits for <code>n-t</code> AUX messages and builds <code>values</code>.</div>
+        <div class="rule"><strong>Coin:</strong> <code>{v}</code> decides if <code>s=v</code>; <code>{0,1}</code> sets next estimate to <code>s</code>.</div>
+      `;
+      }
+
+      function render() {
+        renderSummary();
+        renderCenter();
+        renderNodes();
+        renderRules();
+        renderLog();
+        document.getElementById("start").disabled = state.started;
+      }
+
+      document.getElementById("start").addEventListener("click", start);
+      document.getElementById("next").addEventListener("click", nextStep);
+      document.getElementById("nextRound").addEventListener("click", nextRound);
+      document.getElementById("auto").addEventListener("click", toggleAuto);
+      document.getElementById("reset").addEventListener("click", resetState);
+      document
+        .getElementById("scenario")
+        .addEventListener("change", resetState);
+      document
+        .getElementById("nodeCount")
+        .addEventListener("change", resetState);
+
+      resetState();
+    </script>
+  </body>
+</html>
