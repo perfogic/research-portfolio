@@ -14,7 +14,7 @@ cv_label: "CV"
 
 I graduated two years ago with an Excellent Engineer degree in Computer Science from Hanoi University of Science and Technology, Vietnam.
 
-My path into blockchain began earlier, around four years ago while I was still a student. Since then, I have worked on different kinds of decentralized applications, including NFT marketplaces, DeFi systems such as AMM V3 design, and cross-chain bridge systems for Cosmos-to-TON and Cosmos-to-Solana interoperability.
+My path into blockchain began earlier, around four years ago while I was still a student. Since then, I have worked on different kinds of decentralized applications, including NFT marketplaces, DeFi systems such as AMM V3 design, and cross-chain bridge systems for Cosmos-to-TON and Bitcoin-to-Cosmos interoperability following IBC protocol (Light Client and State verification).
 
 That bridge work was especially important for me because it required understanding how to build light clients, how validator signatures can be used to prove that a block is valid, and how consensus assumptions shape what can actually be verified across chains.
 
