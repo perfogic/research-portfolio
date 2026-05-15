@@ -711,6 +711,60 @@ function renderError(root, error) {
   root.innerHTML = `<p class="error-block">${escapeHtml(error.message)}</p>`;
 }
 
+function highlightToken(token) {
+  const keywords = new Set([
+    "if",
+    "else",
+    "repeat",
+    "wait",
+    "until",
+    "broadcast",
+    "on",
+    "receipt",
+    "from",
+    "distinct",
+    "processes",
+    "decide",
+    "return",
+    "while",
+    "for",
+    "function",
+    "let",
+    "const",
+  ]);
+
+  if (/^\d+$/.test(token)) {
+    return `<span class="code-number">${token}</span>`;
+  }
+
+  if (keywords.has(token)) {
+    return `<span class="code-keyword">${token}</span>`;
+  }
+
+  if (/^(EST|AUX|B_VAL|BV|QC|PREPARE|COMMIT)$/.test(token)) {
+    return `<span class="code-constant">${token}</span>`;
+  }
+
+  if (/^(:=|!=|==|<=|>=|[≤≥∪{}()[\]+\-*/=])$/.test(token)) {
+    return `<span class="code-operator">${escapeHtml(token)}</span>`;
+  }
+
+  return escapeHtml(token);
+}
+
+function localHighlightCode(block) {
+  const text = block.textContent;
+  const tokens = text.split(/([A-Za-z_][A-Za-z0-9_]*|\d+|:=|!=|==|<=|>=|[≤≥∪{}()[\]+\-*/=])/g);
+  block.innerHTML = tokens.map((token) => highlightToken(token)).join("");
+  block.classList.add("local-highlight");
+}
+
+function highlightCodeBlocks() {
+  document.querySelectorAll("pre code").forEach((block) => {
+    localHighlightCode(block);
+  });
+}
+
 async function init() {
   try {
     const manifest = await loadManifest();
@@ -747,6 +801,7 @@ async function init() {
       );
     }
     await Promise.all(tasks);
+    highlightCodeBlocks();
   } catch (error) {
     Object.values(roots).forEach((root) => {
       if (root) {

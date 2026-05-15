@@ -110,7 +110,7 @@ So `bin_values` eventually becomes non-empty at every correct process.
 
 After `BV-broadcast`, the consensus round itself looks like this:
 
-```text
+```javascript
 repeat each round r:
   BV_broadcast EST[r](est)
   wait until bin_values[r] is non-empty
@@ -157,7 +157,7 @@ This is the split case.
 No decision happens yet.
 Instead, every correct process sets:
 
-```text
+```javascript
 est := common_coin(r)
 ```
 
@@ -268,307 +268,352 @@ The important behavior to watch is:
 
 </details>
 
-## DBFT
-
 <details>
-<summary>DBFT: Deterministic Leaderless Consensus</summary>
+<summary>DBFT: Binary Consensus</summary>
 
-Randomized binary consensus solves liveness with a common coin. `DBFT` tries to solve the same problem without one. That single change ends up shifting the whole protocol:
+`DBFT` is a leaderless Byzantine consensus protocol for blockchains.\
+It is based on the same basic idea as the randomized binary consensus algorithm we discussed above, which is to let processes complete asynchronous rounds as soon as they receive a threshold of messages, instead of waiting for a coordinator message that may be slow or faulty.
 
-> From full asynchrony to partial synchrony, and from probabilistic termination to deterministic termination.
+The main difference is in how liveness is achieved. The randomized binary algorithm uses a **common coin** to resolve split cases in a fully asynchronous setting.\
+`DBFT` removes that **common coin** and instead moves to a deterministic path to convergence under partial synchrony by adding additional ingredients.
 
-In the randomized algorithm, liveness comes from:
+### 1. BV-broadcast
 
-- full asynchrony,
-- `BV-broadcast`,
-- `AUX`,
-- and a **Common Coin**.
+The first building block is still `BV-broadcast`.
+This part is basically the same as in the randomized paper, we only remind the properties:
 
-In `DBFT`, the safe binary core still looks very similar, but the common coin disappears. Instead, liveness now comes from:
+- `BV-Obligation`: if at least `t+1` non-faulty processes `BV-broadcast(v)`, eventually every non-faulty process puts `v` in `bin_values`.
+- `BV-Justification`: if a non-faulty process has `v ∈ bin_values`, then some non-faulty process really broadcast `v`.
+- `BV-Uniformity`: if one non-faulty process delivers `v`, eventually every non-faulty process delivers `v`.
+- `BV-Termination`: every non-faulty process eventually gets a non-empty `bin_values`.
 
-- **Partial synchrony**,
-- **Timers**,
-- and a **Weak coordinator**.
+`BV-broadcast` is only a broadcast abstraction for binary values and its mission is to ensure that values supported only by Byzantine nodes do not survive as valid candidates.
 
-So the real comparison is:
+### 2. Safe Binary Consensus Algorithm
 
-| Protocol                    | Liveness ingredient       | Network assumption |
-| --------------------------- | ------------------------- | ------------------ |
-| Randomized binary consensus | common coin               | fully asynchronous |
-| DBFT                        | weak coordinator + timers | partial synchrony  |
+The second layer is `bin_propose`, the binary consensus algorithm.
+This is the simplified binary Byzantine consensus algorithm of `DBFT`
 
-### Model and Parameters
+**Pseudo code**:
 
-`DBFT` works with:
+```javascript
+bin_propose(val):
+  est := val
+  r := 0
 
-- `n` processes;
-- up to `t` Byzantine processes;
-- authenticated point-to-point channels, so a Byzantine process cannot impersonate another process;
-- resilience condition `t < n/3`, equivalently `n >= 3t + 1`;
-- no signatures;
-- no randomization.
+  repeat:
+    r := r + 1
 
-The paper uses the model:
+    BV-broadcast EST[r](est)
+    wait until bin_values[r] != ∅
 
-```text
-BAMP_n,t[t < n/3]
+    broadcast AUX[r](bin_values[r])
+
+    wait until there exist n-t AUX messages
+    whose union is values
+    and values ⊆ bin_values[r]
+
+    b := r mod 2
+
+    if values = {v}:
+        est := v
+        if v = b:
+            decide(v)
+    else:
+        est := b
 ```
 
-for the asynchronous Byzantine message-passing setting with `t < n/3`.
-In that model, `DBFT` first gives only a **safe** binary consensus algorithm.
-Safe here means:
+The key difference from randomized binary consensus is **exactly one line**.
 
-- agreement,
-- validity,
-- but not guaranteed termination.
+Before:
 
-To get termination, DBFT adds eventual synchrony:
-
-```text
-BAMP_n,t[t < n/3, 3Synch]
+```javascript
+values = {0,1} -> est := common_coin(r)
 ```
 
-The `3Synch` assumption means that after some unknown finite time, message delays and computation delays become bounded.
-This is the point where `DBFT` leaves the fully asynchronous world of the previous paper.
+Now:
 
-The important thresholds are:
-
-| Threshold | Meaning                                                                     |
-| --------- | --------------------------------------------------------------------------- |
-| `t + 1`   | at least one sender is non-faulty, so the value is not only Byzantine noise |
-| `2t + 1`  | enough support to BV-deliver a value into `bin_values`                      |
-| `n - t`   | enough AUX messages to ignore up to `t` faulty processes                    |
-
-When `n = 3t + 1`, notice that:
-
-```text
-n - t = 2t + 1
+```javascript
+values = {0,1} -> est := r mod 2
 ```
 
-So the familiar `2t+1` quorum appears again.
+We can realize that the algorithm doesn't use the unpredictable shared bit, which is enough for safety, except for liveness.
 
-### The Safe Binary Core
+This core gives safety, but not liveness.
 
-The safe binary core is the part that looks most similar to randomized binary consensus.
-Each process keeps:
+#### Validity
 
-- `est`: its current estimate, initially its proposal;
-- `r`: the current asynchronous round;
-- `bin_values[r]`: values delivered by `BV-broadcast` in round `r`;
-- `values`: the set extracted from enough `AUX` messages.
+If all correct processes start with the same value `v`, then only `v` can ever be decided.
 
-The round looks like this:
+**Proof**:\
+If all correct processes start with `v`, then only `v` is `BV-broadcast` by correct processes in the first round.\
+By `BV-Justification`, a value can enter `bin_values` only if some correct process broadcast it.
+So `1-v` cannot appear in `bin_values` at any correct process.\
+Then every correct `AUX` message is also built only from sets containing `v`, so the protocol never creates a justified path toward deciding `1-v`.
 
-```text
-est := initial value
-r := 0
+#### Agreement
 
-repeat:
-  r := r + 1
+No two correct processes can decide different values.
 
-  BV_broadcast EST[r](est)
-  wait until bin_values[r] is non-empty
+**Proof**:
+Let `r` be the first round in which some correct process decides, and suppose it decides `v`.
+This means that process reached:
 
-  broadcast AUX[r](bin_values[r])
-
-  wait for n-t AUX messages whose union forms a non-empty set values
-  such that values ⊆ bin_values[r]
-
-  b := r mod 2
-
-  if values = {v}:
-      est := v
-      if v = b:
-          decide(v)
-  else:
-      est := b
+```javascript
+values = {v}
+and v = r mod 2
 ```
 
-This is close to the previous algorithm, but two differences matter.
+Now look at any other correct process in the same round.
+There are only two possibilities.
 
-First, `DBFT`'s `AUX` message carries a **set**:
+First, it also sees a singleton set. But two correct processes cannot see different singleton sets in the same round according to `BV-Broadcast`. So if it sees a singleton, it must be the same singleton `{v}`, and it also decides `v`.
 
-```text
-AUX[r](bin_values[r])
-```
+Second, it does not see a singleton.
+Then the only remaining case is:
 
-In the randomized algorithm, `AUX` carries one chosen value:
-
-```text
-AUX[r](w), where w ∈ bin_values[r]
-```
-
-Second, `DBFT` does not use:
-
-```text
-s := random()
-```
-
-It uses deterministic round parity:
-
-```text
-b := r mod 2
-```
-
-So if `values = {0,1}`, the process moves to `0` in even rounds and `1` in odd rounds.
-This gives a deterministic tie-breaker, but it is also exactly the weakness of the safe core:
-the adversary can predict it.
-
-### Why the safe core is not enough
-
-This is the crucial point.
-In randomized binary consensus, the split case:
-
-```text
+```javascript
 values = {0,1}
 ```
 
-is resolved by the common coin.
-The adversary cannot know the coin result early enough to keep fighting it forever.
+and the algorithm updates:
 
-In `DBFT`, the split case is resolved by a predictable rule:
-
-```text
-round 1 -> 1
-round 2 -> 0
-round 3 -> 1
-...
+```javascript
+est := r mod 2 = v
 ```
 
-So in a fully asynchronous setting, the adversary can keep scheduling messages against this rule forever.
-Agreement and validity are still safe, but termination is no longer guaranteed.
+So whether a correct process decides in round `r` or not, after round `r` every correct process carries the same estimate `v` into round `r+1`.
+Once all correct processes start a round with the same estimate, they keep that estimate forever.
+So no later round can lead a correct process to decide `1-v`.
 
-That is exactly the point where `DBFT` has to change the model.
+#### Why termination is not guaranteed
 
-### Weak coordinator and timers
+Termination does not follow in the fully asynchronous model.
 
-To get liveness back, `DBFT` adds:
+The issue appears exactly at these two lines:
 
-- local timers;
-- increasing timeout values;
-- a rotating **weak coordinator**.
-
-The weak coordinator for round `r` is:
-
-```text
-coord(r) = ((r - 1) mod n) + 1
-```
-
-So the coordinator rotates deterministically:
-
-```text
-round 1 -> P1
-round 2 -> P2
-round 3 -> P3
-...
-```
-
-This is the most important design choice in the paper.
-The coordinator is **not** a PBFT-style leader.
-Processes do not wait for it before entering the round, and it cannot impose a value by itself.
-It only suggests a value that helps everyone converge if the network is timely enough.
-
-The live round now looks like this:
-
-```text
-BV-broadcast EST[r](est)
-wait until bin_values[r] is non-empty
-start / increase local timer
-
-coord := ((r - 1) mod n) + 1
-
-if I am coord:
-    pick the first value w that entered my bin_values[r]
-    broadcast COORD_VALUE[r](w)
-
-wait until bin_values[r] is non-empty and timer expires
-
-if valid COORD_VALUE[r](w) was received from coord
-and w ∈ bin_values[r]:
-    aux := {w}
+```javascript
+if values = {v}:
+    est := v
 else:
-    aux := bin_values[r]
-
-broadcast AUX[r](aux)
-
-wait for n-t AUX messages
-wait until a valid values set exists and timer expires
-
-if multiple valid values sets exist
-and one of them is aux:
-    prefer aux
-
-then run the same decision logic:
-    b := r mod 2
-    if values = {v}: est := v; decide if v = b
-    else: est := b
+    est := r mod 2
 ```
 
-The weak coordinator's job is only to help processes choose the same singleton set.
-If it is slow or faulty, the round can still continue from local `bin_values`.
-That is why the paper insists this is not a classic leader-based design.
+These two branches can push the next estimate in different directions.
 
-The liveness intuition is then:
+If a process sees a singleton set such as `{0}` or `{1}`, it keeps that value for the next round.
+But if a process sees the mixed set `{0,1}`, it follows the deterministic parity rule `r mod 2`.
 
-- after partial synchrony starts, message delays become bounded;
-- timers eventually become large enough;
-- eventually there is a round where the weak coordinator's value is received in time;
-- correct processes then send compatible `AUX` sets;
-- everyone converges to a singleton `values = {v}`;
-- when the singleton matches `r mod 2`, they decide.
+In a fully asynchronous network, a Byzantine adversary can exploit message delays so that correct processes do not all reach the same branch at the same time.
+Intuitively, one part of the system may already see a singleton set such as `{0}` or `{1}`, while another part is still stuck with the mixed set `{0,1}`.
 
-So `DBFT` trades the common coin for:
+At that point, different correct processes update their estimates using different rules:
 
-- eventual synchrony,
-- timers,
-- and a weak coordinator that helps convergence but does not lead the protocol in the PBFT sense.
+- one side keeps the singleton value;
+- the other side follows `r mod 2`.
 
-### From binary consensus to blockchain values
+=> The liveness is attacked here.
 
-The binary core only decides `0` or `1`.
-But blockchains need to decide a full block, or at least a full proposal value.
-This is where the paper starts becoming a direct precursor to `Red Belly`.
+### 3. Safe and Liveness Binary Consensus Algorithm
 
-`DBFT` reduces multivalue consensus to many binary consensus instances.
-Very roughly:
+To recover liveness, the paper does not replace `bin_propose`.
+It keeps the same safe core, then adds a few new lines around it.
 
-1. each process reliably broadcasts its proposal;
-2. there is one binary consensus object per process, `BIN_CONS[k]`;
-3. `BIN_CONS[k] = 1` means "process `Pk`'s proposal survives as a candidate";
-4. after the binary objects decide, processes extract the chosen proposal from that candidate set.
+The live version is still the same named operation:
 
-The good-case latency is the part the paper highlights:
+```javascript
+bin_propose(val):
+  r := 0
+  timeout := 0
 
-- all non-faulty processes propose the same valid value;
-- reliable broadcast takes `3` message delays;
-- the binary consensus fast path takes `1` more message delay;
-- total is `4` message delays.
+  repeat:
+    r := r + 1
 
-This is the part that makes `DBFT` important for the next step.
-It is no longer just a binary consensus paper.
-It is already thinking like a blockchain protocol.
+    BV-broadcast EST[r](val)
+    start timer(r)
 
-### Why this modification matters
+    if I am the coordinator of round r:
+        wait until bin_values[r] = {w}
+        broadcast COORD[r](w)
 
-So for me, the reason to read `DBFT` right after randomized binary consensus is not just historical.
-It shows exactly what has to change when we want to move from:
+    wait until bin_values[r] != ∅ and timer expired
 
-- a clean randomized asynchronous binary protocol,
+    if coordinator value c was received and c ∈ bin_values[r]:
+        e := {c}
+    else:
+        e := bin_values[r]
 
-to:
+    broadcast AUX[r](e)
 
-- a deterministic protocol that can actually be pushed toward a blockchain setting.
+    wait until there exists a set s extracted from AUX messages such that:
+        every value seen in AUX from n-f processes belongs to s
+        and every value in s already belongs to bin_values[r]
 
-The main modification is therefore very specific:
+    if s = {v}:
+        val := v
+        if v = r mod 2 and not decided yet:
+            decide(v)
+    else:
+        val := r mod 2
 
-- remove the common coin,
-- accept partial synchrony,
-- add timers and a weak coordinator,
-- and keep the protocol leaderless in the sense that no classic leader controls the round.
+    if decided in round r-2:
+        exit()
+```
 
-That is the step that makes `DBFT` the real setup for `Red Belly`.
-Without this step, the move from binary consensus to a deterministic leaderless blockchain protocol would feel much more abrupt.
+The real change happens before `AUX`.
+
+- Each round now has a timer.
+- Round `r` has a weak coordinator.
+- If the coordinator quickly sees `bin_values[r] = {w}`, it broadcasts `COORD[r](w)`.
+- If a process receives that value in time, and that same value is already in its own `bin_values[r]`, then it sends `AUX[r]({w})`.
+- Otherwise, it just sends `AUX` from its own local view, as before.
+
+So the coordinator does not force the system onto a value.
+It only tries to make many correct processes send the same singleton `AUX` in the same round.
+
+That is why the paper calls it a weak coordinator.\
+If the coordinator is slow or Byzantine, the protocol still continues from the local `bin_values[r]`.\
+If the coordinator is correct and its message arrives before the timer expires, then many correct processes send `AUX[r]({w})`, and that is what pulls the system out of the split case.
+
+#### Why these additions recover liveness
+
+The proof intuition is now the opposite of the safe asynchronous failure mode.
+
+- before synchrony, timers may still be too small and the coordinator message may arrive too late;
+- after synchrony, timeout values eventually become large enough;
+- eventually there is a round where the weak coordinator is correct and its message is received in time.
+
+Call the coordinator's suggested value `w`.
+In that round, every correct process receives:
+
+```javascript
+COORD(r, w);
+```
+
+before its timer expires, and also has `w ∈ bin_values[r]`.
+So all correct processes set:
+
+```javascript
+e < -{ w };
+```
+
+and broadcast the same singleton `AUX`.
+Then all correct processes receive that singleton from `n-f` different processes, and the wait predicate lets them all set:
+
+```javascript
+s = { w };
+```
+
+From that point, the old safe-core logic is enough again:
+
+- either they decide immediately if `w = r mod 2`;
+- or they all keep estimate `w` and decide in one of the next two rounds.
+
+So the real tradeoff is:
+
+- randomized consensus: **full asynchrony + common coin**
+- `DBFT`: **partial synchrony + weak coordinator + timers**
 
 </details>
 
-## Redbelly Blockchain
+<details>
+<summary>DBFT: Multivalue Consensus and Red Belly</summary>
+
+Up to this point, `DBFT` is still only a binary consensus protocol.
+The next layer is how the paper lifts that binary core into multivalue consensus, and from there into `Red Belly Blockchain`.
+
+The last layer is `mv_propose`, the multivalue consensus layer.
+This is where the paper stops being only about binary agreement and starts looking like a blockchain protocol.
+
+There is one binary consensus object per process:
+
+- `BIN_CONS[1]`
+- `BIN_CONS[2]`
+- ...
+- `BIN_CONS[n]`
+
+and `BIN_CONS[k]` answers one question:
+
+> should process `Pk`'s proposal survive as a candidate?
+
+The paper gives the following reduction:
+
+```javascript
+mv_propose(vi):
+  RB_broadcast VAL(vi)
+
+  repeat:
+    if there exists k such that proposals[k] != ⊥
+    and BIN_CONS[k] not yet invoked:
+        invoke BIN_CONS[k].bin_propose(-1)
+  until there exists ℓ such that bin_decisions[ℓ] = 1
+
+  for each k such that BIN_CONS[k] not yet invoked:
+      invoke BIN_CONS[k].bin_propose(0)
+
+  wait until all bin_decisions[x] != ⊥
+
+  j := min { x such that bin_decisions[x] = 1 }
+  wait until proposals[j] != ⊥
+  decide(proposals[j])
+```
+
+The easiest way to read it is in four phases.
+
+#### Phase 1: reliably broadcast proposals
+
+Each process first reliably broadcasts its own proposal:
+
+```javascript
+RB_broadcast VAL(vi)
+```
+
+When process `Pi` reliably delivers a valid proposal from `Pk`, it stores it in `proposals[k]`.
+
+#### Phase 2: start the promising binary instances
+
+For each delivered proposal, `Pi` starts the corresponding binary object:
+
+```javascript
+BIN_CONS[k].bin_propose(-1);
+```
+
+The special input `-1` is an optimization.
+It tells the binary instance to skip the normal `BV-broadcast` path and enter the fast path immediately.
+
+This is what gives the good-case speedup:
+if all non-faulty processes reliably deliver the same valid proposal quickly, the corresponding binary instance can decide `1` after only one more message delay.
+
+#### Phase 3: terminate the remaining instances
+
+As soon as some binary instance decides `1`, every still-unstarted instance is launched with:
+
+```javascript
+BIN_CONS[k].bin_propose(0);
+```
+
+This phase is not about finding the winner.
+It is only about forcing the remaining binary instances to terminate.
+
+#### Phase 4: choose the final proposal
+
+After all binary instances terminate, process `Pi` chooses:
+
+```javascript
+j := min { x such that bin_decisions[x] = 1 }
+```
+
+and decides `proposals[j]`.
+
+So the binary layer is not deciding the final block directly.
+It is deciding which proposer indices survive, and then the multivalue layer picks the smallest surviving index.
+
+This also explains the `4`-message-delay good case:
+
+- `3` message delays for reliable broadcast,
+- `1` more for the optimized binary fast path.
+
+This is why `DBFT` is the real setup for `Red Belly`.
+It is the point where the protocol becomes deterministic, leaderless, and already shaped like a blockchain consensus rather than just a binary-consensus algorithm.
+
+</details>

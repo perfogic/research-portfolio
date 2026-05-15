@@ -403,9 +403,39 @@ details summary,
 
 .markdown-body pre {
   overflow-x: auto;
-  padding: 12px;
+  margin: 16px 0;
+  padding: 16px 18px;
   border: 1px solid var(--line);
   background: #faf8f3;
+}
+
+.markdown-body pre code {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.95rem;
+  line-height: 1.65;
+  white-space: pre;
+}
+
+.markdown-body pre code.local-highlight .code-keyword {
+  color: #9b351f;
+  font-weight: 600;
+}
+
+.markdown-body pre code.local-highlight .code-number {
+  color: #246a45;
+}
+
+.markdown-body pre code.local-highlight .code-constant {
+  color: #1f5f8f;
+  font-weight: 600;
+}
+
+.markdown-body pre code.local-highlight .code-operator {
+  color: #7a4e17;
 }
 
 .markdown-body blockquote {
