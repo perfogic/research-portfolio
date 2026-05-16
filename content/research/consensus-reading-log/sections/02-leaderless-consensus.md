@@ -259,7 +259,7 @@ The important behavior to watch is:
 </details>
 
 <details>
-<summary>DBFT: Binary Consensus</summary>
+<summary>DBFT: Deterministic Leaderless Consensus</summary>
 
 `DBFT` is a leaderless Byzantine consensus protocol for blockchains.\
 It is based on the same basic idea as the randomized binary consensus algorithm we discussed above, which is to let processes complete asynchronous rounds as soon as they receive a threshold of messages, instead of waiting for a coordinator message that may be slow or faulty.
@@ -531,29 +531,33 @@ The protocol is back in the easy case:
 - if `w = r mod 2`, they decide in that round;
 - otherwise, they all keep `val := w`, and decision follows in one of the next two rounds.
 
-</details>
+### 4. DBFT with Multivalue Consensus
 
-<details>
-<summary>DBFT: Multivalue Consensus and Red Belly</summary>
+Up to this point, `DBFT` can only decide a bit.
+That is enough for binary consensus, but not enough for blockchain consensus, where the protocol has to decide an actual proposal.
 
-Up to this point, `DBFT` is still only a binary consensus protocol.
-The next layer is how the paper lifts that binary core into multivalue consensus, and from there into `Red Belly Blockchain`.
+So the next step is a reduction from multivalue consensus to many binary consensus instances.
+The operation is `mv_propose`.
 
-The last layer is `mv_propose`, the multivalue consensus layer.
-This is where the paper stops being only about binary agreement and starts looking like a blockchain protocol.
+The idea is simple:
 
-There is one binary consensus object per process:
+- every proposer reliably broadcasts its own proposal;
+- there is one binary consensus instance per proposer;
+- each binary instance decides whether that proposal survives as a candidate;
+- then the protocol picks one surviving proposal deterministically.
+
+So if there are `n` proposers, there are also `n` binary objects:
 
 - `BIN_CONS[1]`
 - `BIN_CONS[2]`
 - ...
 - `BIN_CONS[n]`
 
-and `BIN_CONS[k]` answers one question:
+And `BIN_CONS[k]` answers only one question:
 
-> should process `Pk`'s proposal survive as a candidate?
+> does the proposal from process `Pk` survive?
 
-The paper gives the following reduction:
+The reduction is:
 
 ```javascript
 mv_propose(vi):
@@ -575,7 +579,7 @@ mv_propose(vi):
   decide(proposals[j])
 ```
 
-The easiest way to read it is in four phases.
+The flow is easier to see in four phases.
 
 #### Phase 1: reliably broadcast proposals
 
@@ -589,7 +593,7 @@ When process `Pi` reliably delivers a valid proposal from `Pk`, it stores it in 
 
 #### Phase 2: start the promising binary instances
 
-For each delivered proposal, `Pi` starts the corresponding binary object:
+For each proposal that has already been delivered, `Pi` starts the corresponding binary object:
 
 ```javascript
 BIN_CONS[k].bin_propose(-1);
@@ -622,15 +626,27 @@ j := min { x such that bin_decisions[x] = 1 }
 
 and decides `proposals[j]`.
 
-So the binary layer is not deciding the final block directly.
-It is deciding which proposer indices survive, and then the multivalue layer picks the smallest surviving index.
+So the binary layer is not deciding the final proposal directly.
+It is only deciding which proposer indices survive.
+Then the multivalue layer applies one deterministic tie-break rule: pick the smallest surviving index.
 
 This also explains the `4`-message-delay good case:
 
 - `3` message delays for reliable broadcast,
 - `1` more for the optimized binary fast path.
 
-This is why `DBFT` is the real setup for `Red Belly`.
-It is the point where the protocol becomes deterministic, leaderless, and already shaped like a blockchain consensus rather than just a binary-consensus algorithm.
+</details>
+
+<details>
+<summary>Red Belly Blockchain</summary>
+
+`DBFT` with multivalue consensus is the bridge to `Red Belly Blockchain`.
+The binary layer already tells us which proposer indices survive, and the multivalue layer already turns that into blockchain-style consensus.
+
+`Red Belly` goes one step further.
+Instead of stopping at one surviving proposal, it reconciles multiple valid and non-conflicting proposals into one final superblock.
+
+So the shift from `DBFT` to `Red Belly` is no longer about binary safety or liveness.
+It is about how to use that deterministic leaderless core to build a higher-throughput blockchain that can combine proposals instead of throwing most of them away.
 
 </details>
