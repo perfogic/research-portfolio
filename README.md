@@ -13,7 +13,7 @@ The goal is to turn paper reading into material that is useful for younger devel
 
 ## Content Use
 
-Please do not clone, mirror, or republish the content wholesale without permission.
+Please do not mirror, or republish the content wholesale without permission.
 
 You are welcome to:
 
