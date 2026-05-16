@@ -48,7 +48,7 @@ Its role is to make sure that a value broadcast only by Byzantine processes is n
 The pseudo-algorithm is essentially:
 
 ```javascript
-BV_broadcast(v):
+function BV_broadcast(v):
     broadcast B_VAL(v)
 
 on receipt of B_VAL(v) from t+1 distinct processes:
@@ -111,23 +111,26 @@ So `bin_values` eventually becomes non-empty at every correct process.
 After `BV-broadcast`, the consensus round itself looks like this:
 
 ```javascript
-repeat each round r:
-  BV_broadcast EST[r](est)
-  wait until bin_values[r] is non-empty
+function bin_propose(vi):
+  est = vi
+  r = 0
+  repeat each round r:
+    BV_broadcast EST[r](est)
+    wait until bin_values[r] is non-empty
 
-  broadcast AUX[r](w), where w ∈ bin_values[r]
+    broadcast AUX[r](w), where w ∈ bin_values[r]
 
-  wait for n-t AUX messages whose carried values are included in bin_values[r]
-  values := set of values from those AUX messages
+    wait for n-t AUX messages whose carried values are included in bin_values[r]
+    values := set of values from those AUX messages
 
-  s := common_coin(r)
+    s := common_coin(r)
 
-  if values = {v}:
-      if s = v:
-          decide(v)
-      est := v
-  else:
-      est := s
+    if values = {v}:
+        if s = v:
+            decide(v)
+        est := v // L0
+    else:
+        est := s // L1
 ```
 
 The logic is cleaner than it first looks.
@@ -164,11 +167,9 @@ est := common_coin(r)
 Because the common coin is common, all correct processes move to the same estimate for the next round.
 This is the step that gives convergence in the asynchronous case.
 
-### Why termination goes to probability 1
+### Termination goes to probability 1
 
-The proof intuition is short.
-
-Eventually, the protocol reaches one of two situations:
+Eventually, the protocol reaches one of two situations (See comments `L0` and `L1`):
 
 - correct processes already align on the same estimate;
 - or they enter the mixed case `{0,1}` and the common coin forces them to align for the next round.
@@ -186,20 +187,9 @@ So after:
 As `k -> ∞`, that probability goes to `0`.
 So the probability of eventually deciding goes to `1`.
 
-This is exactly why the paper can guarantee:
+### Expected rounds for termination is 4
 
-- agreement,
-- validity,
-- and eventual termination with probability `1`,
-
-even in a fully asynchronous Byzantine model.
-
-### Why the paper says the expected number of rounds is 4
-
-The paper gives a stronger quantitative claim than just eventual termination:
-the **expected number of rounds to decide is 4**.
-
-The intuition is that there are really two phases:
+There are really two phases:
 
 - first, correct processes need to align on the same estimate;
 - after that, each round decides with probability `1/2`.
@@ -224,7 +214,7 @@ So the total expectation becomes:
 
 which gives a total expected number of `4` rounds.
 
-### Why the coin must not be known in advance
+### What if random coin is predicted by Byzantine nodes
 
 Now we can see why the common coin assumption is so strict.
 
@@ -277,9 +267,10 @@ It is based on the same basic idea as the randomized binary consensus algorithm 
 The main difference is in how liveness is achieved. The randomized binary algorithm uses a **common coin** to resolve split cases in a fully asynchronous setting.\
 `DBFT` removes that **common coin** and instead moves to a deterministic path to convergence under partial synchrony by adding additional ingredients.
 
+Before jumping into the difference, we will walk through each components it used. Start with `BV-Broadcast`.
+
 ### 1. BV-broadcast
 
-The first building block is still `BV-broadcast`.
 This part is basically the same as in the randomized paper, we only remind the properties:
 
 - `BV-Obligation`: if at least `t+1` non-faulty processes `BV-broadcast(v)`, eventually every non-faulty process puts `v` in `bin_values`.
@@ -291,13 +282,12 @@ This part is basically the same as in the randomized paper, we only remind the p
 
 ### 2. Safe Binary Consensus Algorithm
 
-The second layer is `bin_propose`, the binary consensus algorithm.
-This is the simplified binary Byzantine consensus algorithm of `DBFT`
+Before seeing the full version of binary Byzantine consensus algorithm in `DBFT`, we will start with the simplified version.
 
 **Pseudo code**:
 
 ```javascript
-bin_propose(val):
+function bin_propose(val):
   est := val
   r := 0
 
@@ -313,14 +303,14 @@ bin_propose(val):
     whose union is values
     and values ⊆ bin_values[r]
 
-    b := r mod 2
+    b := r mod 2 // Updated line
 
     if values = {v}:
-        est := v
+        est := v // L0
         if v = b:
             decide(v)
     else:
-        est := b
+        est := b // L1
 ```
 
 The key difference from randomized binary consensus is **exactly one line**.
@@ -337,40 +327,41 @@ Now:
 values = {0,1} -> est := r mod 2
 ```
 
-We can realize that the algorithm doesn't use the unpredictable shared bit, which is enough for safety, except for liveness.
+We can realize that the algorithm doesn't use the unpredictable shared bit. This core only offer safety, but not liveness.
+The main purpose is to keep the safety, open the road for changing from probabilist termination to deterministic termination.
 
-This core gives safety, but not liveness.
+Let's dive a bit about the safety, which are two properties: `Validity` and `Agreement`.
 
 #### Validity
 
 If all correct processes start with the same value `v`, then only `v` can ever be decided.
 
 **Proof**:\
-If all correct processes start with `v`, then only `v` is `BV-broadcast` by correct processes in the first round.\
-By `BV-Justification`, a value can enter `bin_values` only if some correct process broadcast it.
-So `1-v` cannot appear in `bin_values` at any correct process.\
-Then every correct `AUX` message is also built only from sets containing `v`, so the protocol never creates a justified path toward deciding `1-v`.
+Let's recap: By `BV-Justification`, a value can enter `bin_values` only if some correct process broadcast it.\
+If all correct processes start with the same value `v`, `v` will be echoed by `n - f` correct processors. This means there are only `f` Byzantine processors, who can produce `1 - v`.\
+However to enter `bin_values`, we need `f+1` threshold for every correct processors starting echo the value `1-v`, then it will reach `n - f` to meet the threshold.\
+However, this case never happens because we have only `f` values for `1 - v`.
 
 #### Agreement
 
 No two correct processes can decide different values.
 
-**Proof**:
-Let `r` be the first round in which some correct process decides, and suppose it decides `v`.
-This means that process reached:
+**Proof**:\
+Suppose `r` is the first round where some correct process decides `v`.\
+To decide, it must have:
 
 ```javascript
 values = {v}
 and v = r mod 2
 ```
 
-Now look at any other correct process in the same round.
-There are only two possibilities.
+Now take any other correct process in the same round.
 
-First, it also sees a singleton set. But two correct processes cannot see different singleton sets in the same round according to `BV-Broadcast`. So if it sees a singleton, it must be the same singleton `{v}`, and it also decides `v`.
+If it also sees a singleton set, then it cannot be `{1-v}`.\
+The reason is that two correct processes cannot see two different singleton sets in the same round.\
+So if it sees a singleton, it must also be `{v}`, and then it decides the same value `v`.
 
-Second, it does not see a singleton.
-Then the only remaining case is:
+If it does not see a singleton, then the only remaining case is:
 
 ```javascript
 values = {0,1}
@@ -382,47 +373,65 @@ and the algorithm updates:
 est := r mod 2 = v
 ```
 
-So whether a correct process decides in round `r` or not, after round `r` every correct process carries the same estimate `v` into round `r+1`.
-Once all correct processes start a round with the same estimate, they keep that estimate forever.
-So no later round can lead a correct process to decide `1-v`.
+So after round `r`, every correct process is in one of two states:
+
+- either it already decided `v`;
+- or it carries estimate `v` into round `r+1`.
+
+From that point, correct processes no longer re-introduce `1-v`.\
+So no later round can lead a correct process to decide a different value.
 
 #### Why termination is not guaranteed
 
 Termination does not follow in the fully asynchronous model.
 
+**Proof intuition**:\
 The issue appears exactly at these two lines:
 
 ```javascript
 if values = {v}:
-    est := v
+    est := v // L0
 else:
-    est := r mod 2
+    est := r mod 2 // L1
 ```
 
-These two branches can push the next estimate in different directions.
+These two branches `L0` and `L1` update the next estimate in two different ways.
 
-If a process sees a singleton set such as `{0}` or `{1}`, it keeps that value for the next round.
-But if a process sees the mixed set `{0,1}`, it follows the deterministic parity rule `r mod 2`.
+If a correct process sees a singleton set such as `{0}` or `{1}`, it keeps that value for the next round.\
+If it sees the mixed set `{0,1}`, it follows the deterministic rule `r mod 2`.
 
-In a fully asynchronous network, a Byzantine adversary can exploit message delays so that correct processes do not all reach the same branch at the same time.
-Intuitively, one part of the system may already see a singleton set such as `{0}` or `{1}`, while another part is still stuck with the mixed set `{0,1}`.
+Now the problem is that `r mod 2` is fully predictable.\
+Unlike the randomized algorithm, there is no common coin here to force all correct processes toward one unpredictable direction.
 
-At that point, different correct processes update their estimates using different rules:
+Since the network is still fully asynchronous, a Byzantine adversary can delay messages so that correct processes do not all enter the same branch at the same time.
+One group may already see a singleton set and keep that value, while another group is still delayed enough to see `{0,1}` and follow `r mod 2` instead.
 
-- one side keeps the singleton value;
-- the other side follows `r mod 2`.
-
-=> The liveness is attacked here.
+So the system can keep revisiting the split case without any mechanism that forces convergence.\
+Safety still holds, but liveness is no longer guaranteed.
 
 ### 3. Safe and Liveness Binary Consensus Algorithm
 
-To recover liveness, the paper does not replace `bin_propose`.
-It keeps the same safe core, then adds a few new lines around it.
+The safe core above still has no liveness guarantee.
+To recover liveness, `DBFT` keeps the same binary structure and adds three things:
 
-The live version is still the same named operation:
+- partial synchrony;
+- local timers;
+- and a weak coordinator.
+
+The weak coordinator of round `r` is:
 
 ```javascript
-bin_propose(val):
+coord(r) = r mod n
+```
+
+It is not a PBFT-style leader.
+Processes do not wait for it before starting the round, and it cannot force a value by itself.
+Its only role is to help many correct processes send the same `AUX` value once the network becomes timely.
+
+The full live version then looks like this:
+
+```javascript
+function bin_propose(val):
   r := 0
   timeout := 0
 
@@ -430,24 +439,30 @@ bin_propose(val):
     r := r + 1
 
     BV-broadcast EST[r](val)
-    start timer(r)
+    wait until bin_values[r] != ∅
+    timeout := timeout + 1
+    start timer(timeout) // if this round fails, the next round waits longer
 
     if I am the coordinator of round r:
         wait until bin_values[r] = {w}
-        broadcast COORD[r](w)
+        broadcast COORD[r](w) // suggest one justified value, to enhance convergence
 
     wait until bin_values[r] != ∅ and timer expired
 
     if coordinator value c was received and c ∈ bin_values[r]:
-        e := {c}
+        e := {c} // follow the coordinator hint
     else:
-        e := bin_values[r]
+        e := bin_values[r] // fall back to the local view
 
     broadcast AUX[r](e)
+
+    wait until AUX[r](·) has been received from n-f different processes
+    start timer(timeout) // give slow nodes time to catch up
 
     wait until there exists a set s extracted from AUX messages such that:
         every value seen in AUX from n-f processes belongs to s
         and every value in s already belongs to bin_values[r]
+        and timer expired
 
     if s = {v}:
         val := v
@@ -457,62 +472,64 @@ bin_propose(val):
         val := r mod 2
 
     if decided in round r-2:
-        exit()
+        exit() // leave two rounds later, so slower correct nodes can still catch up
+```
+
+The decision rule at the end is still the same as in the safe asynchronous version:
+
+```javascript
+if s = {v}:
+    val := v
+    if v = r mod 2:
+        decide(v)
+else:
+    val := r mod 2
 ```
 
 The real change happens before `AUX`.
 
-- Each round now has a timer.
-- Round `r` has a weak coordinator.
-- If the coordinator quickly sees `bin_values[r] = {w}`, it broadcasts `COORD[r](w)`.
-- If a process receives that value in time, and that same value is already in its own `bin_values[r]`, then it sends `AUX[r]({w})`.
-- Otherwise, it just sends `AUX` from its own local view, as before.
+- each round now has a timer, and the timeout grows round by round;
+- round `r` now has a weak coordinator;
+- if the coordinator quickly sees `bin_values[r] = {w}`, it broadcasts `COORD[r](w)`;
+- if a process receives that value in time, and the same value is already in its own `bin_values[r]`, then it sends `AUX[r]({w})`;
+- otherwise, it still sends `AUX` from its own local view.
 
 So the coordinator does not force the system onto a value.
 It only tries to make many correct processes send the same singleton `AUX` in the same round.
 
-That is why the paper calls it a weak coordinator.\
-If the coordinator is slow or Byzantine, the protocol still continues from the local `bin_values[r]`.\
+That is why the paper calls it a weak coordinator.
+If the coordinator is slow or Byzantine, the protocol still continues from the local `bin_values[r]`.
 If the coordinator is correct and its message arrives before the timer expires, then many correct processes send `AUX[r]({w})`, and that is what pulls the system out of the split case.
 
-#### Why these additions recover liveness
+#### How liveness is ensured
 
-The proof intuition is now the opposite of the safe asynchronous failure mode.
+Before synchrony, the timer may still be too small, so the coordinator message can arrive too late to help. In that case, the protocol still falls back to the local `bin_values[r]` path.
 
-- before synchrony, timers may still be too small and the coordinator message may arrive too late;
-- after synchrony, timeout values eventually become large enough;
-- eventually there is a round where the weak coordinator is correct and its message is received in time.
+The liveness argument starts only after the network becomes timely.
+At that point, timeout values keep increasing round by round, so eventually there is a round where:
 
-Call the coordinator's suggested value `w`.
-In that round, every correct process receives:
+- the weak coordinator is correct;
+- its `COORD[r](w)` message arrives before the timer expires;
+- and every correct process already has `w ∈ bin_values[r]`.
 
-```javascript
-COORD(r, w);
-```
-
-before its timer expires, and also has `w ∈ bin_values[r]`.
-So all correct processes set:
+Then every correct process takes the same branch:
 
 ```javascript
-e < -{ w };
+e := {w}
 ```
 
-and broadcast the same singleton `AUX`.
-Then all correct processes receive that singleton from `n-f` different processes, and the wait predicate lets them all set:
+and broadcasts the same singleton `AUX[r]({w})`.
+Once `n-f` such messages are received, every correct process can build the same set:
 
 ```javascript
 s = { w };
 ```
 
-From that point, the old safe-core logic is enough again:
+From that point, the split case is gone.
+The protocol is back in the easy case:
 
-- either they decide immediately if `w = r mod 2`;
-- or they all keep estimate `w` and decide in one of the next two rounds.
-
-So the real tradeoff is:
-
-- randomized consensus: **full asynchrony + common coin**
-- `DBFT`: **partial synchrony + weak coordinator + timers**
+- if `w = r mod 2`, they decide in that round;
+- otherwise, they all keep `val := w`, and decision follows in one of the next two rounds.
 
 </details>
 
