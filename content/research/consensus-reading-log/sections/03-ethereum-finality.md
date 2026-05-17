@@ -2,8 +2,6 @@
 title: "Ethereum Finality"
 ---
 
-This part is still a draft.
-
 In this roadmap, I want to start from how Ethereum's current consensus actually works today, and then move step by step toward where Ethereum seems to be heading next.
 
 The path I want to take is:
@@ -225,7 +223,7 @@ Ethereum needs one more layer that can say:
 
 That is the role of `Casper FFG`.
 
-### 2. Checkpoints, source, and target
+### 2. Checkpoints: Source and Target
 
 `Casper FFG` does not vote on every block directly.
 It works on checkpoints.
@@ -276,7 +274,7 @@ source -> target
 
 If at least `2/3` of the total stake votes for the same link, that link becomes a `supermajority link`.
 
-### 3. Justification and finalization
+### 3. Justification && Finalization
 
 Casper finality is a two-step process.
 
@@ -327,7 +325,7 @@ It has the same high-level BFT intuition:
 - then enough validators support moving forward from it;
 - and only then do we treat the earlier point as final.
 
-### 4. The two slashing conditions
+### 4. Slashing Conditions
 
 Casper's safety comes from two slashing conditions.
 
@@ -405,9 +403,132 @@ To sum up, the right way to think about Ethereum consensus up till now is:
 
 </details>
 
-## Gasper
+<details>
+<summary>Gasper</summary>
 
-Draft.
+`Gasper` is the paper version where Ethereum consensus is written down as one complete protocol.
+
+In the two sections above, we already wrapped up the two main pieces:
+
+- `LMD GHOST` as the fork-choice rule;
+- `Casper FFG` as the finality gadget.
+
+So this section does not need to explain Ethereum consensus from scratch again.
+The point here is narrower:
+
+- what changes when `LMD GHOST` is turned into `Hybrid LMD GHOST`;
+- and what changes when `Casper FFG` is adapted into the slot-based beacon-chain setting.
+
+### 1. Abstract
+
+The role of `Gasper` is not to introduce a third new idea after `LMD GHOST` and `Casper FFG`.
+Its role is to say:
+
+- here is how the fork-choice rule and the finality gadget actually run together;
+- here is how time is organized into slots and epochs;
+- and here is what needs to change in both pieces so the combination is safe.
+
+Revising our previous touched part, Ethereum runs in epochs of `32` slots.
+Each slot has one proposer and one attesting committee, so validator work is spread out over the epoch instead of forcing the whole validator set to broadcast signatures at once.
+
+At the protocol level, the checkpoint is the epoch boundary block, that is, the block at the first slot of the epoch.
+
+### 2. Updates on Casper
+
+The first important change is on the `Casper` side.
+
+Abstract `Casper FFG` talks in terms of checkpoints and checkpoint heights. That is a clean model, but it is still too abstract for Ethereum's slot-based beacon chain.
+
+> In paper, they assume every height % 100 is a new checkpoint. (I don't mention in our previous part, because i don't want to make it complicate, now you have to now hehe)
+
+Once time is divided into:
+
+- `slots`
+- and `epochs`
+
+the checkpoint object becomes more awkward than in the paper version of `Casper FFG`.
+
+Because in Ethereum, if we put every slot % 32 = 0 will be checkpoint, it will not enough to cover the case "the slot is empty".
+
+So `Gasper` refines the object. Instead of using only about a checkpoint block height, it reasons about an `epoch boundary pair`.
+
+```javascript
+(checkpoint block, epoch)
+```
+
+I don't want to make you feel complicate, so just see this image:
+
+![alt text](/assets/images/consensus/01/09.png)
+
+Read it like this:
+
+- `Epoch 0`: block `0` is the checkpoint, because it is the genesis block. `Checkpoint: (0, 0)`
+- `Epoch 1`: block `32` is the checkpoint, because slot `32` is the first slot of that epoch and it has a block. `Checkpoint: (32, 1)`
+- `Epoch 2`: slot `64` is empty, so the protocol cannot point to a new boundary block there. It has to reuse block `32` as the best boundary block available on that chain. `Checkpoint: (32, 2)`
+- `Epoch 3`: same idea again. If the boundary slot is empty, the protocol walks backward on that chain and picks the latest block it can still use as the epoch boundary block. In this picture, that becomes block `60`. `Checkpoint: (60, 3)`
+
+So the key point is:
+the same block can play the checkpoint role for more than one epoch context.
+That is why `Gasper` has to reason about `(checkpoint block, epoch)` instead of only a bare checkpoint block.
+
+### 3. `LMD GHOST` becomes `Hybrid LMD GHOST`
+
+The change is this:
+`Gasper` no longer runs `LMD GHOST` on the whole visible tree.
+It first adds a filter from the `Casper FFG` side, and only then runs the heaviest-subtree walk.
+
+Concretely, it does three things:
+
+- first find the highest justified pair;
+- then ignore branches whose justified state has not caught up to it;
+- only then run the heaviest-subtree walk on what remains.
+
+It adds this because fork choice is no longer allowed to look only at subtree weight.
+Once `Casper FFG` exists, the protocol also has to care about which branches are still consistent with the current justified state.
+
+That is why the paper does not keep plain `LMD GHOST`.
+After a fork, two nearby branches can carry different last-justified states.
+If fork choice followed only the heaviest branch, it could pull an honest validator onto a branch whose finality state is behind.
+That is the bad case `Hybrid LMD GHOST` is trying to avoid.
+
+You can visualize that bad case like this:
+
+```text
+1 ---- 2 ---- 3
+ \
+  X ---- Y
+```
+
+Suppose the current finality state is already on the upper branch:
+
+- `1` was justified earlier;
+- `2` is finalized;
+- `3` is now the highest justified checkpoint.
+
+Now imagine the lower branch `1 -> X -> Y` starts to look heavier locally.
+
+A plain heaviest-branch rule could be tempted to switch to that lower branch.
+But `Hybrid LMD GHOST` will not do that.
+It first checks which branches still extend the current justified checkpoint, which is now `3`.
+So the lower branch is filtered out before subtree weight is even compared.
+
+### 4. Conclusion
+
+For me, `Gasper` changes two things.
+
+First, `LMD GHOST` becomes `Hybrid LMD GHOST`.
+Fork choice no longer follows the heaviest subtree blindly.
+It must also respect the highest justified state from `Casper FFG`.
+
+Second, `Casper FFG` is adapted from an abstract checkpoint-height model into a slot-based beacon-chain model.
+That is why the paper has to move toward objects that are closer to `(checkpoint, epoch)` than to a bare checkpoint block.
+
+That is enough to wrap up the section:
+
+- the `LMD GHOST` side changes to stay aligned with finality;
+- the `Casper` side changes to fit the slot-and-epoch structure of Ethereum.
+
+</details>
 
 ## Fast Confirmation Rule
 
