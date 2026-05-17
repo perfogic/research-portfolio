@@ -248,7 +248,7 @@ The important behavior to watch is:
 => Run the platform in a randomized case with 12 nodes for few times, we will see the total round ranging from 2-6.
 
 <iframe
-  src="randomized_consensus_ui.html"
+  src="demos/randomized_consensus_ui.html"
   title="Randomized consensus demo"
   width="100%"
   height="834"
@@ -548,7 +548,7 @@ Finally, once it has the result, it will select the valid block from proposer wi
 This will be a demo for you to play around with it for familarity:
 
 <iframe
-  src="dbft_multivalue_reduction_ui.html"
+  src="demos/dbft_multivalue_reduction_ui.html"
   title="DBFT applied blockchain consensus demo"
   width="100%"
   height="834"
