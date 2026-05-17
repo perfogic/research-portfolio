@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Red Belly Superblock Demo</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --panel2: #182235;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --border: #334155;
+        --blue: #93c5fd;
+        --green: #34d399;
+        --pink: #fda4af;
+        --purple: #a78bfa;
+        --yellow: #fbbf24;
+        --red: #f87171;
+        --orange: #fdba74;
+        --cyan: #67e8f9;
+        --glass: rgba(15, 23, 42, 0.72);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px;
+        background: radial-gradient(
+            900px 620px at 16% 8%,
+            rgba(103, 232, 249, 0.18),
+            transparent 62%
+          ),
+          radial-gradient(
+            900px 660px at 84% 6%,
+            rgba(167, 139, 250, 0.2),
+            transparent 62%
+          ),
+          linear-gradient(135deg, rgba(8, 47, 73, 0.42), transparent 38%),
+          var(--bg);
+        background-attachment: fixed;
+        background-repeat: no-repeat;
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", sans-serif;
+        display: grid;
+        place-items: start center;
+      }
+
+      .demo {
+        width: min(1180px, calc(100vw - 32px));
+        height: 760px;
+        margin: 0 auto;
+        background: linear-gradient(180deg, #111827 0%, #0b1220 100%);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 18px;
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.84);
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 24px;
+        letter-spacing: -0.02em;
+      }
+
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+        max-width: 780px;
+        font-size: 14px;
+      }
+
+      .controls {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        max-width: 530px;
+      }
+
+      button,
+      select {
+        border: 1px solid var(--border);
+        background: var(--panel2);
+        color: var(--text);
+        padding: 9px 11px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 750;
+        font-size: 13px;
+      }
+
+      button:hover,
+      select:hover {
+        border-color: var(--blue);
+      }
+      button.primary {
+        background: #2563eb;
+        border-color: #3b82f6;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .content {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) 390px;
+      }
+
+      .stage {
+        min-width: 0;
+        min-height: 0;
+        padding: 18px;
+        display: grid;
+        grid-template-rows: auto auto auto;
+        gap: 14px;
+        border-right: 1px solid var(--border);
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .card,
+      .final-summary {
+        border: 1px solid var(--border);
+        background: rgba(11, 18, 32, 0.88);
+        border-radius: 14px;
+        padding: 10px 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .card strong {
+        display: block;
+        color: var(--text);
+        font-size: 17px;
+        margin-top: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .lanes {
+        min-height: 0;
+        overflow: auto;
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(190px, 1fr);
+        gap: 14px;
+        padding: 6px 4px 10px;
+        align-items: start;
+        max-height: 515px;
+      }
+
+      .lane {
+        min-width: 190px;
+        border: 1px solid var(--border);
+        background: linear-gradient(
+          180deg,
+          rgba(30, 41, 59, 0.88),
+          rgba(15, 23, 42, 0.86)
+        );
+        border-radius: 18px;
+        padding: 12px;
+        display: grid;
+        grid-template-rows: auto auto auto minmax(0, 1fr);
+        gap: 10px;
+        position: relative;
+      }
+
+      .lane.selected {
+        border-color: var(--green);
+        box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.16),
+          0 20px 38px rgba(52, 211, 153, 0.08);
+      }
+
+      .lane.rejected {
+        opacity: 0.62;
+      }
+
+      .proposer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-weight: 950;
+      }
+
+      .index {
+        display: inline-grid;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 999px;
+        border: 2px solid var(--border);
+        background: #0b1220;
+        font-size: 20px;
+        box-shadow: inset 0 0 0 4px rgba(148, 163, 184, 0.08);
+      }
+
+      .status {
+        display: inline-flex;
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 11px;
+        font-weight: 900;
+        color: #111827;
+        background: var(--yellow);
+        white-space: nowrap;
+      }
+
+      .status.verified {
+        background: var(--blue);
+      }
+      .status.selected {
+        background: var(--green);
+      }
+      .status.rejected {
+        background: var(--pink);
+      }
+
+      .proposal {
+        border: 1px solid var(--border);
+        background: radial-gradient(
+            circle at top,
+            rgba(103, 232, 249, 0.08),
+            transparent 55%
+          ),
+          #0b1220;
+        border-radius: 14px;
+        padding: 10px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .proposal-title {
+        font-weight: 900;
+        text-align: center;
+        font-size: 16px;
+      }
+
+      .tx-list {
+        display: grid;
+        gap: 6px;
+      }
+
+      .tx {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 6px 8px;
+        color: var(--muted);
+        font-size: 12px;
+        background: rgba(15, 23, 42, 0.88);
+      }
+
+      .tx.added {
+        color: #052e1a;
+        background: var(--green);
+        border-color: var(--green);
+        font-weight: 900;
+      }
+
+      .tx.conflict {
+        color: #3f0710;
+        background: var(--pink);
+        border-color: var(--pink);
+        font-weight: 900;
+      }
+
+      .tx.invalid {
+        color: #3f0710;
+        background: var(--red);
+        border-color: var(--red);
+        font-weight: 900;
+      }
+
+      .bitmask {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 9px;
+        background: rgba(11, 18, 32, 0.78);
+        display: grid;
+        gap: 7px;
+        justify-items: center;
+      }
+
+      .bit {
+        display: inline-grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        color: #07111f;
+        font-weight: 950;
+        font-size: 17px;
+        background: var(--yellow);
+      }
+
+      .bit.one {
+        background: var(--green);
+      }
+      .bit.zero {
+        background: var(--pink);
+      }
+
+      .builder-button {
+        margin-left: 8px;
+        border-color: rgba(52, 211, 153, 0.55);
+        background: rgba(52, 211, 153, 0.14);
+        color: var(--text);
+      }
+
+      .small {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+        text-align: center;
+      }
+
+      .final-summary {
+        min-height: 72px;
+        max-height: 92px;
+        overflow: auto;
+        color: var(--text);
+        line-height: 1.5;
+      }
+
+      .final-summary strong {
+        color: var(--green);
+      }
+
+      .trace {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        gap: 12px;
+        padding: 18px;
+      }
+
+      .trace h2 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      .rules {
+        display: grid;
+        gap: 8px;
+      }
+
+      .rule {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(11, 18, 32, 0.88);
+        padding: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .rule strong {
+        color: var(--text);
+      }
+
+      .log {
+        height: 300px;
+        overflow-y: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          monospace;
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        color: #d1d5db;
+        background: #070d19;
+        border-radius: 14px;
+        padding: 12px;
+        border: 1px solid var(--border);
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          monospace;
+        color: #c4b5fd;
+      }
+
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        display: none;
+        place-items: center;
+        padding: 24px;
+        background: rgba(2, 6, 23, 0.76);
+        backdrop-filter: blur(10px);
+        z-index: 20;
+      }
+
+      .modal-backdrop.open {
+        display: grid;
+      }
+
+      .modal {
+        width: min(1060px, 100%);
+        max-height: min(760px, calc(100vh - 48px));
+        overflow: auto;
+        border: 1px solid rgba(148, 163, 184, 0.32);
+        border-radius: 24px;
+        background: radial-gradient(
+            circle at 18% 0%,
+            rgba(52, 211, 153, 0.16),
+            transparent 30%
+          ),
+          radial-gradient(
+            circle at 92% 12%,
+            rgba(103, 232, 249, 0.13),
+            transparent 28%
+          ),
+          #0b1220;
+        box-shadow: 0 28px 100px rgba(0, 0, 0, 0.58);
+        padding: 20px;
+      }
+
+      .modal-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        align-items: start;
+        margin-bottom: 16px;
+      }
+
+      .modal-head h2 {
+        margin: 0 0 6px;
+        font-size: 24px;
+        letter-spacing: -0.02em;
+      }
+
+      .modal-head p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+        font-size: 14px;
+      }
+
+      .modal-close {
+        min-width: 40px;
+        height: 40px;
+        border-radius: 999px;
+        padding: 0;
+      }
+
+      .builder-grid {
+        display: grid;
+        grid-template-columns: 1fr 44px 1fr 44px 1fr;
+        gap: 12px;
+        align-items: stretch;
+      }
+
+      .builder-panel {
+        border: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.72);
+        border-radius: 18px;
+        padding: 14px;
+        min-height: 360px;
+      }
+
+      .builder-panel h3 {
+        margin: 0 0 10px;
+        font-size: 15px;
+      }
+
+      .arrow {
+        display: grid;
+        place-items: center;
+        color: var(--cyan);
+        font-size: 30px;
+        font-weight: 950;
+      }
+
+      .proposal-stack,
+      .merge-stack,
+      .superblock-stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .builder-proposal {
+        border: 1px solid rgba(147, 197, 253, 0.32);
+        border-radius: 14px;
+        background: rgba(11, 18, 32, 0.74);
+        padding: 10px;
+      }
+
+      .builder-proposal-title {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        font-weight: 900;
+        font-size: 13px;
+      }
+
+      .merge-row {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 9px;
+        display: grid;
+        gap: 4px;
+        background: rgba(11, 18, 32, 0.8);
+      }
+
+      .merge-row.added {
+        border-color: rgba(52, 211, 153, 0.65);
+        background: rgba(52, 211, 153, 0.12);
+      }
+
+      .merge-row.conflict {
+        border-color: rgba(253, 164, 175, 0.7);
+        background: rgba(253, 164, 175, 0.12);
+      }
+
+      .merge-main {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-weight: 900;
+        font-size: 13px;
+      }
+
+      .merge-sub {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .superblock-card {
+        border: 1px solid rgba(52, 211, 153, 0.55);
+        border-radius: 16px;
+        padding: 12px;
+        background: rgba(52, 211, 153, 0.12);
+      }
+
+      .superblock-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 10px;
+        font-weight: 950;
+      }
+
+      .empty-note {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="demo">
+      <header class="topbar">
+        <div>
+          <h1>Red Belly Superblock Demo</h1>
+          <p class="subtitle">
+            Red Belly does not pick only the lowest accepted proposal. It uses
+            binary decisions as a bitmask, selects many verified proposals, then
+            reconciles conflicting transactions into one superblock.
+          </p>
+        </div>
+        <div class="controls">
+          <button id="start" class="primary">Start round</button>
+          <button id="next" disabled>Next step</button>
+          <button id="auto" disabled>Auto run</button>
+          <button id="reset">Reset</button>
+          <select id="scenario" aria-label="Scenario">
+            <option value="normal">Normal case</option>
+            <option value="conflict">Conflicting sub-blocks</option>
+            <option value="invalid">Invalid transactions</option>
+          </select>
+        </div>
+      </header>
+
+      <section class="content">
+        <section class="stage">
+          <div id="summary" class="summary"></div>
+          <div id="lanes" class="lanes"></div>
+          <div id="finalSummary" class="final-summary"></div>
+        </section>
+
+        <aside class="trace">
+          <h2>Trace</h2>
+          <div id="rules" class="rules"></div>
+          <div id="log" class="log">Click Start round to begin.</div>
+        </aside>
+      </section>
+    </main>
+
+    <div id="builderModal" class="modal-backdrop" aria-hidden="true">
+      <section
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="builderTitle"
+      >
+        <div class="modal-head">
+          <div>
+            <h2 id="builderTitle">Superblock Builder</h2>
+            <p>
+              Selected proposals are scanned in deterministic order. A
+              transaction is added if it is valid and its UTXO is still
+              available; otherwise it is discarded.
+            </p>
+          </div>
+          <button
+            id="closeBuilder"
+            class="modal-close"
+            aria-label="Close superblock builder"
+          >
+            ×
+          </button>
+        </div>
+        <div id="builderContent"></div>
+      </section>
+    </div>
+
+    <script>
+      const phases = [
+        "Propose transaction batches",
+        "Verified reliable broadcast",
+        "Binary consensus bitmask",
+        "Reconcile superblock",
+      ];
+
+      const proposers = ["P1", "P2", "P3", "P4"];
+      let state;
+      let timer = null;
+
+      function makeTx(id, utxo, valid = true) {
+        return { id, utxo, valid, result: "pending" };
+      }
+
+      function makeProposals() {
+        const scenario = document.getElementById("scenario").value;
+        const base = {
+          P1: [makeTx("txA1", "u1"), makeTx("txA2", "u2")],
+          P2: [makeTx("txB1", "u3"), makeTx("txB2", "u4")],
+          P3: [makeTx("txC1", "u5"), makeTx("txC2", "u6")],
+          P4: [makeTx("txD1", "u7"), makeTx("txD2", "u8")],
+        };
+
+        if (scenario === "conflict") {
+          base.P2[0].utxo = "u1";
+          base.P4[1].utxo = "u3";
+        }
+
+        if (scenario === "invalid") {
+          base.P1[1].valid = false;
+          base.P3[0].valid = false;
+          base.P4[1].valid = false;
+        }
+
+        return Object.fromEntries(
+          proposers.map((node, index) => [
+            node,
+            {
+              proposer: node,
+              block: `Block ${String.fromCharCode(65 + index)}`,
+              txs: base[node],
+              proposed: false,
+              verified: false,
+              bit: null,
+              selected: false,
+            },
+          ])
+        );
+      }
+
+      function resetState() {
+        state = {
+          started: false,
+          step: 0,
+          proposals: makeProposals(),
+          superblock: [],
+          mergeRows: [],
+          builderOpen: false,
+          startIndex: 0,
+          log: ["Click Start round to begin."],
+        };
+        stopAuto();
+        setButtons(false);
+        render();
+      }
+
+      function setButtons(enabled) {
+        document.getElementById("next").disabled = !enabled;
+        document.getElementById("auto").disabled = !enabled;
+      }
+
+      function addLog(line = "") {
+        state.log.push(line);
+        renderLog();
+      }
+
+      function renderLog() {
+        const el = document.getElementById("log");
+        el.textContent = state.log.join("\n");
+        el.scrollTop = el.scrollHeight;
+      }
+
+      function start() {
+        state.started = true;
+        state.step = 0;
+        state.log = [];
+        addLog("Start round: four proposers submit transaction batches.");
+        setButtons(true);
+        nextStep();
+      }
+
+      function proposePhase() {
+        addLog("[Step 1] Proposers broadcast transaction batches");
+        proposers.forEach((node) => {
+          state.proposals[node].proposed = true;
+          addLog(`  ${node} proposes ${state.proposals[node].block}`);
+        });
+      }
+
+      function verifiedBroadcastPhase() {
+        addLog(
+          "[Step 2] Verified reliable broadcast delivers verified sub-blocks"
+        );
+        proposers.forEach((node) => {
+          const proposal = state.proposals[node];
+          proposal.verified = proposal.txs.some((tx) => tx.valid);
+          addLog(
+            `  ${node}: ${
+              proposal.verified
+                ? "verified sub-block delivered"
+                : "no valid tx delivered"
+            }`
+          );
+        });
+      }
+
+      function bitmaskPhase() {
+        addLog("[Step 3] Parallel binary consensus creates a bitmask");
+        proposers.forEach((node) => {
+          const proposal = state.proposals[node];
+          proposal.bit = proposal.verified ? 1 : 0;
+          proposal.selected = proposal.bit === 1;
+          addLog(`  bitmask[${node}] = ${proposal.bit}`);
+        });
+        addLog(
+          "  Unlike DBFT-one-winner, all indices with bit 1 remain selected."
+        );
+      }
+
+      function reconcilePhase() {
+        addLog("[Step 4] Reconcile selected proposals into one superblock");
+        const selected = proposers.filter(
+          (node) => state.proposals[node].selected
+        );
+        const order = Array.from(
+          { length: proposers.length },
+          (_, i) => proposers[(state.startIndex + i) % proposers.length]
+        ).filter((node) => selected.includes(node));
+        const spent = new Set();
+        const superblock = [];
+        const mergeRows = [];
+
+        proposers.forEach((node) =>
+          state.proposals[node].txs.forEach((tx) => (tx.result = "pending"))
+        );
+
+        order.forEach((node) => {
+          state.proposals[node].txs.forEach((tx) => {
+            if (!tx.valid) {
+              tx.result = "invalid";
+              mergeRows.push({
+                node,
+                tx: tx.id,
+                utxo: tx.utxo,
+                result: "invalid",
+                reason: "invalid transaction",
+              });
+              return;
+            }
+            if (spent.has(tx.utxo)) {
+              tx.result = "conflict";
+              mergeRows.push({
+                node,
+                tx: tx.id,
+                utxo: tx.utxo,
+                result: "conflict",
+                reason: `${tx.utxo} already spent`,
+              });
+              return;
+            }
+            spent.add(tx.utxo);
+            tx.result = "added";
+            superblock.push(tx.id);
+            mergeRows.push({
+              node,
+              tx: tx.id,
+              utxo: tx.utxo,
+              result: "added",
+              reason: `${tx.utxo} is available`,
+            });
+          });
+        });
+
+        state.superblock = superblock;
+        state.mergeRows = mergeRows;
+        state.builderOpen = true;
+        addLog(`  Reconciliation order: ${order.join(" -> ") || "none"}`);
+        addLog(`  Superblock = {${superblock.join(", ")}}`);
+        setButtons(false);
+        stopAuto();
+      }
+
+      function nextStep() {
+        if (!state.started) return;
+        const phase = state.step % phases.length;
+        if (phase === 0) proposePhase();
+        if (phase === 1) verifiedBroadcastPhase();
+        if (phase === 2) bitmaskPhase();
+        if (phase === 3) reconcilePhase();
+        state.step += 1;
+        render();
+      }
+
+      function stopAuto() {
+        if (timer) clearInterval(timer);
+        timer = null;
+        const auto = document.getElementById("auto");
+        if (auto) auto.textContent = "Auto run";
+      }
+
+      function toggleAuto() {
+        if (timer) {
+          stopAuto();
+          return;
+        }
+        document.getElementById("auto").textContent = "Stop auto";
+        timer = setInterval(() => {
+          nextStep();
+          if (state.superblock.length || state.step > phases.length) stopAuto();
+        }, 900);
+      }
+
+      function currentPhase() {
+        return state.started
+          ? phases[state.step % phases.length]
+          : "Not started";
+      }
+
+      function renderSummary() {
+        const selected = proposers.filter(
+          (node) => state.proposals[node].selected
+        ).length;
+        const verified = proposers.filter(
+          (node) => state.proposals[node].verified
+        ).length;
+        document.getElementById("summary").innerHTML = `
+        <div class="card">Phase<strong>${currentPhase()}</strong></div>
+        <div class="card">Verified Proposals<strong>${verified}/${
+          proposers.length
+        }</strong></div>
+        <div class="card">Bitmask Ones<strong>${selected}</strong></div>
+        <div class="card">Superblock Txs<strong>${
+          state.superblock.length
+        }</strong></div>
+      `;
+      }
+
+      function txClass(tx) {
+        if (tx.result === "added") return "tx added";
+        if (tx.result === "conflict") return "tx conflict";
+        if (tx.result === "invalid") return "tx invalid";
+        return "tx";
+      }
+
+      function txSuffix(tx) {
+        if (tx.result === "added") return "added";
+        if (tx.result === "conflict") return "conflict";
+        if (tx.result === "invalid") return "invalid";
+        return `spends ${tx.utxo}`;
+      }
+
+      function renderLanes() {
+        document.getElementById("lanes").innerHTML = proposers
+          .map((node) => {
+            const proposal = state.proposals[node];
+            const status = !proposal.proposed
+              ? `<span class="status">waiting</span>`
+              : proposal.selected
+              ? `<span class="status selected">selected</span>`
+              : `<span class="status verified">verified</span>`;
+            const bitClass =
+              proposal.bit === 1 ? "one" : proposal.bit === 0 ? "zero" : "";
+            const bitText = proposal.bit === null ? "?" : proposal.bit;
+            return `
+          <article class="lane ${proposal.selected ? "selected" : ""} ${
+              proposal.bit === 0 ? "rejected" : ""
+            }">
+            <div class="proposer">
+              <span class="index">${node}</span>
+              ${status}
+            </div>
+            <div class="proposal">
+              <div class="proposal-title">${
+                proposal.proposed ? proposal.block : "No proposal yet"
+              }</div>
+              <div class="tx-list">
+                ${proposal.txs
+                  .map(
+                    (tx) =>
+                      `<div class="${txClass(tx)}"><span>${
+                        tx.id
+                      }</span><span>${txSuffix(tx)}</span></div>`
+                  )
+                  .join("")}
+              </div>
+            </div>
+            <div class="bitmask">
+              <div class="small">binary consensus bit</div>
+              <span class="bit ${bitClass}">${bitText}</span>
+            </div>
+            <div class="small">If bit=1, this proposal contributes transactions to the superblock.</div>
+          </article>
+        `;
+          })
+          .join("");
+      }
+
+      function renderFinalSummary() {
+        const el = document.getElementById("finalSummary");
+        if (!state.started) {
+          el.innerHTML =
+            "This demo contrasts Red Belly with DBFT: Red Belly keeps all bitmask=1 proposals, then reconciles them into a superblock.";
+          return;
+        }
+        if (!state.superblock.length) {
+          el.innerHTML =
+            "Process: verified proposals become bitmask entries. Multiple entries can be 1 at the same time.";
+          return;
+        }
+        const selected = proposers
+          .filter((node) => state.proposals[node].selected)
+          .join(", ");
+        el.innerHTML = `
+        Selected proposals: <strong>${selected}</strong>.
+        Reconciliation removes invalid or conflicting transactions.
+        Final superblock: <strong>{${state.superblock.join(", ")}}</strong>.
+        <button class="builder-button" type="button" onclick="openBuilder()">View builder</button>
+      `;
+      }
+
+      function renderRules() {
+        document.getElementById("rules").innerHTML = `
+        <div class="rule"><strong>DBFT:</strong> binary decisions usually pick one winning proposal.</div>
+        <div class="rule"><strong>Red Belly:</strong> binary decisions form a <code>bitmask</code>; every index with <code>1</code> is selected.</div>
+        <div class="rule"><strong>Verified broadcast:</strong> sub-blocks are delivered before they enter the bitmask stage.</div>
+        <div class="rule"><strong>Reconciliation:</strong> selected proposals are merged deterministically; invalid or conflicting transactions are discarded.</div>
+      `;
+      }
+
+      function renderBuilderModal() {
+        const modal = document.getElementById("builderModal");
+        modal.classList.toggle("open", state.builderOpen);
+        modal.setAttribute("aria-hidden", state.builderOpen ? "false" : "true");
+
+        const selected = proposers.filter(
+          (node) => state.proposals[node].selected
+        );
+        const selectedHtml =
+          selected
+            .map((node) => {
+              const proposal = state.proposals[node];
+              return `
+          <div class="builder-proposal">
+            <div class="builder-proposal-title">
+              <span>${node} · ${proposal.block}</span>
+              <span class="status selected">bit=1</span>
+            </div>
+            <div class="tx-list">
+              ${proposal.txs
+                .map(
+                  (tx) =>
+                    `<div class="tx"><span>${tx.id}</span><span>spends ${tx.utxo}</span></div>`
+                )
+                .join("")}
+            </div>
+          </div>
+        `;
+            })
+            .join("") ||
+          `<div class="empty-note">No selected proposal yet.</div>`;
+
+        const mergeHtml =
+          state.mergeRows
+            .map(
+              (row) => `
+        <div class="merge-row ${row.result}">
+          <div class="merge-main">
+            <span>${row.node}.${row.tx}</span>
+            <span>${row.result === "added" ? "ADD" : "DROP"}</span>
+          </div>
+          <div class="merge-sub">${row.reason}</div>
+        </div>
+      `
+            )
+            .join("") ||
+          `<div class="empty-note">Run reconciliation to see each transaction being checked.</div>`;
+
+        const superblockHtml = state.superblock.length
+          ? state.superblock
+              .map(
+                (tx) =>
+                  `<div class="tx added"><span>${tx}</span><span>committed</span></div>`
+              )
+              .join("")
+          : `<div class="empty-note">No committed transaction yet.</div>`;
+
+        document.getElementById("builderContent").innerHTML = `
+        <div class="builder-grid">
+          <div class="builder-panel">
+            <h3>1. Selected sub-blocks</h3>
+            <div class="proposal-stack">${selectedHtml}</div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="builder-panel">
+            <h3>2. Deterministic reconciliation</h3>
+            <div class="merge-stack">${mergeHtml}</div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="builder-panel">
+            <h3>3. Final superblock</h3>
+            <div class="superblock-card">
+              <div class="superblock-title">
+                <span>Superblock</span>
+                <span class="status selected">${state.superblock.length} txs</span>
+              </div>
+              <div class="superblock-stack">${superblockHtml}</div>
+            </div>
+          </div>
+        </div>
+      `;
+      }
+
+      function openBuilder() {
+        state.builderOpen = true;
+        renderBuilderModal();
+      }
+
+      function closeBuilder() {
+        state.builderOpen = false;
+        renderBuilderModal();
+      }
+
+      function render() {
+        renderSummary();
+        renderLanes();
+        renderFinalSummary();
+        renderRules();
+        renderBuilderModal();
+        renderLog();
+        document.getElementById("start").disabled = state.started;
+      }
+
+      document.getElementById("start").addEventListener("click", start);
+      document.getElementById("next").addEventListener("click", nextStep);
+      document.getElementById("auto").addEventListener("click", toggleAuto);
+      document.getElementById("reset").addEventListener("click", resetState);
+      document
+        .getElementById("scenario")
+        .addEventListener("change", resetState);
+      document
+        .getElementById("closeBuilder")
+        .addEventListener("click", closeBuilder);
+      document
+        .getElementById("builderModal")
+        .addEventListener("click", (event) => {
+          if (event.target.id === "builderModal") closeBuilder();
+        });
+
+      resetState();
+    </script>
+  </body>
+</html>
