@@ -530,112 +530,407 @@ That is enough to wrap up the section:
 
 </details>
 
-## Fast Confirmation Rule
+<details>
+<summary>Fast Confirmation Rule</summary>
 
-`FCR` is a near-term direction for getting much faster confirmation on Ethereum without changing the base protocol through a hard fork.
+`Fast Confirmation Rule`, or `FCR`, is not a new consensus protocol.
+It is a fast confirmation layer on top of today's `Gasper`.
 
-The basic idea is simple:
+The target is practical:
 
-- under normal network conditions,
-- and assuming less than `25%` adversarial stake,
-- a block can be fast-confirmed in roughly one slot, around `13` seconds,
-- instead of waiting around two epochs for finality.
+- if a block has already been processed and passes `FCR`,
+- then under the paper's assumptions it has a very high chance of continuing all the way to finality;
+- so for transactions that are not too large, it is reasonable to treat that block as "final enough" without waiting the full `FFG` path.
 
-This is not the same thing as finality.
-`FCR` does not give economic finality like `Casper FFG`.
-Instead, it gives a deterministic confirmation rule under synchrony assumptions, and when those assumptions stop holding it falls back to finality.
+This is still not the same thing as finality.
+`FCR` does not replace `Casper FFG`.
+It tries to give a one-slot-style confirmation signal before finality arrives.
 
-So for me, `FCR` is an important transition point in the roadmap.
-It is not yet `SSF`, but it is already pushing Ethereum toward much faster confirmation than the current finality path.
+> This one is a draft, I don't refine the paper wording yet. Some parts are written by AI, based on my direction.
 
-## Single Slot Finality
+### 1. What the algorithm is trying to prove
 
-This is the longer-term direction I want to end with.
+The paper defines confirmation as a local guarantee:
 
-`SSF` is the roadmap where Ethereum tries to make finality happen in the same slot as block proposal, instead of waiting roughly two epochs, around `15` minutes.
+- if an honest validator confirms block `b` at time `t`,
+- then from the next slot onward, honest validators should keep `b` in their canonical chain;
+- and once confirmed, `b` stays confirmed.
 
-### What problem is Ethereum trying to solve?
+So the question is:
 
-Today, Ethereum's current design is still a compromise between three goals:
+> given the votes I already see right now, is this block stable enough that honest fork choice should not move away from it anymore?
 
-- maximize the number of validators that can participate,
-- minimize time to finality,
-- and minimize the overhead of running a node.
+### 2. First step: a local check for plain `LMD GHOST`
 
-These three goals conflict with each other.
-If Ethereum wants strong economic finality, then a very large portion of the validator set has to participate in finalization.
-But once many validators need to vote, the network has to download, aggregate, verify, and rebroadcast many signatures.
-That pushes up hardware overhead and makes fast finality harder.
+The paper starts with a simpler world where fork choice is only plain `LMD GHOST`.
 
-So the current system ended up with two visible consequences:
+It defines a local predicate:
 
-- finality takes around `15` minutes;
-- and the minimum stake is still `32 ETH`.
+```javascript
+isOneConfirmed(block, checkpoint, time);
+```
 
-The `SSF` roadmap is trying to improve both of these:
+This checks whether the subtree containing block `b` already has enough support by a margin large enough to survive:
 
-- bring finality down to one slot;
-- and eventually make staking much more accessible, potentially far below `32 ETH`.
+- the basic `1/2` majority threshold;
+- proposer boost;
+- possible Byzantine votes;
+- and slashed-validator adjustments.
 
-### Why is this difficult?
+Then it strengthens that into:
 
-The difficult part is not inventing a one-slot finality algorithm in the abstract.
-Protocols like Tendermint already show that one-slot-style finality is possible.
+```javascript
+isLMDGHOSTSafe(block, checkpoint, time);
+```
 
-The hard part is making that work inside Ethereum's validator model.
-Ethereum wants more than just fast commitment.
-It wants:
+The reason for the second predicate is that `LMD GHOST` does not choose the head in one shot.
+It walks fork by fork.
+So it is not enough for block `b` itself to look strong.
+Every ancestor decision on the path to `b` also has to be stable.
 
-- economic finality,
-- a very large public validator set,
-- and ideally some recovery behavior such as inactivity leaks.
+The paper also fixes the empty-slot case.
+If some slots between a parent and child are empty, honest votes already cast for the parent branch in those empty slots should still count as locked support for that branch.
+Otherwise the rule would be too pessimistic.
 
-That is where the overhead problem appears.
-If finality has to happen in one slot, then nodes must process enough validator votes quickly enough to know that the `2/3` threshold has been reached inside that same slot.
-So the shorter the finality time, the more pressure there is on attestation processing and signature aggregation.
+So after this first step, the paper has a local test for:
 
-In other words, the real bottleneck is not block proposal itself.
-It is vote aggregation at Ethereum's scale.
+> if fork choice were only `LMD GHOST`, this block is already safe.
 
-### Proposed directions
+### 3. Why Ethereum needs more than that
 
-From the current research direction, there are a few leading ways people try to get around this bottleneck.
+Ethereum does not run plain `LMD GHOST`.
+It runs `LMD-GHOST-HFC`, where the `HFC` part can filter out branches that do not fit the current justified-checkpoint state from `Casper FFG`.
 
-#### 1. Better aggregation
+That means a block can pass the subtree-weight test and still fail later for another reason:
+its branch may get filtered out by the `FFG` side.
 
-The most direct idea is brute force:
+So the full `FCR` cannot stop at:
 
-- improve signature aggregation,
-- improve attestation processing,
-- and make it feasible to count a huge number of validator votes inside one slot.
+> this block is safe under subtree weight.
 
-This direction tries to preserve Ethereum's economic-finality model as much as possible, while making the underlying machinery much more efficient.
+It also has to make sure:
 
-#### 2. Orbit committees
+> this block will still survive the justified-checkpoint filtering.
 
-Another direction is to let a randomly selected medium-sized committee finalize the chain, but in a way that still preserves much more of Ethereum's cost-of-attack properties than a naive committee design would.
+### 4. The full `FCR` algorithm
 
-This is attractive because it opens a middle ground:
+This is the part that matters most.
 
-- more efficient than requiring the full validator set every slot,
-- but still much stronger than a pure committee-based design with weak economic penalties.
+The full rule works like this:
 
-#### 3. Two-tiered staking
+1. At the beginning of an epoch, look at the greatest unrealized justified checkpoint from the previous epoch.
+2. If that checkpoint is now realized as justified, use it as a safe anchor.
+3. From that anchor, walk forward on the current canonical chain one block at a time.
+4. For each next block, run the local confirmation check again.
+5. Stop at the deepest block that still passes.
+6. If the confirmation state becomes stale or inconsistent, reset back to the greatest finalized block.
 
-A third direction is to explicitly separate validators into tiers.
-The higher-deposit tier would carry more of the burden for economic finality, while the lower-deposit tier could still participate in other ways.
+So the rule is basically:
 
-This direction matters because it connects `SSF` not only with fast finality, but also with staking democratization.
+```javascript
+function FCR(view, last_confirmed):
+    if candidate_is_too_old_or_no_longer_canonical:
+        return greatest_finalized_block(view)
 
-### Why this roadmap matters
+    if new_epoch_started_and_new_justified_checkpoint_is_now_realized:
+        candidate := justified_checkpoint_block
+    else:
+        candidate := last_confirmed
 
-So `SSF` is not just "make finality faster".
-It is a deeper redesign of how Ethereum counts votes, aggregates signatures, and balances:
+    while next_child_on_canonical_chain(candidate) passes the local check:
+        candidate := next_child_on_canonical_chain(candidate)
 
-- economic security,
-- validator-set size,
-- node overhead,
-- and time to finality.
+    return candidate
+```
 
-For now, this is still a research roadmap rather than an implementation roadmap.
-It is generally expected to come much later, after other major upgrades such as Verkle and Danksharding.
+That is the high-level shape.
+The real paper adds more guards when the scan crosses epoch boundaries, because that is exactly where conflicting checkpoint justification can appear.
+
+So the algorithm is doing two jobs at once:
+
+- use local subtree-weight evidence to move forward quickly;
+- but never move into a region that the `FFG` side may later reject.
+
+### 5. When can this be attacked or fail?
+
+This is the important caveat.
+`FCR` is a fast path, so it depends much more on the good-case assumptions than full finality does.
+
+The bad cases are roughly these.
+
+#### 1. The network stops behaving synchronously
+
+If validators do not see roughly the same blocks and attestations soon enough, a block may look locally safe when it really is not globally stable yet.
+
+That is exactly why `FCR` is not sold as full finality.
+It is much more sensitive to delayed views than `Casper FFG`.
+
+#### 2. Too much adversarial weight, or too much bad luck in consecutive committees
+
+The paper assumes an adversarial fraction `β < 1/3`, and also assumes that consecutive committees do not end up too adversarial.
+
+If those assumptions break, the local vote-weight test can become misleading.
+Then a branch may look safer than it really is.
+
+#### 3. The `FFG` votes do not get included as expected
+
+The rule relies on the justified-checkpoint state catching up at epoch boundaries.
+If Byzantine behavior or severe network problems stop enough honest `FFG` votes from getting included for long enough, the fast path cannot safely keep moving.
+
+That is why the algorithm anchors on realized justified checkpoints, not on wishful thinking.
+
+#### 4. Conflicting justification starts to appear across epochs
+
+This is the subtle attack surface that appears only because Ethereum is not plain `LMD GHOST`.
+
+A block may look locally strong by subtree weight, but if the checkpoint state around it is about to conflict with another justified path, then confirming too aggressively would be wrong.
+
+That is why the full algorithm adds extra guards at epoch crossings.
+
+#### 5. The confirmed candidate becomes stale or non-canonical
+
+This is not even a fancy attack.
+It can happen after temporary forks or messy network conditions.
+
+If the previously confirmed candidate is now too old, or it is no longer on the canonical chain, the rule immediately gives up on that fast state and falls back to the greatest finalized block.
+
+That reset is a core part of the design, not an edge case.
+
+### 6. The right way to use `FCR`
+
+So the right way to think about `FCR` is:
+
+- for small or medium-value transactions, it tries to give a block that is fast enough to treat as practically finalized;
+- for large-value settlement, you still want actual `Casper FFG` finality.
+
+That is why `FCR` is interesting.
+It does not change Ethereum's base consensus.
+It tries to shrink the huge gap between:
+
+- "this is the current head";
+- and "this checkpoint is economically finalized".
+</details>
+
+<details>
+<summary>Single Slot Finality</summary>
+
+If `FCR` is the fast path before finality, then `Single Slot Finality`, or `SSF`, is the stronger endgame:
+
+- not just "this block is probably safe now";
+- but "this block reaches actual finality in the same slot".
+
+At first, I was going to summarize `SSF` from several different posts and scattered discussions.
+But recently Ethereum published [Upgrading Finality - Edition 1](https://consensus.ethereum.foundation/blog/upgrading-finality-edition-1), and it gives a much cleaner anchor for this whole direction.
+
+That article is useful here because it reframes the whole problem.
+It says Ethereum should stop thinking about fast finality as one giant all-or-nothing jump, and instead break it into a sequence of upgrades.
+
+So for me, the right way to read `SSF` from this article is:
+
+- `SSF` is still the direction;
+- but the path to it is now more incremental than older "one-slot finality" thinking.
+
+### 1. Why Ethereum wants this so badly
+
+Ethereum already has strong finality under proof of stake.
+If less than `1/3` of stake is hostile, finalized history is unique.
+If more than `1/3` manages to finalize conflicting histories, at least `1/3` of total stake gets slashed.
+
+The problem is not the quality of finality.
+The problem is the speed.
+
+Today, Ethereum finality is slow enough that a long tail of recent blocks stays unfinaized for quite a while.
+Under normal conditions, somewhere around `63` to `95` recent blocks are still sitting in that vulnerable zone.
+
+That matters because the chain is available before it is final.
+So applications have to live in this awkward gap:
+
+- the chain keeps moving;
+- but the latest part can still be reorged.
+
+That is why exchanges wait for extra confirmations, bridges build special risk controls, and L2s use their own heuristics instead of simply waiting for finality every time.
+
+So the motivation for `SSF` is not abstract elegance.
+It is to drastically shrink the reorgable tail of the chain.
+
+### 2. Why current finality is slow
+
+The bottleneck is not that Ethereum lacks a finality gadget.
+The bottleneck is that the current one is conservative and heavy.
+
+`Casper FFG` needs two rounds of voting:
+
+- one to justify;
+- one to finalize.
+
+Those rounds are pipelined, but finality still takes two full epochs.
+With `32` slots per epoch and `12` seconds per slot, the minimum time to finality is:
+
+```javascript
+2 * 32 * 12 = 768 seconds
+```
+
+and the average transaction waits longer than that.
+
+So the challenge is brutal:
+
+> can Ethereum move from ~1000 seconds to something closer to ~10 seconds?
+
+That is the scale of improvement this roadmap is aiming for.
+
+### 3. The big unlock: decouple finality from fork choice
+
+The article's main message is that the first real unlock is not `SSF` itself.
+It is decoupling finality from the current slot-by-slot fork choice.
+
+Right now, Ethereum bundles both into one attestation:
+
+```javascript
+class AttestationData(Container):
+    slot: Slot
+    index: CommitteeIndex
+    # LMD GHOST vote
+    beacon_block_root: Root
+    # FFG vote
+    source: Checkpoint
+    target: Checkpoint
+```
+
+So the short-timescale vote and the long-timescale finality vote are tied together.
+That creates pressure everywhere:
+
+- slot timing;
+- aggregation timing;
+- networking;
+- and the way `LMD GHOST` and `Casper FFG` interfere with each other.
+
+The proposed change is simple in spirit:
+
+- fork-choice votes and finality votes should become separate messages;
+- they should propagate independently;
+- and they should be processed on different timescales.
+
+That is the big unlock because finality then stops being trapped inside the slot structure designed for fork choice.
+
+### 4. Why this matters for `SSF`
+
+This is the most important takeaway from the article.
+
+Older attempts like one-slot finality or three-slot finality were treated too much like all-or-nothing upgrades.
+They required Ethereum to solve networking, validator scale, aggregation, committee structure, and consensus design all at once.
+
+The new framing is different:
+
+- first decouple finality;
+- then speed it up step by step;
+- then keep pushing until actual fast finality becomes feasible.
+
+So `SSF` is no longer being framed as:
+
+> replace the whole system with one perfect one-slot design in a single jump.
+
+It is being framed more like:
+
+> make finality its own pipeline first, then keep shortening that pipeline.
+
+That is a much more practical roadmap.
+
+### 5. What needs to improve after decoupling
+
+Once finality is decoupled, the article says Ethereum can attack the problem from several directions independently.
+
+#### 1. Fewer effective validators in the finality path
+
+The easiest win is to reduce how many distinct validator identities need to participate in finality voting.
+
+The article points out that consolidation already helps a lot.
+Large operators often run many `32 ETH` validators for historical reasons.
+If those are consolidated aggressively, finality voting overhead drops a lot without reducing validator diversity at the entity level.
+
+#### 2. Better aggregation and batching
+
+Another direction is to batch votes earlier and aggregate them better.
+Today, a lot of bandwidth is wasted because aggregation is not as efficient as it could be.
+
+So there are gains available from:
+
+- batching attestations at origin;
+- better aggregate combination;
+- and potentially SNARK-based aggregation later.
+
+#### 3. Better networking
+
+If finality votes become separate from fork-choice votes, they can use bandwidth much more flexibly.
+That alone should speed them up, because today attestation propagation is bursty and constrained by the next proposer deadline.
+
+Once decoupled, finality voting can occupy more of the available bandwidth instead of being squeezed into the same narrow slot window.
+
+#### 4. Validator rotation or committee-based finality
+
+Another option is to avoid making the full validator set participate in every finality round.
+The article mentions approaches like `Orbit`, where only a subset participates at a given time.
+
+That lowers overhead, though of course it changes the security model and has to be designed carefully.
+
+#### 5. Single-round finality
+
+This is one of the most important ideas.
+
+Today, `Casper FFG` uses two voting rounds.
+But if Ethereum were willing to accept a lower fault threshold than the classic `1/3`, then a single-round finality design becomes possible.
+
+That would almost halve time to finality immediately.
+
+So one path toward `SSF` is not only better engineering.
+It is also a different consensus point in the design space:
+
+- faster finality;
+- but with a smaller hostile-stake tolerance, perhaps around `20%` or `17%`.
+
+### 6. There is also a protocol-cleanup motive
+
+The article makes another important point:
+`LMD GHOST` and `Casper FFG` never played perfectly nicely together.
+
+`Gasper` worked, and worked surprisingly well, but the interaction between:
+
+- a dynamic available chain;
+- and a trailing finality gadget
+
+has always been a bit rough.
+
+That is one reason Ethereum accumulated fixes, edge-case handling, and extra complexity over time.
+The article even hints that moving away from `LMD GHOST` toward a more memory-less fork choice, such as `Goldfish`, may help reduce some of those attack surfaces.
+
+So this roadmap is not only about speed.
+It is also about cleaning up a design that has been known for years to be somewhat awkward internally.
+
+### 7. So where does `SSF` fit?
+
+For me, the article says something very clear:
+
+- `FCR` is the near-term fast confirmation layer;
+- decoupled finality is the big unlock;
+- and `SSF` is the long-term destination, not the very first upgrade.
+
+That means the chain of ideas now looks more like this:
+
+- get faster practical confirmation with `FCR`;
+- separate finality from fork choice;
+- improve finality bandwidth, aggregation, and validator handling step by step;
+- possibly change the finality algorithm itself;
+- and only then push all the way toward actual single-slot finality.
+
+So `SSF` is still the dream, but the roadmap is no longer:
+
+- design one perfect `SSF` protocol;
+- ship it all at once.
+
+It is now:
+
+- decouple;
+- optimize;
+- shorten the finality pipeline repeatedly;
+- and let `SSF` emerge as the end of that process.
+
+</details>

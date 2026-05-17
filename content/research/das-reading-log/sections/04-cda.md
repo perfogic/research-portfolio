@@ -26,7 +26,7 @@ The intuition was roughly this:
 - if sampling does not need one specific piece, but can tolerate reconstruction from random coded pieces, then the system becomes less sensitive to Byzantine behavior on exact lookup paths;
 - and if column dissemination is the expensive part, then maybe network coding can reduce the amount of duplication needed there.
 
-That is what led me to think about combining `RLNC` with the `RDA` direction.
+That is what led us to think about combining `RLNC` with the `RDA` direction.
 
 The hope is not to preserve every property of `RDA` exactly.
 The hope is to find a better tradeoff:
