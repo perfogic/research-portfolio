@@ -183,9 +183,227 @@ That combined design is what we will call `Gasper` in the next section.
 
 </details>
 
-## Casper FFG
+<details>
+<summary>Casper FFG</summary>
 
-Draft.
+`Casper FFG` stands for `Casper the Friendly Finality Gadget`.
+
+The key word here is `gadget`. It sits on top of fork choice rule and adds finality for it.
+
+So if `LMD GHOST` answers:
+
+> which head should I build on right now?
+
+then `Casper FFG` answers:
+
+> which part of the chain is now safe to never revert?
+
+`Casper FFG` is a BFT-style finality gadget.
+It uses validator voting, a `2/3` threshold, and a two-step commit structure to add finality.
+
+Overall, it is not a standalone BFT blockchain protocol and it finalizes checkpoints on top of an underlying chain.
+
+Its effectiveness comes down to two ideas:
+
+- `two-phase commit`
+- `accountable safety`
+
+The two-phase commit is what gives it classical BFT-style finality.
+Accountable safety is what makes conflicting finality economically expensive.
+
+### 1. Why LMD GHOST is not enough
+
+`LMD GHOST` is only a fork-choice rule.
+It helps nodes choose the best head from their current local view, but it does not make that head permanent.
+
+So even if most honest nodes currently agree on the head, that head can still change later if new blocks or attestations arrive.
+This is enough for chain growth, but it is not enough for finality.
+
+Ethereum needs one more layer that can say:
+
+> from this point backward, the chain should never be reverted.
+
+That is the role of `Casper FFG`.
+
+### 2. Checkpoints, source, and target
+
+`Casper FFG` does not vote on every block directly.
+It works on checkpoints.
+
+In Ethereum today, a checkpoint is attached to an epoch, which is `32` slots (`32 * 12 / 60 = 6.4` minutes).\
+The reason for why we have to divide to many slots in an epoch is due to a very large validator set on Ethereum, aggregation signature is the slowest path in broadcasting data in Ethereum, if we wait to enough signatures, it will be too slow and overhead.\
+That's why they divide into 32 commitees, each commitee will propose block on each slot
+
+Overall, instead of finalizing every block, `Casper FFG` finalizes checkpoint blocks at the epoch level.
+
+Inside an attestation, we already saw the `LMD GHOST` vote before:
+
+```javascript
+class AttestationData(Container):
+    slot: Slot
+    index: CommitteeIndex
+    # LMD GHOST vote
+    beacon_block_root: Root
+    # FFG vote
+    source: Checkpoint
+    target: Checkpoint
+```
+
+In the previous section, the important field was:
+
+```javascript
+beacon_block_root;
+```
+
+For `Casper FFG`, the important fields are now the last two:
+
+```javascript
+source;
+target;
+```
+
+A `Casper FFG` vote has two important parts:
+
+- The `source` is the justified checkpoint that the validator currently trusts.
+- The `target` is the newer checkpoint that the validator wants to justify next.
+
+So a vote is not just "I like this block".
+It is a link:
+
+```javascript
+source -> target
+```
+
+If at least `2/3` of the total stake votes for the same link, that link becomes a `supermajority link`.
+
+### 3. Justification and finalization
+
+Casper finality is a two-step process.
+
+You can think of `Casper FFG` as a two-round commit process.
+
+In round 1, I tell the network which checkpoint I think should move forward.
+Then I hear what other validators support.
+If I see `2/3` of the total stake supporting the same checkpoint, I can justify it.
+
+In round 2, I tell the network that this checkpoint is now my justified checkpoint.
+Then I hear whether the rest of the network also treats it as justified.
+If I again see `2/3` support, I can finalize the earlier checkpoint.
+
+So the difference is:
+
+- `justified`: I know enough validators support this checkpoint;
+- `finalized`: I know enough validators know that this checkpoint is supported and committed.
+
+That second step is what makes finality strong.
+
+First, a checkpoint becomes `justified`.
+Second, an earlier justified checkpoint becomes `finalized`.
+
+A checkpoint is `justified` if:
+
+- it is the root checkpoint;
+- or there is a supermajority link from an already justified checkpoint to it.
+
+Then a checkpoint becomes `finalized` when:
+
+- it is already justified;
+- and there is a supermajority link from it to its direct child checkpoint.
+
+So the shape is:
+
+```javascript
+justified source -> justified target
+```
+
+and then the earlier checkpoint is finalized once the chain has moved one more checkpoint forward.
+
+In Ethereum, that means finality takes two epochs end to end, roughly `12.8` minutes, though the pipeline lets the chain finalize one checkpoint per epoch once it is running normally.
+
+This is why the mechanism feels close to `PBFT` or `Tendermint`.
+It has the same high-level BFT intuition:
+
+- first enough validators support a checkpoint;
+- then enough validators support moving forward from it;
+- and only then do we treat the earlier point as final.
+
+### 4. The two slashing conditions
+
+Casper's safety comes from two slashing conditions.
+
+A validator must not:
+
+- make two different votes for the same target epoch;
+- make one vote that surrounds another.
+
+The first is usually called `double vote`.
+The second is usually called `surround vote`.
+
+#### Double vote
+
+A `double vote` means the validator votes twice for the same target epoch, but with two different targets.
+
+<img src="/assets/images/consensus/01/07.png" alt="03" width="720" />
+
+#### Surround vote
+
+A `surround vote` means one vote wraps around another.
+
+For example, suppose a validator first votes:
+
+```javascript
+(source = A), (target = D);
+```
+
+and later votes:
+
+```javascript
+(source = B), (target = C);
+```
+
+with:
+
+```javascript
+h(A) < h(B) < h(C) < h(D);
+```
+
+<img src="/assets/images/consensus/01/08.png" alt="03" width="720" />
+
+### 5. What Casper FFG guarantees
+
+The two guarantees of `Casper FFG` are:
+
+- `accountable safety`
+- `plausible liveness`
+
+`Accountable safety` is the safety side.
+If less than `1/3` of the total stake violates a slashing condition, then two conflicting checkpoints cannot both be finalized.
+
+This is already close to the usual BFT safety story.
+But Casper adds one more guarantee on top.
+If conflicting checkpoints are ever finalized, then at least `1/3` of the total stake must have violated a slashing condition and can be slashed for it.
+
+That is why this is often called `economic finality`.
+The protocol is not only saying that a finalized checkpoint should be safe.
+It is also saying that breaking that finality has a large, explicit cost.
+
+`Plausible liveness` is the liveness side.
+Casper FFG is not responsible for producing blocks, so its liveness claim is narrower than "the chain always grows".
+What it guarantees is that finality should not get stuck forever.
+
+More precisely, if at least `2/3` of the validators follow the protocol, then it must always remain possible to add new supermajority links, justify new checkpoints, and finalize new checkpoints without honest validators getting slashed.
+
+This is also why Casper's fork-choice rule matters.
+The underlying chain has to keep building on the branch containing the highest justified checkpoint.
+That is the branch where the protocol knows it can keep moving finality forward safely.
+
+To sum up, the right way to think about Ethereum consensus up till now is:
+
+- `LMD GHOST` keeps choosing the head;
+- `Casper FFG` keeps marking which checkpoints are safe;
+- and the combination gives Ethereum both head selection and finality.
+
+</details>
 
 ## Gasper
 
