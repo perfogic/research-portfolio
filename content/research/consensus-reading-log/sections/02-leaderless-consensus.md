@@ -561,13 +561,196 @@ This will be a demo for you to play around with it for familarity:
 <details>
 <summary>Red Belly Blockchain</summary>
 
-`DBFT` with multivalue consensus is the bridge to `Red Belly Blockchain`.
-The binary layer already tells us which proposer indices survive, and the multivalue layer already turns that into blockchain-style consensus.
+`Red Belly Blockchain` starts from the same `DBFT` binary consensus core, but changes the target completely.
+`DBFT` with multivalue consensus still ends by picking one surviving proposal.
+`Red Belly` does not stop there.
+Instead of picking one surviving proposal like `DBFT`, it keeps multiple surviving proposals as **sub blocks**, then combines them into one final **superblock**.
 
-`Red Belly` goes one step further.
-Instead of stopping at one surviving proposal, it reconciles multiple valid and non-conflicting proposals into one final superblock.
+![alt text](/assets/images/consensus/01/05.png)
 
-So the shift from `DBFT` to `Red Belly` is no longer about binary safety or liveness.
-It is about how to use that deterministic leaderless core to build a higher-throughput blockchain that can combine proposals instead of throwing most of them away.
+<iframe
+  src="demos/red_belly_superblock_ui.html"
+  title="Red Belly superblock demo"
+  width="100%"
+  height="834"
+  style="display: block; width: 117.65%; max-width: none; border: 0; transform: scale(0.85); transform-origin: top left;"
+  loading="lazy"
+></iframe>
+
+Just remind again:
+
+- `DBFT` uses binary consensus to decide which proposal survives;
+- `Red Belly` uses binary consensus to decide which proposal indices survive, then reconciles them together.
+
+Now, we go deeper into the changes:
+
+- a verified reliable broadcast for proposals;
+- a bitmask built from many binary consensus instances;
+- and a reconciliation step that extracts one deterministic superblock.
+
+### 1. Verified reliable broadcast
+
+Before proposers can be reconciled together, `Red Belly` first changes the broadcast layer.
+Instead of using a plain reliable broadcast, it uses a **verified reliable broadcast**.
+
+The easiest way to see this change is to recall the plain reliable broadcast first.
+In the plain version:
+
+- the proposer sends `INIT(v)`;
+- receivers echo that proposal to others;
+- once enough matching echoes are seen, nodes broadcast `READY`;
+- and once enough matching `READY` messages are seen, the proposal is delivered.
+
+`Red Belly` keeps the same overall shape, but changes two things.
+
+First, after the full proposal `v` is sent once in `INIT`, later phases mostly exchange its hash `h(v)` instead of resending the whole proposal.
+The reason is simple: proposals can be large, so it is much cheaper to confirm agreement on the digest than to rebroadcast the full content every time.
+
+Second, `READY` no longer means only "I saw this proposal".
+It also carries the verification result for that proposal.
+So the protocol is not just agreeing on which proposal was sent, but also on which transactions inside it are valid.
+
+The algorithm is:
+
+```javascript
+verified_reliable_broadcast(v):
+  broadcast INIT(v)
+
+  upon receiving INIT(v) from proposer j:
+      broadcast ECHO(h(v), j)
+
+  upon receiving n-f ECHO(h(v), j) and READY not yet sent:
+      if I am a primary verifier of v:
+          verif := verify(v)
+      if I am a secondary verifier of v:
+          wait(Δ)
+          verif := verify(v)
+      broadcast READY(verif, h(v), j)
+
+  upon receiving f+1 READY(verif, h(v), j) and READY not yet sent:
+      stop_verify(v)
+      broadcast READY(verif, h(v), j)
+
+  upon receiving n-f READY(verif, h(v), j) and proposal j not yet delivered:
+      if is_verified(v, verif):
+          deliver(v, j)
+```
+
+There are two details here that matter.
+
+The first is the hash exchange.
+
+- `INIT` still carries the full proposal `v`;
+- but `ECHO` carries only `h(v)`;
+- and `READY` also carries `h(v)`, not the full proposal again.
+
+So the network agrees on one digest, while the actual proposal content only needs to be sent once.
+
+The second is what happens before `READY`.
+Once a node receives `n-f` matching `ECHO(h(v), j)` messages, verification starts.
+Primary verifiers start immediately.
+Secondary verifiers wait for `Δ`, and only help if needed.
+
+After verification finishes, the node broadcasts:
+
+```javascript
+READY(verif, h(v), j)
+```
+
+Here `verif` is not just a boolean.
+It encodes which transactions inside the proposal are invalid.
+So by the time a proposal is finally delivered, the protocol already knows how that proposal should be filtered.
+
+There is also one more optimization.
+If a node receives `f+1` matching `READY` messages before it has sent `READY` itself, it stops its own verification work and simply rebroadcasts that `READY`.
+This avoids wasting verification effort once enough agreement is already visible in the network.
+
+So the real change in this layer is:
+
+- use hashes to reduce communication;
+- use verifier sets to split signature checking;
+- and piggyback the verification result inside `READY`, so delivery already comes with validation.
+
+### 2. From proposals to a bitmask
+
+Once proposals are being delivered in the background, `Red Belly` runs one binary consensus instance per proposer.
+This is the `propose(val)` algorithm in the paper.
+
+```javascript
+propose(val):
+  verified_reliable_broadcast(val) -> props
+  start timer(age of oldest tx in mempool)
+
+  while |{k : bitmask[k] = 1}| < |P| - f or timer did not expire:
+      for every k such that props[k] has been delivered:
+          bitmask[k] := bin_propose_k(1)
+
+      for every k such that props[k] has not been delivered:
+          bitmask[k] := bin_propose_k(0)
+
+  wait until bitmask is full and every index with bitmask[ℓ] = 1 has props[ℓ] delivered
+  reconciliate(bitmask & props)
+```
+
+The logic is:
+
+- if proposer `k`'s proposal has already been delivered, vote `1` in binary instance `k`;
+- if it has not been delivered yet, vote `0` there;
+- run all those binary instances in parallel;
+- the outputs together form a `bitmask`.
+
+So unlike `DBFT`, the binary layer is no longer selecting one winner directly.
+It is building a set of surviving proposal indices.
+
+The timer here also has a different role from the binary `DBFT` timer.
+It is tied to the age of the oldest transaction in the mempool, so old transactions are not postponed forever while the protocol waits for more proposals to arrive.
+
+### 3. Reconciliation into a superblock
+
+Once every correct proposer has the same bitmask, they still do not necessarily have the same local `props` array yet.
+So each proposer waits until every index marked with `1` in the bitmask has actually been delivered locally.
+
+After that, they run reconciliation:
+
+```javascript
+reconciliate(props):
+  superblock := ∅
+
+  for i = 0 .. n-1:
+      for tx in props[(k + i) mod n]:
+          for ctx in superblock:
+              if not conflict(tx, ctx):
+                  superblock := superblock ∪ {tx}
+
+  decide(superblock)
+```
+
+This is where `Red Belly` really departs from `DBFT`.
+The output is no longer one proposal.
+It is one **superblock** made from many proposals.
+
+The reconciliation is deterministic:
+
+- all correct nodes use the same bitmask;
+- all of them wait for the same delivered proposal set;
+- all of them traverse proposals in the same order;
+- and all of them apply the same conflict rule.
+
+So they all end up with the same final superblock.
+
+The paper also adds one fairness detail here.
+The traversal order is rotated by the index `k` of the latest committed superblock, so the lowest proposer index does not always get priority when transactions are added first.
+
+### 4. What Red Belly improves over DBFT
+
+At this point the difference is clearer.
+
+- `DBFT` uses binary consensus to pick one surviving proposal.
+- `Red Belly` uses binary consensus to keep many proposals alive at once.
+- `DBFT` stops after multivalue selection.
+- `Red Belly` adds verified broadcast and reconciliation to turn that set into one superblock.
+
+This is why `Red Belly` improves throughput.
+Instead of throwing away all but one proposal, it can commit transactions coming from many proposers in the same consensus instance.
 
 </details>
