@@ -17,9 +17,171 @@ The path I want to take is:
 So this section is not only about explaining finality in the current protocol.
 It is also about following the path from Ethereum today toward the `SSF` roadmap.
 
-## LMD GHOST
+<details>
+<summary>LMD GHOST</summary>
 
-Draft.
+Before talking about finality, we need the fork-choice rule first.
+In Ethereum today, that rule is `LMD GHOST`.
+
+This part does not finalize blocks.
+It answers a simpler question:
+
+> given the blocks and attestations I have received so far, which block should I treat as the head of the chain? - This is called 'canonical chain'.
+
+That is what a proposer builds on, and what attesters vote for in the next slot.
+
+There are two ideas inside the name:
+
+- `LMD`: Latest Message Driven
+- `GHOST`: Greedy Heaviest-Observed Sub-Tree
+
+### 1. Latest Message Driven
+
+In proof of work, miners vote for a branch by mining the next block on top of it.
+In Ethereum proof of stake, validators vote by publishing attestations.
+
+The head vote inside an attestation is:
+
+```javascript
+class AttestationData(Container):
+    slot: Slot
+    index: CommitteeIndex
+    beacon_block_root: Root // LMD GHOST vote
+    source: Checkpoint
+    target: Checkpoint
+```
+
+So for fork choice, the important field is:
+
+```javascript
+beacon_block_root;
+```
+
+This is the block that the validator currently believes is the best head.
+
+The `LMD` rule is simple:
+
+- keep only the latest attestation from each validator;
+- discard that validator's older head votes;
+- use the latest one as that validator's current vote weight.
+
+So if validator `V` first voted for block `B`, and later voted for block `C`, then only the vote for `C` remains in fork choice.
+
+That is the `latest` part.
+It is also the `message driven` part:
+
+- the fork choice is not driven only by new blocks;
+- it is driven by validator messages, which are attestations.
+
+### 2. What goes into fork choice
+
+At any node, the fork choice works only from its local view.
+There is no global view of the chain.
+
+This means:
+
+> A node only knows what it currently sees as the canonical chain.
+> That view can differ from other nodes.
+> More importantly, no node can know which chain the whole network already agrees on.
+
+Specifically, the input is roughly:
+
+- the block tree that this node knows about;
+- the latest message from each validator that this node has accepted;
+- the effective balance of each validator, which is its vote weight.
+
+That is why two honest nodes can temporarily choose different heads.
+They may have received different blocks or different attestations at any moment.
+
+### 3.Let's touch the GHOST part
+
+Once we have one latest vote per validator, the next step is to find the head block.
+
+The rule is not "pick the longest chain" - Longest-chained rule, like in Bitcoin Network.
+Instead, it asks:
+
+> at each fork, which child subtree has the most validator weight behind it?
+
+That is the `GHOST` part.
+
+The weight of a validator's vote is its effective balance. In Ethereum, this is the validator's staking weight used by the protocol.\
+If a validator votes for a block, that vote also counts in favor of every block on the path from the root to that block.
+
+For example, suppose we have a chain:
+
+`A -> B -> C -> D`
+
+If a validator votes for `D`, that vote is also implicitly supporting `C`, `B`, and `A`.
+
+Overall, the fork choice has two pieces.
+
+First, it needs a scoring rule.
+For any block, `get_weight(block)` returns the total validator weight supporting the subtree rooted at that block.
+
+```javascript
+function get_weight(block):
+    total := direct_vote_weight(block) // direct_vote_weight calculates total_weight voted from all validators at that block
+
+    for each child c of block:
+        total := total + get_weight(c)
+
+    return total
+```
+
+Second, it uses that score to walk down the tree.
+Starting from the root, `get_head()` compares the weights of the child subtrees and always moves to the heaviest one.
+
+```javascript
+function get_head(root):
+    head := root
+    while head has children:
+        head := child c of head
+                with maximum get_weight(c)
+    return head
+```
+
+<img src="/assets/images/consensus/01/06.png" alt="03" width="720" />
+
+So `get_weight()` tells us how much support a subtree has, and `get_head()` uses that support to choose the head block.
+
+If two child branches have equal weight, the spec uses a deterministic tie-break.\
+That just means every node applies the same fixed rule to break the tie, so they do not diverge for arbitrary reasons.\
+In practice, the spec compares the child block roots and picks one consistently.
+
+### 4. Why Ethereum does not use longest-chain
+
+The issue with longest-chain in proof of stake is that it looks only at block extension.
+A branch can win simply because it got extended first, even if most validators are already voting for the other branch.
+
+That is a weak signal in proof of stake.
+In proof of work, extending a branch costs real physical work.
+In proof of stake, it does not.
+
+Ethereum already has a stronger signal: validator attestations.
+So `LMD GHOST` does not ask which branch is longer.
+It asks:
+
+> which branch currently has the most validator support behind it?
+
+=> This makes `LMD GHOST` more suitable in this situation.
+
+### 5. What LMD GHOST gives, and what it does not
+
+`LMD GHOST` gives Ethereum a fork-choice rule.
+It tells each node which head to treat as canonical in its current local view.
+
+But by itself it does not give finality.
+Under difficult network conditions, the head can still change.
+
+So the right way to think about it is:
+
+- `LMD GHOST` picks the head;
+- `Casper FFG` finalizes checkpoints;
+- and Ethereum today combines the two.
+
+That combined design is what we will call `Gasper` in the next section.
+
+</details>
 
 ## Casper FFG
 
