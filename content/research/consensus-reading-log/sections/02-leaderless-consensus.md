@@ -531,109 +531,30 @@ The protocol is back in the easy case:
 - if `w = r mod 2`, they decide in that round;
 - otherwise, they all keep `val := w`, and decision follows in one of the next two rounds.
 
-### 4. DBFT with Multivalue Consensus
+### 4. DBFT in Blockchain Consensus
 
-Up to this point, `DBFT` can only decide a bit.
-That is enough for binary consensus, but not enough for blockchain consensus, where the protocol has to decide an actual proposal.
+This section describes how dBFT can be applied into real-world blockchain.
+I will illustrate them with 4 proposers, each proposer wants to propose different blocks.
+<img src="/assets/images/consensus/01/03.png" alt="03" width="720" />
 
-So the next step is a reduction from multivalue consensus to many binary consensus instances.
-The operation is `mv_propose`.
+Firstly they will run `Binary Consensus Algorithm` with each blocks.
 
-The idea is simple:
+Secondly, every proposer will join to vote for every blocks A,B,C,D. Each process will continue for a few rounds before finally deciding the result.
 
-- every proposer reliably broadcasts its own proposal;
-- there is one binary consensus instance per proposer;
-- each binary instance decides whether that proposal survives as a candidate;
-- then the protocol picks one surviving proposal deterministically.
+Finally, once it has the result, it will select the valid block from proposer with lowest index.
 
-So if there are `n` proposers, there are also `n` binary objects:
+![alt text](/assets/images/consensus/01/04.png)
 
-- `BIN_CONS[1]`
-- `BIN_CONS[2]`
-- ...
-- `BIN_CONS[n]`
+This will be a demo for you to play around with it for familarity:
 
-And `BIN_CONS[k]` answers only one question:
-
-> does the proposal from process `Pk` survive?
-
-The reduction is:
-
-```javascript
-mv_propose(vi):
-  RB_broadcast VAL(vi)
-
-  repeat:
-    if there exists k such that proposals[k] != ⊥
-    and BIN_CONS[k] not yet invoked:
-        invoke BIN_CONS[k].bin_propose(-1)
-  until there exists ℓ such that bin_decisions[ℓ] = 1
-
-  for each k such that BIN_CONS[k] not yet invoked:
-      invoke BIN_CONS[k].bin_propose(0)
-
-  wait until all bin_decisions[x] != ⊥
-
-  j := min { x such that bin_decisions[x] = 1 }
-  wait until proposals[j] != ⊥
-  decide(proposals[j])
-```
-
-The flow is easier to see in four phases.
-
-#### Phase 1: reliably broadcast proposals
-
-Each process first reliably broadcasts its own proposal:
-
-```javascript
-RB_broadcast VAL(vi)
-```
-
-When process `Pi` reliably delivers a valid proposal from `Pk`, it stores it in `proposals[k]`.
-
-#### Phase 2: start the promising binary instances
-
-For each proposal that has already been delivered, `Pi` starts the corresponding binary object:
-
-```javascript
-BIN_CONS[k].bin_propose(-1);
-```
-
-The special input `-1` is an optimization.
-It tells the binary instance to skip the normal `BV-broadcast` path and enter the fast path immediately.
-
-This is what gives the good-case speedup:
-if all non-faulty processes reliably deliver the same valid proposal quickly, the corresponding binary instance can decide `1` after only one more message delay.
-
-#### Phase 3: terminate the remaining instances
-
-As soon as some binary instance decides `1`, every still-unstarted instance is launched with:
-
-```javascript
-BIN_CONS[k].bin_propose(0);
-```
-
-This phase is not about finding the winner.
-It is only about forcing the remaining binary instances to terminate.
-
-#### Phase 4: choose the final proposal
-
-After all binary instances terminate, process `Pi` chooses:
-
-```javascript
-j := min { x such that bin_decisions[x] = 1 }
-```
-
-and decides `proposals[j]`.
-
-So the binary layer is not deciding the final proposal directly.
-It is only deciding which proposer indices survive.
-Then the multivalue layer applies one deterministic tie-break rule: pick the smallest surviving index.
-
-This also explains the `4`-message-delay good case:
-
-- `3` message delays for reliable broadcast,
-- `1` more for the optimized binary fast path.
+<iframe
+  src="dbft_multivalue_reduction_ui.html"
+  title="DBFT applied blockchain consensus demo"
+  width="100%"
+  height="834"
+  style="display: block; width: 117.65%; max-width: none; border: 0; transform: scale(0.85); transform-origin: top left;"
+  loading="lazy"
+></iframe>
 
 </details>
 

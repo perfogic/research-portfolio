@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DBFT applied to Blockchain Consensus Demo</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --panel2: #182235;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --border: #334155;
+        --blue: #93c5fd;
+        --green: #34d399;
+        --pink: #fda4af;
+        --purple: #a78bfa;
+        --yellow: #fbbf24;
+        --red: #f87171;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .demo {
+        width: min(1180px, calc(100vw - 32px));
+        height: 780px;
+        margin: 24px auto;
+        background: linear-gradient(180deg, #111827 0%, #0b1220 100%);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 18px;
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.84);
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 24px;
+        letter-spacing: -0.02em;
+      }
+
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+        max-width: 760px;
+        font-size: 14px;
+      }
+
+      .controls {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        max-width: 520px;
+      }
+
+      button,
+      select {
+        border: 1px solid var(--border);
+        background: var(--panel2);
+        color: var(--text);
+        padding: 9px 11px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 750;
+        font-size: 13px;
+      }
+
+      button:hover,
+      select:hover {
+        border-color: var(--blue);
+      }
+      button.primary {
+        background: #2563eb;
+        border-color: #3b82f6;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .content {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) 380px;
+      }
+
+      .stage {
+        min-width: 0;
+        min-height: 0;
+        padding: 18px;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: 14px;
+        border-right: 1px solid var(--border);
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .card,
+      .process-summary {
+        border: 1px solid var(--border);
+        background: rgba(11, 18, 32, 0.88);
+        border-radius: 14px;
+        padding: 10px 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .card strong {
+        display: block;
+        color: var(--text);
+        font-size: 17px;
+        margin-top: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .lanes {
+        min-height: 0;
+        overflow-x: auto;
+        overflow-y: auto;
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(180px, 1fr);
+        gap: 14px;
+        padding: 6px 4px 10px;
+        align-items: start;
+      }
+
+      .lane {
+        min-width: 180px;
+        border: 1px solid var(--border);
+        background: rgba(15, 23, 42, 0.86);
+        border-radius: 18px;
+        padding: 14px 12px;
+        display: grid;
+        grid-template-rows: auto auto auto auto 1fr;
+        justify-items: center;
+        gap: 10px;
+        position: relative;
+        max-height: 100%;
+        overflow: hidden;
+      }
+
+      .lane.winner {
+        border-color: var(--green);
+        box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.16);
+      }
+
+      .lane.invalid {
+        opacity: 0.58;
+      }
+
+      .proposer {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-weight: 950;
+      }
+
+      .index {
+        display: inline-grid;
+        place-items: center;
+        width: 54px;
+        height: 54px;
+        border-radius: 999px;
+        border: 2px solid var(--border);
+        background: #0b1220;
+        font-size: 22px;
+      }
+
+      .winner .index {
+        border-color: var(--green);
+        background: rgba(52, 211, 153, 0.18);
+      }
+
+      .status {
+        display: inline-flex;
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 11px;
+        font-weight: 900;
+        color: #111827;
+        background: var(--yellow);
+      }
+
+      .status.valid {
+        background: var(--blue);
+      }
+      .status.invalid {
+        background: var(--red);
+        color: #22070a;
+      }
+      .status.voted {
+        background: var(--purple);
+      }
+      .status.accept {
+        background: var(--green);
+      }
+      .status.reject {
+        background: var(--pink);
+      }
+
+      .block {
+        width: 148px;
+        min-height: 58px;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        border-radius: 14px;
+        background: #0b1220;
+        border: 1px solid var(--border);
+        padding: 10px;
+        font-weight: 900;
+        font-size: 18px;
+        line-height: 1.25;
+      }
+
+      .block-label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        min-height: 16px;
+        text-align: center;
+      }
+
+      .node-circle {
+        width: 54px;
+        height: 54px;
+        border-radius: 999px;
+        background: rgba(134, 239, 172, 0.72);
+        border: 3px solid #22c55e;
+        box-shadow: inset 0 0 0 4px rgba(240, 253, 244, 0.22);
+      }
+
+      .vote-box {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: rgba(11, 18, 32, 0.8);
+        padding: 9px;
+        display: grid;
+        gap: 7px;
+        justify-items: center;
+      }
+
+      .vote-title {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+        text-align: center;
+      }
+
+      .bit {
+        display: inline-grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        color: #07111f;
+        font-weight: 950;
+        font-size: 18px;
+        background: var(--yellow);
+        justify-self: center;
+      }
+
+      .bit.one {
+        background: var(--green);
+      }
+      .bit.zero {
+        background: var(--pink);
+      }
+
+      .mini {
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.45;
+        text-align: center;
+      }
+
+      .process-summary {
+        min-height: 72px;
+        color: var(--text);
+        line-height: 1.5;
+      }
+
+      .process-summary strong {
+        color: var(--green);
+      }
+
+      .trace {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        gap: 12px;
+        padding: 18px;
+      }
+
+      .trace h2 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      .rules {
+        display: grid;
+        gap: 8px;
+      }
+
+      .rule {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(11, 18, 32, 0.88);
+        padding: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .rule strong {
+        color: var(--text);
+      }
+
+      .log {
+        height: 300px;
+        overflow-y: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          monospace;
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        color: #d1d5db;
+        background: #070d19;
+        border-radius: 14px;
+        padding: 12px;
+        border: 1px solid var(--border);
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          monospace;
+        color: #c4b5fd;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="demo">
+      <header class="topbar">
+        <div>
+          <h1>DBFT Multivalue Consensus Demo</h1>
+          <p class="subtitle">
+            Each proposer puts a block on the table. The network runs parallel
+            binary votes: “should this block be a candidate?” The final block is
+            the lowest-index candidate.
+          </p>
+        </div>
+        <div class="controls">
+          <button id="start" class="primary">Start round</button>
+          <button id="next" disabled>Next step</button>
+          <button id="auto" disabled>Auto run</button>
+          <button id="reset">Reset</button>
+          <select id="nodeCount" aria-label="Node count">
+            <option value="4">4 proposers</option>
+            <option value="6">6 proposers</option>
+            <option value="8">8 proposers</option>
+          </select>
+          <select id="scenario" aria-label="Scenario">
+            <option value="random">Random validity</option>
+            <option value="p1bad">P1 invalid, P2 wins</option>
+            <option value="allvalid">All valid</option>
+            <option value="mixed">Mixed blocks</option>
+          </select>
+        </div>
+      </header>
+
+      <section class="content">
+        <section class="stage">
+          <div id="summary" class="summary"></div>
+          <div id="lanes" class="lanes"></div>
+          <div id="processSummary" class="process-summary"></div>
+        </section>
+
+        <aside class="trace">
+          <h2>Trace</h2>
+          <div id="rules" class="rules"></div>
+          <div id="log" class="log">Click Start round to begin.</div>
+        </aside>
+      </section>
+    </main>
+
+    <script>
+      const phases = [
+        "Propose blocks",
+        "Check valid proposals",
+        "Binary vote each block",
+        "Select lowest accepted block",
+      ];
+
+      const config = { n: 4, nodes: [] };
+      let state;
+      let timer = null;
+
+      function configure() {
+        config.n = Number(document.getElementById("nodeCount").value);
+        config.nodes = Array.from(
+          { length: config.n },
+          (_, index) => `P${index + 1}`
+        );
+      }
+
+      function blockName(index, scenario) {
+        if (scenario === "allvalid") return "Same Block";
+        return ["Block A", "Block B", "Block C", "Block D"][index % 4];
+      }
+
+      function isValid(index, scenario) {
+        if (scenario === "allvalid" || scenario === "mixed") return true;
+        if (scenario === "p1bad") return index !== 0;
+        return Math.random() > 0.35;
+      }
+
+      function makeRound() {
+        const scenario = document.getElementById("scenario").value;
+        const proposals = {};
+        config.nodes.forEach((node, index) => {
+          proposals[node] = {
+            proposer: node,
+            block: blockName(index, scenario),
+            valid: isValid(index, scenario),
+            proposed: false,
+            checked: false,
+            vote: null,
+            winner: false,
+          };
+        });
+
+        if (!Object.values(proposals).some((proposal) => proposal.valid)) {
+          proposals[config.nodes[0]].valid = true;
+        }
+
+        return proposals;
+      }
+
+      function resetState() {
+        configure();
+        state = {
+          started: false,
+          step: 0,
+          proposals: makeRound(),
+          winner: null,
+          log: ["Click Start round to begin."],
+        };
+        stopAuto();
+        setButtons(false);
+        render();
+      }
+
+      function setButtons(enabled) {
+        document.getElementById("next").disabled = !enabled;
+        document.getElementById("auto").disabled = !enabled;
+      }
+
+      function addLog(line = "") {
+        state.log.push(line);
+        renderLog();
+      }
+
+      function renderLog() {
+        const el = document.getElementById("log");
+        el.textContent = state.log.join("\n");
+        el.scrollTop = el.scrollHeight;
+      }
+
+      function start() {
+        state.started = true;
+        state.step = 0;
+        state.log = [];
+        addLog(
+          `Start round: ${config.n} proposers each put one block on the table.`
+        );
+        setButtons(true);
+        nextStep();
+      }
+
+      function proposePhase() {
+        addLog("[Step 1] Proposers broadcast their own blocks");
+        config.nodes.forEach((node) => {
+          const proposal = state.proposals[node];
+          proposal.proposed = true;
+          addLog(`  ${node} proposes ${proposal.block}`);
+        });
+      }
+
+      function validatePhase() {
+        addLog("[Step 2] Nodes check which proposals are valid and delivered");
+        config.nodes.forEach((node) => {
+          const proposal = state.proposals[node];
+          proposal.checked = true;
+          addLog(
+            `  ${node}'s ${proposal.block}: ${
+              proposal.valid ? "valid" : "invalid"
+            }`
+          );
+        });
+      }
+
+      function votePhase() {
+        addLog("[Step 3] Run parallel binary votes");
+        config.nodes.forEach((node) => {
+          const proposal = state.proposals[node];
+          proposal.vote = proposal.valid ? 1 : 0;
+          addLog(`  Vote for ${node}'s block -> ${proposal.vote}`);
+        });
+        addLog(
+          "  Meaning: 1 = this block is a candidate, 0 = reject this block."
+        );
+      }
+
+      function selectPhase() {
+        addLog("[Step 4] Select the lowest-index candidate");
+        const winner = config.nodes.find(
+          (node) => state.proposals[node].vote === 1
+        );
+        state.winner = winner;
+        if (winner) {
+          state.proposals[winner].winner = true;
+          addLog(`  Lowest accepted proposer: ${winner}`);
+          addLog(`  Final decided block: ${state.proposals[winner].block}`);
+        } else {
+          addLog(
+            "  No accepted proposal yet. The real protocol keeps waiting."
+          );
+        }
+        setButtons(false);
+        stopAuto();
+      }
+
+      function nextStep() {
+        if (!state.started) return;
+        const phase = state.step % phases.length;
+        if (phase === 0) proposePhase();
+        if (phase === 1) validatePhase();
+        if (phase === 2) votePhase();
+        if (phase === 3) selectPhase();
+        state.step += 1;
+        render();
+      }
+
+      function stopAuto() {
+        if (timer) clearInterval(timer);
+        timer = null;
+        const auto = document.getElementById("auto");
+        if (auto) auto.textContent = "Auto run";
+      }
+
+      function toggleAuto() {
+        if (timer) {
+          stopAuto();
+          return;
+        }
+        document.getElementById("auto").textContent = "Stop auto";
+        timer = setInterval(() => {
+          nextStep();
+          if (state.winner || state.step > phases.length) stopAuto();
+        }, 900);
+      }
+
+      function currentPhase() {
+        return state.started
+          ? phases[state.step % phases.length]
+          : "Not started";
+      }
+
+      function renderSummary() {
+        const valid = config.nodes.filter(
+          (node) => state.proposals[node].valid && state.proposals[node].checked
+        ).length;
+        const accepted = config.nodes.filter(
+          (node) => state.proposals[node].vote === 1
+        ).length;
+        const winnerBlock = state.winner
+          ? state.proposals[state.winner].block
+          : "-";
+        document.getElementById("summary").innerHTML = `
+        <div class="card">Phase<strong>${currentPhase()}</strong></div>
+        <div class="card">Valid Blocks<strong>${valid}/${
+          config.n
+        }</strong></div>
+        <div class="card">Accepted Candidates<strong>${accepted}</strong></div>
+        <div class="card">Final Block<strong>${winnerBlock}</strong></div>
+      `;
+      }
+
+      function renderLanes() {
+        document.getElementById("lanes").innerHTML = config.nodes
+          .map((node, index) => {
+            const proposal = state.proposals[node];
+            const voteClass =
+              proposal.vote === 1 ? "one" : proposal.vote === 0 ? "zero" : "";
+            const voteText = proposal.vote === null ? "?" : proposal.vote;
+            const validityStatus = !proposal.checked
+              ? `<span class="status">pending</span>`
+              : proposal.valid
+              ? `<span class="status valid">valid</span>`
+              : `<span class="status invalid">invalid</span>`;
+            const voteStatus =
+              proposal.vote === null
+                ? `<span class="status">not voted</span>`
+                : proposal.vote === 1
+                ? `<span class="status accept">candidate</span>`
+                : `<span class="status reject">rejected</span>`;
+
+            return `
+          <article class="lane ${proposal.winner ? "winner" : ""} ${
+              proposal.checked && !proposal.valid ? "invalid" : ""
+            }">
+            <div class="proposer">
+              <span class="index">${node}</span>
+              ${
+                proposal.winner
+                  ? `<span class="status accept">winner</span>`
+                  : validityStatus
+              }
+            </div>
+            <div class="block-label">${
+              proposal.proposed
+                ? `${proposal.block.replace(" ", "")}.bin_propose(${
+                    proposal.vote === null ? "?" : proposal.vote
+                  })`
+                : "waiting for proposal"
+            }</div>
+            <div class="block">${
+              proposal.proposed ? proposal.block : "No proposal yet"
+            }</div>
+            <div class="node-circle" title="${node}"></div>
+            <div class="vote-box">
+              <div class="vote-title">Binary voting for this block</div>
+              <span class="bit ${voteClass}">${voteText}</span>
+              ${voteStatus}
+            </div>
+            <div class="mini">
+              Node ${
+                index + 1
+              }. If several blocks get vote <code>1</code>, the lowest index wins.
+            </div>
+          </article>
+        `;
+          })
+          .join("");
+      }
+
+      function renderProcessSummary() {
+        const el = document.getElementById("processSummary");
+        if (!state.started) {
+          el.innerHTML =
+            "The demo will show proposals from left to right. Green means the final chosen block.";
+          return;
+        }
+
+        if (!state.winner) {
+          el.innerHTML =
+            "Process: each proposer broadcasts one block, then the network runs one binary vote per block.";
+          return;
+        }
+
+        const accepted = config.nodes.filter(
+          (node) => state.proposals[node].vote === 1
+        );
+        const acceptedText = accepted.length ? accepted.join(", ") : "none";
+        el.innerHTML = `
+        Accepted candidates: <strong>${acceptedText}</strong>.
+        The deterministic tie-breaker picks the lowest accepted proposer:
+        <strong>${state.winner}</strong>, so the final block is
+        <strong>${state.proposals[state.winner].block}</strong>.
+      `;
+      }
+
+      function renderRules() {
+        document.getElementById("rules").innerHTML = `
+        <div class="rule"><strong>Intuition:</strong> multivalue consensus becomes many yes/no votes, one per proposer.</div>
+        <div class="rule"><strong>Vote 1:</strong> the proposal is valid and delivered, so it can be a candidate.</div>
+        <div class="rule"><strong>Vote 0:</strong> the proposal is not chosen as a candidate.</div>
+        <div class="rule"><strong>Final rule:</strong> if multiple candidates exist, choose the lowest-index candidate.</div>
+      `;
+      }
+
+      function render() {
+        renderSummary();
+        renderLanes();
+        renderProcessSummary();
+        renderRules();
+        renderLog();
+        document.getElementById("start").disabled = state.started;
+      }
+
+      document.getElementById("start").addEventListener("click", start);
+      document.getElementById("next").addEventListener("click", nextStep);
+      document.getElementById("auto").addEventListener("click", toggleAuto);
+      document.getElementById("reset").addEventListener("click", resetState);
+      document
+        .getElementById("nodeCount")
+        .addEventListener("change", resetState);
+      document
+        .getElementById("scenario")
+        .addEventListener("change", resetState);
+
+      resetState();
+    </script>
+  </body>
+</html>
