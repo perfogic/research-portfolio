@@ -1,15 +1,8 @@
 # Research-Portfolio
 
-This repository is both a personal research portfolio and a public learning space for topics around **Data Availability Sampling (DAS)**, **Byzantine Fault Tolerance (BFT)**, and modern consensus protocols.
+This repository is both a personal research portfolio and a public learning space for topics around **Data Availability Sampling (DAS)**, **Byzantine Fault Tolerance (BFT)**, and modern consensus protocols. (Will have more topics soon in the future, but i need to learn first xD)
 
-The goal is to turn paper reading into material that is useful for younger developers, researchers, and engineers who want to understand distributed systems from first principles.
-
-## Purpose
-
-- Explain consensus papers in a practical, implementation-minded way.
-- Build intuition with diagrams, examples, and small interactive demos.
-- Compare protocols by assumptions, message flow, failure model, and complexity.
-- Keep a transparent record of what I am reading and how my understanding evolves.
+The goal is to turn paper reading into material that is useful for younger developers, researchers, and engineers who want to understand blockchain in protocol terms (currently are **DAS** and **Consensus**).
 
 ## Content Use
 
@@ -22,9 +15,7 @@ You are welcome to:
 - use the explanations for personal learning;
 - open issues or send feedback when something is unclear or wrong.
 
-If you want to reuse a large part of the writing, diagrams, or demos, please ask first and credit the source clearly.
-
-Unless a separate license is added later, the written content and original diagrams are shared for learning and discussion, not for unattributed redistribution.
+If you want to reuse a large part of the writing, diagrams, or demos, please go a head, but if you can refer this page, that will be great.
 
 ## Code of Conduct
 
@@ -35,21 +26,11 @@ Please keep discussions:
 - respectful and specific;
 - focused on the claim, proof, protocol, or implementation detail;
 - clear about assumptions and sources;
-- friendly to junior developers who are still learning the basics.
-
-Good feedback looks like:
-
-- “This threshold argument seems wrong because…”
-- “The paper defines view differently here…”
-- “This example is misleading under partial synchrony because…”
-- “Can you add a diagram for this message flow?”
 
 Please avoid:
 
 - personal attacks;
 - vague criticism without technical detail;
-- copying the content elsewhere without attribution;
-- presenting these notes as your own work.
 
 ## Feedback
 
