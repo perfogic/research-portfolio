@@ -572,13 +572,14 @@ That is enough to wrap up the section:
 `Fast Confirmation Rule`, or `FCR`, is not a new consensus protocol.
 It is a fast confirmation layer on top of today's `Gasper`.
 
-The target is described as followed:
+The target is practical:
 
 - if a block has already been processed and passes `FCR`,
 - then under the good assumptions it has a very high chance of continuing all the way to finality;
 - so for transactions that are not too large, it is reasonable to treat that block as "final enough" without waiting the full `FFG` path.
 
-Because the goal for `Single Slot Finality` is a long-run progress, which takes years. So `Fast Confirmation Rule` will be the replacement before `Single Slot Finality` is well-researched, well-evaluated, implemented.
+`Single Slot Finality` is still a longer-term destination.
+`FCR` is the nearer-term bridge before that design is fully researched, evaluated, and implemented.
 
 ### 1. What the rule is trying to prove
 
@@ -594,7 +595,7 @@ So the real question is:
 
 ### 2. The core weight argument
 
-The easiest way to understand `FCR` is to ignore `Casper FFG` for a minute :D and look only at `LMD GHOST`.
+The easiest way to understand `FCR` is to ignore `Casper FFG` for a moment and look only at `LMD GHOST`.
 
 Suppose `B10` is currently canonical, and the chain can branch into:
 
@@ -612,12 +613,12 @@ Now define a few quantities:
 - `S(B11)`: observed `LMD GHOST` vote weight supporting the subtree of `B11`
 - `β`: the maximum adversarial fraction of stake
 
-The first thing to notice is that the real safety condition is
+The first thing to notice is that the real safety condition is:
 
 > honest support for `B11` must already be larger than the maximum support any conflicting fork can still get.
-> This mean `B12` can not out-weight `B11` at any time in the future.
+> In other words, `B12` should never be able to out-weight `B11` later.
 
-The strongest conflicting fork can collect for `B12` is:
+The strongest conflicting fork rooted at `B12` can still collect:
 
 - all honest validators not supporting `B11`
 - plus all Byzantine validators
@@ -654,7 +655,8 @@ meaning:
 
 If that holds, then even if all remaining honest validators and all Byzantine validators support a conflicting branch, they still cannot beat `B11`.
 
-The problem is that `H(B11)` is hidden, in real blockchain network, we can not find out this value.
+The problem is that `H(B11)` is hidden.
+In a real blockchain network, a node cannot directly observe this value.
 A node does not know who is honest.
 What it can actually observe is `S(B11)`.
 
@@ -708,9 +710,9 @@ This is the core `LMD GHOST` idea inside `FCR`.
 The branch of `B11` is not just barely ahead.
 It is ahead by a large enough margin that even after reserving room for Byzantine behavior, the branch should still win.
 
-The cool thing is to **this ratio does not get worse in the future**.
+The next useful observation is that this support ratio does not get worse over time.
 
-For that, the presentation rewrites the same argument in an honest-support view:
+It helps to rewrite the same argument in an honest-support view:
 
 ```text
 P(B11) := H(B11) / J
@@ -757,15 +759,13 @@ It also accounts for:
 - slashed-validator weight;
 - and missing-slot handling.
 
-So the full formula is more complicated than `Q > 1/2 + β`, but trust me bro - it is pretty similar.\
-You can check more at: [Link](https://www.overleaf.com/project/691b4629fb781aeb8efdb20f)
+So the full formula is more complicated than `Q > 1/2 + β`.
+If needed, it is better to read the short explainer version directly, because the fully refined expression is not very friendly on a first pass.
 
 ### 3. The full rule in Ethereum
 
 The weight argument above is only the core proof ingredient.
 The full rule in Ethereum still has to run inside `Gasper`.
-
-So the local weight argument by itself is no longer enough.
 
 Under plain `LMD GHOST`, the main question was only:
 
@@ -778,7 +778,7 @@ It only considers branches that still extend the latest justified checkpoint.
 So a block can look strong under subtree weight right now, but still become unusable later if its branch stops extending the justified checkpoint that the protocol has moved to.
 
 That is why the full `FCR` is not just one inequality checked once.
-It has to keep rerunning over time, after the node has applied newly arrived attestations, to make sure both things are still true:
+It has to run again over time, after the node has applied newly arrived attestations, to make sure both things are still true:
 
 - the branch is still strong enough under `LMD GHOST` weight;
 - and the branch is still compatible with the justified-checkpoint state used by `Hybrid LMD GHOST`.
@@ -802,12 +802,12 @@ There are two algorithms in the paper, and they work together.
 #### Algorithm 1: `get_latest_confirmed`
 
 This is the outer controller.
-It does not itself prove new blocks safe.
+It does not prove new blocks safe by itself.
 Its job is to decide what the confirmation process should do in this slot.
 
 It has two phases.
 
-##### Reset / restart phase
+**1. Reset / restart phase**
 
 Before trying to confirm anything new, it first asks:
 
@@ -823,12 +823,7 @@ At the beginning of an epoch, it also has a second option:
 - then that checkpoint can be used as a fresh safe anchor,
 - so the confirmation process can restart from there.
 
-So the first algorithm is basically:
-
-- keep the fast path alive while the assumptions still look healthy;
-- otherwise fall back to finalized state or restart from a newly realized justified checkpoint.
-
-##### Progress phase
+**2. Progress phase**
 
 Once the state has been cleaned up, the algorithm does:
 
@@ -862,14 +857,14 @@ For each block it wants to accept, it asks two things:
 
 The paper then effectively breaks this into four operational cases.
 
-##### Case 1: current-epoch fast path
+**Case 1: current-epoch fast path**
 
 First compute a candidate:
 
 - the deepest descendant of `b_c` on the current fork-choice head chain
 - such that every block from `b_c` up to that candidate is `one-confirmed`
 
-This candidate is actually returned only when it is safe to confirm into the current epoch.
+This candidate is returned only when it is safe to confirm into the current epoch.
 
 That means:
 
@@ -878,7 +873,7 @@ That means:
 
 This is the "good case" fast path.
 
-##### Case 2: mid-epoch no-progress freeze
+**Case 2: mid-epoch no-progress freeze**
 
 Sometimes the rule is in the middle of an epoch and still cannot rule out a future conflicting justification for the current epoch.
 
@@ -894,7 +889,7 @@ The reason is simple:
 
 So the safe move is to wait.
 
-##### Case 3: previous-epoch fast path
+**Case 3: previous-epoch fast path**
 
 If the current-epoch fast path does not apply, the algorithm still has a weaker way to move forward.
 
@@ -908,7 +903,7 @@ The idea is:
 - we may still be able to confirm some more blocks from the previous epoch,
 - as long as their support is anchored in a sufficiently recent voting source.
 
-##### Case 4: strong fallback
+**Case 4: strong fallback**
 
 If even the previous-epoch candidate is too stale, the rule becomes stricter again.
 
@@ -928,19 +923,8 @@ So the two algorithms together do exactly this:
 
 This also tells us the main caveat.
 `FCR` is a fast path, so it depends much more on good-case assumptions than full finality does.
-If synchrony breaks, if committee distribution gets unlucky, or if the justified-checkpoint picture becomes unsafe, the rule stops extending and falls back to its safer anchors instead of pretending the fast proof still works.
+If synchrony breaks, if committee distribution gets unlucky, or if the justified-checkpoint picture becomes unsafe, the rule stops extending and falls back to safer anchors instead of pretending the fast proof still works.
 
-### 4. The right way to use `FCR`
-
-So the right way to think about `FCR` is:
-
-- for small or medium-value transactions, it tries to give a block that is fast enough to treat as practically finalized;
-- for large-value settlement, you still want actual `Casper FFG` finality.
-
-So `FCR` shrinks the gap between:
-
-- "this is the current head";
-- and "this checkpoint is economically finalized".
 </details>
 
 <details>
