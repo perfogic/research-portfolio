@@ -789,21 +789,11 @@ Each run starts from the block that was confirmed in the previous run, which is 
 store.confirmed_root;
 ```
 
-The entry point is:
-
-```javascript
-get_latest_confirmed(b_c);
-```
-
-where `b_c` is the previously confirmed block.
-
 There are two algorithms in the paper, and they work together.
 
 #### Algorithm 1: `get_latest_confirmed`
 
-This is the outer controller.
-It does not prove new blocks safe by itself.
-Its job is to decide what the confirmation process should do in this slot.
+This is the outer controller. Its job is to decide what the confirmation process should do in this slot.
 
 It has two phases.
 
@@ -815,13 +805,14 @@ Before trying to confirm anything new, it first asks:
 - is it no longer canonical?
 - are we at an epoch boundary where the old confirmed chain can no longer be safely reconfirmed?
 
-If the answer is bad enough, it resets back to `GF`, the greatest finalized block.
+If the answer is bad enough, it resets back to `the greatest finalized block`.
 
-At the beginning of an epoch, it also has a second option:
+Near the end of an epoch, a validator may already see enough `FFG` votes for a newer checkpoint.
+But the protocol does not treat that checkpoint as justified yet.
+It only becomes justified for fork-choice purposes at the beginning of the next epoch.
 
-- if the previous epoch's unrealized justified checkpoint has now become realized,
-- then that checkpoint can be used as a fresh safe anchor,
-- so the confirmation process can restart from there.
+Only at the beginning of the next epoch does that checkpoint become realized as justified.
+At that point, `FCR` can safely restart from it as a new anchor.
 
 **2. Progress phase**
 
@@ -831,11 +822,20 @@ Once the state has been cleaned up, the algorithm does:
 b_c < -find_latest_confirmed_descendant(b_c);
 ```
 
-That is where actual forward progress happens.
+This is the step where the latest confirmed block is actually updated.
 
 #### Algorithm 2: `find_latest_confirmed_descendant`
 
 This is the engine that tries to extend confirmation forward on the current canonical chain.
+It does not jump straight to the head.
+It moves one block at a time, and every step is controlled by one local test:
+
+```javascript
+isOneConfirmed(b, C, t);
+```
+
+This is the per-block confirmation check.
+It asks whether block `b`, relative to checkpoint anchor `C`, already has enough `LMD GHOST` support margin that a sibling branch cannot later overtake it.
 
 It always uses one fixed checkpoint anchor for the current run:
 
@@ -849,7 +849,14 @@ The intuition is:
 
 > relative to checkpoint `C`, block `b` has enough `LMD GHOST` support to defeat any sibling takeover, even after accounting for proposer boost, empty-slot discounting, adversarial budget `β`, and slashability corrections.
 
-The function then walks block by block on the current head chain.
+So `Algorithm 2` is really doing this:
+
+- start from the current `b_c`
+- look at the next block on the current canonical chain
+- check whether that block still passes the local proof
+- if yes, move one step forward
+- if not, stop there
+
 For each block it wants to accept, it asks two things:
 
 - does the block still pass the local `isOneConfirmed(...)` test?
@@ -857,7 +864,7 @@ For each block it wants to accept, it asks two things:
 
 The paper then effectively breaks this into four operational cases.
 
-**Case 1: current-epoch fast path**
+**Case 1: Current-epoch Fast path**
 
 First compute a candidate:
 
@@ -873,7 +880,7 @@ That means:
 
 This is the "good case" fast path.
 
-**Case 2: mid-epoch no-progress freeze**
+**Case 2: Mid-epoch No-progress Freeze**
 
 Sometimes the rule is in the middle of an epoch and still cannot rule out a future conflicting justification for the current epoch.
 
@@ -889,7 +896,7 @@ The reason is simple:
 
 So the safe move is to wait.
 
-**Case 3: previous-epoch fast path**
+**Case 3: Previous-epoch Fast path**
 
 If the current-epoch fast path does not apply, the algorithm still has a weaker way to move forward.
 
@@ -903,7 +910,7 @@ The idea is:
 - we may still be able to confirm some more blocks from the previous epoch,
 - as long as their support is anchored in a sufficiently recent voting source.
 
-**Case 4: strong fallback**
+**Case 4: Strong Fallback**
 
 If even the previous-epoch candidate is too stale, the rule becomes stricter again.
 
