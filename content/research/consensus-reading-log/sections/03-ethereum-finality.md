@@ -274,7 +274,7 @@ source -> target
 
 If at least `2/3` of the total stake votes for the same link, that link becomes a `supermajority link`.
 
-### 3. Justification && Finalization
+### 3. Justification & Finalization
 
 Casper finality is a two-step process.
 
@@ -293,12 +293,28 @@ So the difference is:
 - `justified`: I know enough validators support this checkpoint;
 - `finalized`: I know enough validators know that this checkpoint is supported and committed.
 
-That second step is what makes finality strong.
+At this case, we can re-imagine our previous talks about `PBFT` and other consensus algorithms, which is two-phase voting.
 
-First, a checkpoint becomes `justified`.
-Second, an earlier justified checkpoint becomes `finalized`.
+- `justified`: is the `prepare` voting phase:
 
-A checkpoint is `justified` if:
+```
+At least `2/3` of the stake has voted for a link into this checkpoint.
+Under the usual `n = 3f + 1` intuition, this means at least `f + 1` honest validators supported that checkpoint.
+```
+
+- `finalized` is the `commit` voting phase:
+
+```
+the checkpoint is already justified, and then another `2/3` of the stake votes for a link from this checkpoint to its direct child.
+So the network did not only support this checkpoint once.
+It also built the next justified step on top of it.
+```
+
+The quorum-overlap intuition is the same as classical BFT.\
+Any two `2/3` quorums must overlap, and if less than `1/3` of validators are Byzantine, that overlap contains at least one honest validator.
+Together with Casper's slashing rules, this is why two conflicting checkpoints cannot both be finalized unless at least `1/3` of the stake violates the protocol.
+
+Specifically, a checkpoint is `justified` if:
 
 - it is the root checkpoint;
 - or there is a supermajority link from an already justified checkpoint to it.
@@ -316,14 +332,16 @@ justified source -> justified target
 
 and then the earlier checkpoint is finalized once the chain has moved one more checkpoint forward.
 
+```
+Example:
+Assume we have two checkpoints:
+C1, C2 and C1 -> C2 is a link.
+
+If C1 is justified, that link receives at least `2/3` of the total stake vote.
+Then C1 = finalized, C2 = justified.
+```
+
 In Ethereum, that means finality takes two epochs end to end, roughly `12.8` minutes, though the pipeline lets the chain finalize one checkpoint per epoch once it is running normally.
-
-This is why the mechanism feels close to `PBFT` or `Tendermint`.
-It has the same high-level BFT intuition:
-
-- first enough validators support a checkpoint;
-- then enough validators support moving forward from it;
-- and only then do we treat the earlier point as final.
 
 ### 4. Slashing Conditions
 
@@ -479,38 +497,56 @@ It first adds a filter from the `Casper FFG` side, and only then runs the heavie
 
 Concretely, it does three things:
 
-- first find the highest justified pair;
+- first find the highest justified pair; // remember this
 - then ignore branches whose justified state has not caught up to it;
 - only then run the heaviest-subtree walk on what remains.
 
-It adds this because fork choice is no longer allowed to look only at subtree weight.
-Once `Casper FFG` exists, the protocol also has to care about which branches are still consistent with the current justified state.
-
-That is why the paper does not keep plain `LMD GHOST`.
-After a fork, two nearby branches can carry different last-justified states.
-If fork choice followed only the heaviest branch, it could pull an honest validator onto a branch whose finality state is behind.
-That is the bad case `Hybrid LMD GHOST` is trying to avoid.
-
-You can visualize that bad case like this:
+We will go a bit to the example:
 
 ```text
-1 ---- 2 ---- 3
- \
-  X ---- Y
+Assume we have a list of checkpoints with links:
+C1 -> C2
+with C1 is justified and C2 is justified
+
+Assume now we move to epoch 3, where will build checkpoint C3.
+Since we only build on the highest justified pair, then C2 will be parent of C3,
+and validators vote for `C3 -> C2` link.
+
+This will enforce honest validators to vote on branch whose finality state behind.
+Assume `C3 -> C2` has 2/3 voting power and become `supermajor link`.
+Then C2 is finalized and C3 is justified.
+
+If we don't enforce the rule, there may be a link from `C1 -> C3'`, which may outvote our current branch.
+This is a way to reduce fork choice.
 ```
 
-Suppose the current finality state is already on the upper branch:
+That is why `LMD GHOST` is refined compared to original fork choice rule.\
+If we read or watch video from Ethereum Research, we may see they call `LMD GHOST HFC`, this is `Hybrid LMD GHOST`.
 
-- `1` was justified earlier;
-- `2` is finalized;
-- `3` is now the highest justified checkpoint.
+There is only one case, we don't cover, why we can have a case both C1 and C2 are justified ?
 
-Now imagine the lower branch `1 -> X -> Y` starts to look heavier locally.
+```
+Assume we have a list of checkpoints:
+C1 -> ... -> Cn -> Cn+1
 
-A plain heaviest-branch rule could be tempted to switch to that lower branch.
-But `Hybrid LMD GHOST` will not do that.
-It first checks which branches still extend the current justified checkpoint, which is now `3`.
-So the lower branch is filtered out before subtree weight is even compared.
+with Cn is finalized and Cn+1 is justified.
+
+Now we move to epoch `n+2`, which have checkpoint Cn+2.
+Validators will votes on the link: `Cn+1 -> Cn+2`.
+
+Imagining the delay case, where we have more than 2/3 voting power for this link,
+but it does not make it on time, so when we go to checkpoint Cn+3 at epoch `n+3`.
+
+We still don't have enough vote for `Cn+1 -> Cn+2` to become supermajor link.
+And Cn+3 will be vote from Cn+1.
+
+That's the case xD. This will lead from 1-finality to 2-finality. Where we will have links:
+C2k -> C2k + 2
+and C2k+1 -> C2k+3 with no finalized checkpoint.
+
+Finalized checkpoint only come back when the voting make it on time. Assume at some round. C2k+3 make it on time, and validators vote on `C2k+3 -> C2k+4`
+This will break out of the non-finalized checkpoint loop.
+```
 
 ### 4. Conclusion
 
@@ -536,19 +572,15 @@ That is enough to wrap up the section:
 `Fast Confirmation Rule`, or `FCR`, is not a new consensus protocol.
 It is a fast confirmation layer on top of today's `Gasper`.
 
-The target is practical:
+The target is described as followed:
 
 - if a block has already been processed and passes `FCR`,
-- then under the paper's assumptions it has a very high chance of continuing all the way to finality;
+- then under the good assumptions it has a very high chance of continuing all the way to finality;
 - so for transactions that are not too large, it is reasonable to treat that block as "final enough" without waiting the full `FFG` path.
 
-This is still not the same thing as finality.
-`FCR` does not replace `Casper FFG`.
-It tries to give a one-slot-style confirmation signal before finality arrives.
+Because the goal for `Single Slot Finality` is a long-run progress, which takes years. So `Fast Confirmation Rule` will be the replacement before `Single Slot Finality` is well-researched, well-evaluated, implemented.
 
-> This one is a draft, I don't refine the paper wording yet. Some parts are written by AI, based on my direction.
-
-### 1. What the algorithm is trying to prove
+### 1. What the rule is trying to prove
 
 The paper defines confirmation as a local guarantee:
 
@@ -556,156 +588,356 @@ The paper defines confirmation as a local guarantee:
 - then from the next slot onward, honest validators should keep `b` in their canonical chain;
 - and once confirmed, `b` stays confirmed.
 
-So the question is:
+So the real question is:
 
 > given the votes I already see right now, is this block stable enough that honest fork choice should not move away from it anymore?
 
-### 2. First step: a local check for plain `LMD GHOST`
+### 2. The core weight argument
 
-The paper starts with a simpler world where fork choice is only plain `LMD GHOST`.
+The easiest way to understand `FCR` is to ignore `Casper FFG` for a minute :D and look only at `LMD GHOST`.
 
-It defines a local predicate:
+Suppose `B10` is currently canonical, and the chain can branch into:
 
-```javascript
-isOneConfirmed(block, checkpoint, time);
+```text
+B10 -> B11
+    -> B12
 ```
 
-This checks whether the subtree containing block `b` already has enough support by a margin large enough to survive:
+Now define a few quantities:
 
-- the basic `1/2` majority threshold;
+- `H(B11)`: honest voting weight supporting `B11`
+- `J`: total honest voting weight
+- `A`: Byzantine voting weight
+- `W`: total voting weight, so `W = J + A`
+- `S(B11)`: observed `LMD GHOST` vote weight supporting the subtree of `B11`
+- `β`: the maximum adversarial fraction of stake
+
+The first thing to notice is that the real safety condition is
+
+> honest support for `B11` must already be larger than the maximum support any conflicting fork can still get.
+> This mean `B12` can not out-weight `B11` at any time in the future.
+
+The strongest conflicting fork can collect for `B12` is:
+
+- all honest validators not supporting `B11`
+- plus all Byzantine validators
+
+so its weight is:
+
+```text
+(J - H(B11)) + A
+```
+
+For `B11` to be safe, we therefore want:
+
+```text
+H(B11) > (J - H(B11)) + A
+```
+
+Rearranging gives:
+
+```text
+2H(B11) > J + A
+2H(B11) > W
+H(B11) > W / 2
+```
+
+So the real safety target is:
+
+```text
+H(B11) > W / 2
+```
+
+meaning:
+
+> honest support for `B11` alone is already more than half of the total weight.
+
+If that holds, then even if all remaining honest validators and all Byzantine validators support a conflicting branch, they still cannot beat `B11`.
+
+The problem is that `H(B11)` is hidden, in real blockchain network, we can not find out this value.
+A node does not know who is honest.
+What it can actually observe is `S(B11)`.
+
+In the worst case, Byzantine support inside `S(B11)` can be as large as:
+
+```text
+βW
+```
+
+So honest support is at least:
+
+```text
+H(B11) >= S(B11) - βW
+```
+
+Now plug that into the true safety target `H(B11) > W/2`.
+It is enough to require:
+
+```text
+S(B11) - βW > W / 2
+```
+
+which rearranges into:
+
+```text
+S(B11) > W(1/2 + β)
+```
+
+or equivalently:
+
+```javascript
+Q(B11) := S(B11) / W;
+```
+
+```text
+if Q(B11) > 1/2 + β
+```
+
+This is the observable confirmation rule.
+
+So the logic is:
+
+```text
+Q(B11) > 1/2 + β
+=> S(B11) > W(1/2 + β)
+=> H(B11) >= S(B11) - βW > W/2
+=> B11 is safe now
+```
+
+This is the core `LMD GHOST` idea inside `FCR`.
+The branch of `B11` is not just barely ahead.
+It is ahead by a large enough margin that even after reserving room for Byzantine behavior, the branch should still win.
+
+The cool thing is to **this ratio does not get worse in the future**.
+
+For that, the presentation rewrites the same argument in an honest-support view:
+
+```text
+P(B11) := H(B11) / J
+```
+
+This means:
+
+> among the honest validators, how much honest weight already supports `B11`?
+
+Now suppose in a future slot, `X` honest voting weight supports a descendant of `B11`.
+Because descendants of `B11` also support `B11`, we get:
+
+```text
+H'(B11) = H(B11) + X
+J' = J + X
+```
+
+So the future honest-support ratio becomes:
+
+```text
+P'(B11) = (H(B11) + X) / (J + X)
+```
+
+and:
+
+```text
+(H(B11) + X) / (J + X) >= H(B11) / J
+```
+
+because `H(B11) <= J`.
+
+So `P(B11)` never decreases.
+
+This is the monotonicity intuition:
+
+- once enough honest weight is already behind `B11`,
+- future honest votes for descendants of `B11` only reinforce that support,
+- so the branch does not become weaker over time.
+
+In the real paper, the rule has to cover more than this simplified picture.
+It also accounts for:
+
 - proposer boost;
-- possible Byzantine votes;
-- and slashed-validator adjustments.
+- slashed-validator weight;
+- and missing-slot handling.
 
-Then it strengthens that into:
+So the full formula is more complicated than `Q > 1/2 + β`, but trust me bro - it is pretty similar.\
+You can check more at: [Link](https://www.overleaf.com/project/691b4629fb781aeb8efdb20f)
 
-```javascript
-isLMDGHOSTSafe(block, checkpoint, time);
-```
+### 3. The full rule in Ethereum
 
-The reason for the second predicate is that `LMD GHOST` does not choose the head in one shot.
-It walks fork by fork.
-So it is not enough for block `b` itself to look strong.
-Every ancestor decision on the path to `b` also has to be stable.
+The weight argument above is only the core proof ingredient.
+The full rule in Ethereum still has to run inside `Gasper`.
 
-The paper also fixes the empty-slot case.
-If some slots between a parent and child are empty, honest votes already cast for the parent branch in those empty slots should still count as locked support for that branch.
-Otherwise the rule would be too pessimistic.
+So the local weight argument by itself is no longer enough.
 
-So after this first step, the paper has a local test for:
+Under plain `LMD GHOST`, the main question was only:
 
-> if fork choice were only `LMD GHOST`, this block is already safe.
+> does this branch already have enough support to stay canonical?
 
-### 3. Why Ethereum needs more than that
+But inside `Gasper`, fork choice is the `Hybrid LMD GHOST` version we already discussed in the previous section.
+That means fork choice does not follow the heaviest branch blindly.
+It only considers branches that still extend the latest justified checkpoint.
 
-Ethereum does not run plain `LMD GHOST`.
-It runs `LMD-GHOST-HFC`, where the `HFC` part can filter out branches that do not fit the current justified-checkpoint state from `Casper FFG`.
+So a block can look strong under subtree weight right now, but still become unusable later if its branch stops extending the justified checkpoint that the protocol has moved to.
 
-That means a block can pass the subtree-weight test and still fail later for another reason:
-its branch may get filtered out by the `FFG` side.
+That is why the full `FCR` is not just one inequality checked once.
+It has to keep rerunning over time, after the node has applied newly arrived attestations, to make sure both things are still true:
 
-So the full `FCR` cannot stop at:
+- the branch is still strong enough under `LMD GHOST` weight;
+- and the branch is still compatible with the justified-checkpoint state used by `Hybrid LMD GHOST`.
 
-> this block is safe under subtree weight.
-
-It also has to make sure:
-
-> this block will still survive the justified-checkpoint filtering.
-
-### 4. The full `FCR` algorithm
-
-This is the part that matters most.
-
-The full rule works like this:
-
-1. At the beginning of an epoch, look at the greatest unrealized justified checkpoint from the previous epoch.
-2. If that checkpoint is now realized as justified, use it as a safe anchor.
-3. From that anchor, walk forward on the current canonical chain one block at a time.
-4. For each next block, run the local confirmation check again.
-5. Stop at the deepest block that still passes.
-6. If the confirmation state becomes stale or inconsistent, reset back to the greatest finalized block.
-
-So the rule is basically:
+Each run starts from the block that was confirmed in the previous run, which is exactly the value stored in:
 
 ```javascript
-function FCR(view, last_confirmed):
-    if candidate_is_too_old_or_no_longer_canonical:
-        return greatest_finalized_block(view)
-
-    if new_epoch_started_and_new_justified_checkpoint_is_now_realized:
-        candidate := justified_checkpoint_block
-    else:
-        candidate := last_confirmed
-
-    while next_child_on_canonical_chain(candidate) passes the local check:
-        candidate := next_child_on_canonical_chain(candidate)
-
-    return candidate
+store.confirmed_root;
 ```
 
-That is the high-level shape.
-The real paper adds more guards when the scan crosses epoch boundaries, because that is exactly where conflicting checkpoint justification can appear.
+The entry point is:
 
-So the algorithm is doing two jobs at once:
+```javascript
+get_latest_confirmed(b_c);
+```
 
-- use local subtree-weight evidence to move forward quickly;
-- but never move into a region that the `FFG` side may later reject.
+where `b_c` is the previously confirmed block.
 
-### 5. When can this be attacked or fail?
+There are two algorithms in the paper, and they work together.
 
-This is the important caveat.
-`FCR` is a fast path, so it depends much more on the good-case assumptions than full finality does.
+#### Algorithm 1: `get_latest_confirmed`
 
-The bad cases are roughly these.
+This is the outer controller.
+It does not itself prove new blocks safe.
+Its job is to decide what the confirmation process should do in this slot.
 
-#### 1. The network stops behaving synchronously
+It has two phases.
 
-If validators do not see roughly the same blocks and attestations soon enough, a block may look locally safe when it really is not globally stable yet.
+##### Reset / restart phase
 
-That is exactly why `FCR` is not sold as full finality.
-It is much more sensitive to delayed views than `Casper FFG`.
+Before trying to confirm anything new, it first asks:
 
-#### 2. Too much adversarial weight, or too much bad luck in consecutive committees
+- is the current confirmed block too old?
+- is it no longer canonical?
+- are we at an epoch boundary where the old confirmed chain can no longer be safely reconfirmed?
 
-The paper assumes an adversarial fraction `β < 1/3`, and also assumes that consecutive committees do not end up too adversarial.
+If the answer is bad enough, it resets back to `GF`, the greatest finalized block.
 
-If those assumptions break, the local vote-weight test can become misleading.
-Then a branch may look safer than it really is.
+At the beginning of an epoch, it also has a second option:
 
-#### 3. The `FFG` votes do not get included as expected
+- if the previous epoch's unrealized justified checkpoint has now become realized,
+- then that checkpoint can be used as a fresh safe anchor,
+- so the confirmation process can restart from there.
 
-The rule relies on the justified-checkpoint state catching up at epoch boundaries.
-If Byzantine behavior or severe network problems stop enough honest `FFG` votes from getting included for long enough, the fast path cannot safely keep moving.
+So the first algorithm is basically:
 
-That is why the algorithm anchors on realized justified checkpoints, not on wishful thinking.
+- keep the fast path alive while the assumptions still look healthy;
+- otherwise fall back to finalized state or restart from a newly realized justified checkpoint.
 
-#### 4. Conflicting justification starts to appear across epochs
+##### Progress phase
 
-This is the subtle attack surface that appears only because Ethereum is not plain `LMD GHOST`.
+Once the state has been cleaned up, the algorithm does:
 
-A block may look locally strong by subtree weight, but if the checkpoint state around it is about to conflict with another justified path, then confirming too aggressively would be wrong.
+```javascript
+b_c < -find_latest_confirmed_descendant(b_c);
+```
 
-That is why the full algorithm adds extra guards at epoch crossings.
+That is where actual forward progress happens.
 
-#### 5. The confirmed candidate becomes stale or non-canonical
+#### Algorithm 2: `find_latest_confirmed_descendant`
 
-This is not even a fancy attack.
-It can happen after temporary forks or messy network conditions.
+This is the engine that tries to extend confirmation forward on the current canonical chain.
 
-If the previously confirmed candidate is now too old, or it is no longer on the canonical chain, the rule immediately gives up on that fast state and falls back to the greatest finalized block.
+It always uses one fixed checkpoint anchor for the current run:
 
-That reset is a core part of the design, not an edge case.
+```text
+C := the validator's observed unrealized-justified checkpoint from the previous epoch
+```
 
-### 6. The right way to use `FCR`
+This anchor matters because all local `isOneConfirmed(...)` checks are interpreted relative to that checkpoint state.
+
+The intuition is:
+
+> relative to checkpoint `C`, block `b` has enough `LMD GHOST` support to defeat any sibling takeover, even after accounting for proposer boost, empty-slot discounting, adversarial budget `β`, and slashability corrections.
+
+The function then walks block by block on the current head chain.
+For each block it wants to accept, it asks two things:
+
+- does the block still pass the local `isOneConfirmed(...)` test?
+- and is the block still robust against `Hybrid LMD GHOST` / `Casper FFG` filtering?
+
+The paper then effectively breaks this into four operational cases.
+
+##### Case 1: current-epoch fast path
+
+First compute a candidate:
+
+- the deepest descendant of `b_c` on the current fork-choice head chain
+- such that every block from `b_c` up to that candidate is `one-confirmed`
+
+This candidate is actually returned only when it is safe to confirm into the current epoch.
+
+That means:
+
+- the anchor is still fresh enough;
+- and if the scan crosses into the current epoch, the checkpoint on this branch is guaranteed to become justified.
+
+This is the "good case" fast path.
+
+##### Case 2: mid-epoch no-progress freeze
+
+Sometimes the rule is in the middle of an epoch and still cannot rule out a future conflicting justification for the current epoch.
+
+In that case it does not try to be clever.
+It simply returns `b_c` and makes no new confirmations.
+
+This is a freeze, not a failure.
+
+The reason is simple:
+
+- mid-epoch, if a future conflicting justification is still possible,
+- then confirming further now could produce blocks that will be filtered out at the next epoch boundary.
+
+So the safe move is to wait.
+
+##### Case 3: previous-epoch fast path
+
+If the current-epoch fast path does not apply, the algorithm still has a weaker way to move forward.
+
+It recomputes the deepest `one-confirmed` descendant of `b_c` on the head chain, but now restricts itself to blocks before the current epoch.
+
+It returns that candidate only if its voting source is still fresh enough, meaning it is not too many epochs behind.
+
+The idea is:
+
+- even if we cannot safely confirm into the current epoch yet,
+- we may still be able to confirm some more blocks from the previous epoch,
+- as long as their support is anchored in a sufficiently recent voting source.
+
+##### Case 4: strong fallback
+
+If even the previous-epoch candidate is too stale, the rule becomes stricter again.
+
+It now asks for a descendant that certifies freshness:
+
+- a canonical descendant with a sufficiently recent voting source;
+- and a sufficiently recent unrealized-justified anchor.
+
+If no such certifying extension exists, the algorithm does not move forward.
+
+This is the final safety valve before falling back to the old confirmed block.
+
+So the two algorithms together do exactly this:
+
+- `Algorithm 1` keeps the confirmation state sane across slots and epoch boundaries;
+- `Algorithm 2` pushes that state forward only as far as the local proof and the `Hybrid LMD GHOST` filtering logic still allow.
+
+This also tells us the main caveat.
+`FCR` is a fast path, so it depends much more on good-case assumptions than full finality does.
+If synchrony breaks, if committee distribution gets unlucky, or if the justified-checkpoint picture becomes unsafe, the rule stops extending and falls back to its safer anchors instead of pretending the fast proof still works.
+
+### 4. The right way to use `FCR`
 
 So the right way to think about `FCR` is:
 
 - for small or medium-value transactions, it tries to give a block that is fast enough to treat as practically finalized;
 - for large-value settlement, you still want actual `Casper FFG` finality.
 
-That is why `FCR` is interesting.
-It does not change Ethereum's base consensus.
-It tries to shrink the huge gap between:
+So `FCR` shrinks the gap between:
 
 - "this is the current head";
 - and "this checkpoint is economically finalized".
