@@ -22,6 +22,72 @@ function baseName(path) {
   return file.replace(/\.md$/i, "");
 }
 
+function slugifyAnchor(value) {
+  return value
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function currentHashSlug() {
+  return slugifyAnchor(decodeURIComponent(window.location.hash.slice(1)));
+}
+
+function researchLogAnchors(logFolder, indexEntry) {
+  const folderSlug = slugifyAnchor(baseName(logFolder));
+  const title = indexEntry.data.title || "";
+  const shortTitle = title.split(":")[0];
+  const anchors = [slugifyAnchor(shortTitle), folderSlug, slugifyAnchor(title)]
+    .filter(Boolean)
+    .flatMap((anchor) => [
+      anchor,
+      anchor.replace(/_reading_log$/, "_research_log"),
+    ]);
+
+  return [...new Set(anchors)];
+}
+
+function researchLogFolders(manifest) {
+  return sortByFilename(
+    manifest.files
+      .filter(
+        (path) =>
+          path.startsWith("content/research/") && path.endsWith("/index.md")
+      )
+      .map((path) => ({ path: path.replace(/\/index\.md$/, "") }))
+  ).map((entry) => entry.path);
+}
+
+function applyResearchHash() {
+  if (!roots.research) {
+    return;
+  }
+
+  const hash = currentHashSlug();
+  if (!hash) {
+    return;
+  }
+
+  const logs = roots.research.querySelectorAll(
+    ".reading-log-list > .details-block"
+  );
+  const matchedLog = [...logs].find((log) => {
+    const anchors = (log.dataset.anchors || "").split(/\s+/).filter(Boolean);
+    return anchors.includes(hash);
+  });
+
+  if (!matchedLog) {
+    return;
+  }
+
+  logs.forEach((log) => {
+    log.open = log === matchedLog;
+  });
+
+  matchedLog.scrollIntoView({ block: "start" });
+}
+
 function filenameSortKey(path) {
   return stripNumericPrefix(baseName(path)).toLowerCase();
 }
@@ -403,9 +469,11 @@ function AcademicSection(title, content, subtitle = "") {
   `;
 }
 
-function DetailsBlock(title, content, open = false) {
+function DetailsBlock(title, content, open = false, attributes = "") {
   return `
-    <details class="details-block"${open ? " open" : ""}>
+    <details class="details-block"${attributes ? ` ${attributes}` : ""}${
+    open ? " open" : ""
+  }>
       <summary>${title}</summary>
       <div class="details-body">${content}</div>
     </details>
@@ -568,12 +636,18 @@ function renderTopicDetails(entries) {
 }
 
 async function renderReadingLog(logFolder, manifest, options = {}) {
-  const indexEntry = await getMarkdownFile(`${logFolder}/index.md`);
+  const indexEntry =
+    options.indexEntry || (await getMarkdownFile(`${logFolder}/index.md`));
+  const anchors = researchLogAnchors(logFolder, indexEntry);
+  const targetHash = currentHashSlug();
   const sectionEntries = await getMarkdownCollection(
     `${logFolder}/sections`,
     manifest
   );
-  const topicEntries = options.topicFolder
+  const hasTopicFolder = manifest.files.some((path) =>
+    path.startsWith(`${logFolder}/topics/`)
+  );
+  const topicEntries = hasTopicFolder
     ? await getMarkdownCollection(`${logFolder}/topics`, manifest)
     : [];
 
@@ -582,7 +656,7 @@ async function renderReadingLog(logFolder, manifest, options = {}) {
       entry.data.title ||
       stripNumericPrefix(baseName(entry.path)).replace(/\-/g, " ");
     const isTopicsSection =
-      options.topicFolder && title.toLowerCase().includes("topics i studied");
+      hasTopicFolder && title.toLowerCase().includes("topics i studied");
 
     const nestedTopics =
       isTopicsSection && topicEntries.length
@@ -622,7 +696,8 @@ async function renderReadingLog(logFolder, manifest, options = {}) {
         ${renderedSections.join("")}
       </div>
     `,
-    options.open === true
+    targetHash ? anchors.includes(targetHash) : options.open === true,
+    `id="${anchors[0]}" data-anchors="${anchors.join(" ")}"`
   );
 }
 
@@ -630,18 +705,30 @@ async function renderResearchNarrative(manifest) {
   if (!roots.research) {
     return;
   }
-  const das = await renderReadingLog(
-    "content/research/das-reading-log",
-    manifest,
-    {
-      topicFolder: false,
-      open: false,
-    }
+  const folders = await Promise.all(
+    researchLogFolders(manifest).map(async (folder) => ({
+      folder,
+      indexEntry: await getMarkdownFile(`${folder}/index.md`),
+    }))
   );
-  const consensus = await renderReadingLog(
-    "content/research/consensus-reading-log",
-    manifest,
-    { open: true, topicFolder: true }
+  const sortedFolders = folders.sort((a, b) => {
+    const aOrder = Number(a.indexEntry.data.order);
+    const bOrder = Number(b.indexEntry.data.order);
+
+    if (Number.isFinite(aOrder) || Number.isFinite(bOrder)) {
+      return (Number.isFinite(aOrder) ? aOrder : Infinity) -
+        (Number.isFinite(bOrder) ? bOrder : Infinity);
+    }
+
+    return filenameSortKey(a.folder).localeCompare(filenameSortKey(b.folder));
+  });
+  const readingLogs = await Promise.all(
+    sortedFolders.map((entry, index) =>
+      renderReadingLog(entry.folder, manifest, {
+        indexEntry: entry.indexEntry,
+        open: index === 1,
+      })
+    )
   );
 
   roots.research.innerHTML = `
@@ -653,10 +740,10 @@ async function renderResearchNarrative(manifest) {
       </p>
     </div>
     <div class="reading-log-list">
-      ${das}
-      ${consensus}
+      ${readingLogs.join("")}
     </div>
   `;
+  applyResearchHash();
 }
 
 async function renderWriting(manifest) {
@@ -812,3 +899,5 @@ async function init() {
 }
 
 init();
+
+window.addEventListener("hashchange", applyResearchHash);
