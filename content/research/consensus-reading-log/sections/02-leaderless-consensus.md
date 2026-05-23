@@ -559,18 +559,18 @@ This will be a demo for you to play around with it for familarity:
 </details>
 
 <details>
-<summary>Red Belly Blockchain</summary>
+<summary>Redbelly Blockchain</summary>
 
-`Red Belly Blockchain` starts from the same `DBFT` binary consensus core, but changes the target completely.
+`Redbelly Blockchain` starts from the same `DBFT` binary consensus core, but changes the target completely.
 `DBFT` with multivalue consensus still ends by picking one surviving proposal.
-`Red Belly` does not stop there.
+`Redbelly` does not stop there.
 Instead of picking one surviving proposal like `DBFT`, it keeps multiple surviving proposals as **sub blocks**, then combines them into one final **superblock**.
 
 ![alt text](/assets/images/consensus/01/05.png)
 
 <iframe
   src="demos/red_belly_superblock_ui.html"
-  title="Red Belly superblock demo"
+  title="Redbelly superblock demo"
   width="100%"
   height="834"
   style="display: block; width: 117.65%; max-width: none; border: 0; transform: scale(0.85); transform-origin: top left;"
@@ -580,7 +580,7 @@ Instead of picking one surviving proposal like `DBFT`, it keeps multiple survivi
 Just remind again:
 
 - `DBFT` uses binary consensus to decide which proposal survives;
-- `Red Belly` uses binary consensus to decide which proposal indices survive, then reconciles them together.
+- `Redbelly` uses binary consensus to decide which proposal indices survive, then reconciles them together.
 
 Now, we go deeper into the changes:
 
@@ -590,7 +590,7 @@ Now, we go deeper into the changes:
 
 ### 1. Verified reliable broadcast
 
-Before proposers can be reconciled together, `Red Belly` first changes the broadcast layer.
+Before proposers can be reconciled together, `Redbelly` first changes the broadcast layer.
 Instead of using a plain reliable broadcast, it uses a **verified reliable broadcast**.
 
 The easiest way to see this change is to recall the plain reliable broadcast first.
@@ -601,7 +601,7 @@ In the plain version:
 - once enough matching echoes are seen, nodes broadcast `READY`;
 - and once enough matching `READY` messages are seen, the proposal is delivered.
 
-`Red Belly` keeps the same overall shape, but changes two things.
+`Redbelly` keeps the same overall shape, but changes two things.
 
 First, after the full proposal `v` is sent once in `INIT`, later phases mostly exchange its hash `h(v)` instead of resending the whole proposal.
 The reason is simple: proposals can be large, so it is much cheaper to confirm agreement on the digest than to rebroadcast the full content every time.
@@ -654,7 +654,7 @@ Secondary verifiers wait for `Δ`, and only help if needed.
 After verification finishes, the node broadcasts:
 
 ```javascript
-READY(verif, h(v), j)
+READY(verif, h(v), j);
 ```
 
 Here `verif` is not just a boolean.
@@ -673,7 +673,7 @@ So the real change in this layer is:
 
 ### 2. From proposals to a bitmask
 
-Once proposals are being delivered in the background, `Red Belly` runs one binary consensus instance per proposer.
+Once proposals are being delivered in the background, `Redbelly` runs one binary consensus instance per proposer.
 This is the `propose(val)` algorithm in the paper.
 
 ```javascript
@@ -725,7 +725,7 @@ reconciliate(props):
   decide(superblock)
 ```
 
-This is where `Red Belly` really departs from `DBFT`.
+This is where `Redbelly` really departs from `DBFT`.
 The output is no longer one proposal.
 It is one **superblock** made from many proposals.
 
@@ -741,16 +741,16 @@ So they all end up with the same final superblock.
 The paper also adds one fairness detail here.
 The traversal order is rotated by the index `k` of the latest committed superblock, so the lowest proposer index does not always get priority when transactions are added first.
 
-### 4. What Red Belly improves over DBFT
+### 4. What Redbelly improves over DBFT
 
 At this point the difference is clearer.
 
 - `DBFT` uses binary consensus to pick one surviving proposal.
-- `Red Belly` uses binary consensus to keep many proposals alive at once.
+- `Redbelly` uses binary consensus to keep many proposals alive at once.
 - `DBFT` stops after multivalue selection.
-- `Red Belly` adds verified broadcast and reconciliation to turn that set into one superblock.
+- `Redbelly` adds verified broadcast and reconciliation to turn that set into one superblock.
 
-This is why `Red Belly` improves throughput.
+This is why `Redbelly` improves throughput.
 Instead of throwing away all but one proposal, it can commit transactions coming from many proposers in the same consensus instance.
 
 </details>

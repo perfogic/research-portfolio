@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Red Belly Superblock Demo</title>
+    <title>Redbelly Superblock Demo</title>
     <style>
       :root {
         --bg: #0f172a;
@@ -591,9 +591,9 @@
     <main class="demo">
       <header class="topbar">
         <div>
-          <h1>Red Belly Superblock Demo</h1>
+          <h1>Redbelly Superblock Demo</h1>
           <p class="subtitle">
-            Red Belly does not pick only the lowest accepted proposal. It uses
+            Redbelly does not pick only the lowest accepted proposal. It uses
             binary decisions as a bitmask, selects many verified proposals, then
             reconciles conflicting transactions into one superblock.
           </p>
@@ -967,7 +967,7 @@
         const el = document.getElementById("finalSummary");
         if (!state.started) {
           el.innerHTML =
-            "This demo contrasts Red Belly with DBFT: Red Belly keeps all bitmask=1 proposals, then reconciles them into a superblock.";
+            "This demo contrasts Redbelly with DBFT: Redbelly keeps all bitmask=1 proposals, then reconciles them into a superblock.";
           return;
         }
         if (!state.superblock.length) {
@@ -989,7 +989,7 @@
       function renderRules() {
         document.getElementById("rules").innerHTML = `
         <div class="rule"><strong>DBFT:</strong> binary decisions usually pick one winning proposal.</div>
-        <div class="rule"><strong>Red Belly:</strong> binary decisions form a <code>bitmask</code>; every index with <code>1</code> is selected.</div>
+        <div class="rule"><strong>Redbelly:</strong> binary decisions form a <code>bitmask</code>; every index with <code>1</code> is selected.</div>
         <div class="rule"><strong>Verified broadcast:</strong> sub-blocks are delivered before they enter the bitmask stage.</div>
         <div class="rule"><strong>Reconciliation:</strong> selected proposals are merged deterministically; invalid or conflicting transactions are discarded.</div>
       `;
