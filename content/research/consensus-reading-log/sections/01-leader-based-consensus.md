@@ -262,7 +262,7 @@ That is why the algorithm begins with `NEW-VIEW` messages.
 
 At the start of a view, the leader waits for `NEW-VIEW` messages from `n - f` replicas.
 Each replica sends its highest known `prepareQC`.
-The leader picks the highest one and calls it `hihttps://file+.vscode-resource.vscode-cdn.net/Users/perfogic/Workspace/Research/consensus-papers/assets/images/consensus/01/01.png?version%3D1778411744426ghQC`.
+The leader picks the highest one and calls it `highQC`.
 
 This gives the leader a concrete parent block to build on.
 In blockchain language, `highQC.node` is the highest safe parent block the leader currently knows how to extend.
