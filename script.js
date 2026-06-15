@@ -2,6 +2,7 @@ const roots = {
   about: document.getElementById("about-root"),
   publications: document.getElementById("publications-root"),
   research: document.getElementById("research-root"),
+  engineer: document.getElementById("engineer-root"),
   writing: document.getElementById("writing-root"),
   contact: document.getElementById("contact-root"),
 };
@@ -86,6 +87,35 @@ function applyResearchHash() {
   });
 
   matchedLog.scrollIntoView({ block: "start" });
+}
+
+function applyEngineerHash() {
+  if (!roots.engineer) {
+    return;
+  }
+
+  const hash = currentHashSlug();
+  if (!hash) {
+    return;
+  }
+
+  const updates = roots.engineer.querySelectorAll(
+    ".engineer-update-list > .details-block"
+  );
+  const matchedUpdate = [...updates].find((update) => {
+    const anchors = (update.dataset.anchors || "").split(/\s+/).filter(Boolean);
+    return anchors.includes(hash);
+  });
+
+  if (!matchedUpdate) {
+    return;
+  }
+
+  updates.forEach((update) => {
+    update.open = update === matchedUpdate;
+  });
+
+  matchedUpdate.scrollIntoView({ block: "start" });
 }
 
 function filenameSortKey(path) {
@@ -746,6 +776,90 @@ async function renderResearchNarrative(manifest) {
   applyResearchHash();
 }
 
+function renderEngineerMeta(entry) {
+  return [
+    entry.data.program,
+    entry.data.phase ? `Phase: ${entry.data.phase}` : "",
+    Number.isFinite(Number(entry.data.week)) ? `Week ${entry.data.week}` : "",
+    entry.data.date || entry.data.year,
+  ].filter(Boolean);
+}
+
+function engineerUpdateAnchors(entry) {
+  const weekTag = Number.isFinite(Number(entry.data.week))
+    ? `week-${entry.data.week}`
+    : "";
+  const anchors = [
+    entry.data.tag,
+    weekTag,
+    baseName(entry.path),
+    entry.data.title,
+  ]
+    .filter(Boolean)
+    .map((value) => slugifyAnchor(String(value)));
+
+  return [...new Set(anchors)];
+}
+
+function renderEngineerUpdate(entry) {
+  const title = Number.isFinite(Number(entry.data.week))
+    ? `Week ${entry.data.week}`
+    : entry.data.title || stripNumericPrefix(baseName(entry.path));
+  const anchors = engineerUpdateAnchors(entry);
+  const meta = renderEngineerMeta(entry)
+    .map((item) => `<span>${escapeHtml(String(item))}</span>`)
+    .join("");
+
+  return DetailsBlock(
+    escapeHtml(title),
+    `
+      <header class="engineer-update-header">
+        <p class="engineer-update-kicker">${
+          escapeHtml(entry.data.title || "Engineering Update")
+        }</p>
+        <div class="engineer-update-meta">${meta}</div>
+      </header>
+      ${MarkdownRenderer(entry, "markdown-body engineer-update-body")}
+    `,
+    false,
+    `id="${anchors[0] || slugifyAnchor(title)}" data-anchors="${anchors.join(" ")}"`
+  );
+}
+
+async function renderEngineer(manifest) {
+  if (!roots.engineer) {
+    return;
+  }
+  const entries = (await getMarkdownCollection("content/engineer", manifest)).sort(
+    (a, b) => {
+      const aWeek = Number(a.data.week);
+      const bWeek = Number(b.data.week);
+
+      if (Number.isFinite(aWeek) || Number.isFinite(bWeek)) {
+        return (Number.isFinite(aWeek) ? aWeek : Infinity) -
+          (Number.isFinite(bWeek) ? bWeek : Infinity);
+      }
+
+      return filenameSortKey(a.path).localeCompare(filenameSortKey(b.path));
+    }
+  );
+
+  roots.engineer.innerHTML = `
+    <div class="engineer-intro">
+      <p>
+        Development updates from protocol engineering work, including EPF
+        cohort notes, client implementation research, and contribution plans.
+      </p>
+    </div>
+    <div class="engineer-update-list">
+      ${entries
+        .map((entry) => renderEngineerUpdate(entry))
+        .join("")}
+    </div>
+  `;
+  applyEngineerHash();
+}
+
 async function renderWriting(manifest) {
   if (!roots.writing) {
     return;
@@ -875,6 +989,13 @@ async function init() {
         )
       );
     }
+    if (roots.engineer) {
+      tasks.push(
+        renderEngineer(manifest).catch((error) =>
+          renderError(roots.engineer, error)
+        )
+      );
+    }
     if (roots.writing) {
       tasks.push(
         renderWriting(manifest).catch((error) =>
@@ -900,4 +1021,7 @@ async function init() {
 
 init();
 
-window.addEventListener("hashchange", applyResearchHash);
+window.addEventListener("hashchange", () => {
+  applyResearchHash();
+  applyEngineerHash();
+});
