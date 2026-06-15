@@ -1,18 +1,26 @@
 ---
-title: "Dang Pham Minh Week 0 Update"
+title: "Week 0 Update"
 program: "Ethereum Protocol Fellowship Cohort 7"
 phase: "Discovery"
 week: 0
 year: 2026
+date: "2026-06-15"
+tag: "week-0"
 ---
 
-# Dang Pham Minh Week 0 Update
+# Dang(Daniel) Pham Minh Week 0 Update
 
-Coming into EPF Cohort 7, I am participating permissionlessly and using Week 0 to get oriented around the proposed projects. My focus so far has been learning more about Lean Ethereum and the client-side architecture around Ream, then mapping that learning back to the places where I may be able to contribute.
+Coming into EPF Cohort 7, I'm participating permissionlessly and using Week 0 to get oriented around the proposed projects.
+
+My focus so far has been learning more about Lean Ethereum and the client-side architecture around Ream, then mapping that learning back to the areas where I may be able to contribute.
 
 ## Background
 
-I already have some background in Data Availability Sampling and recently worked on a DAS-related paper, so I am trying to connect that research context with practical client implementation work. That makes Ream especially interesting to me because it gives me a concrete codebase where I can study how the Lean Ethereum direction is being built.
+I already have some background in Data Availability Sampling and recently worked on a DAS-related paper, namely CDA. I have also become increasingly interested in the consensus space.
+
+Because of that, I am trying to connect my research background with practical client implementation work. I decided to join this cohort because it gives me a chance to contribute to interesting protocol projects while learning from people who are already working close to the core Ethereum stack.
+
+I started this journey by learning about the Lean client direction, which is part of Ethereum's roadmap around fast finality and post-quantum security.
 
 During the first week, I watched the EPF Lean Introduction videos:
 
@@ -26,9 +34,11 @@ I also watched Ream's Lean Architecture video:
 
 - [Ream Lean Architecture](https://www.youtube.com/watch?v=E4eLOjI6Ou8&t=1s)
 
+The Ream architecture session, given by Kodby ML, helped me understand how the client is structured. I believe this is still a new and fast-moving space, and it feels like a good opportunity to apply my skills in a more practical setting.
+
 ## Areas I'm Looking Into
 
-Right now I am testing and reading through networking-related libraries such as `discv5` and `libp2p`. This is partly to refresh the networking layer details and partly to understand what kind of contribution path would make sense inside the Ream repository.
+Right now, I am testing and reading through networking-related libraries such as `discv5` and `libp2p`. This is partly to refresh the networking-layer details and partly to build enough groundwork before I start touching and modifying the `ream` codebase.
 
 The proposed projects that currently look most aligned with my background are:
 
@@ -38,6 +48,8 @@ The proposed projects that currently look most aligned with my background are:
 I also plan to look further into:
 
 - **Grandine: Lean Client**. This is another project that could be relevant as I compare different client implementations and their approach to the Lean Ethereum direction.
+
+For now, I will focus on reading the `ream` client, understanding how a DAS scheme could be applied to it, and thinking about a generic approach that could work for both the Beacon chain with KZG and the Lean chain with FRI.
 
 ## Working Through
 
