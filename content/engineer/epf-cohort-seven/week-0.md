@@ -44,20 +44,23 @@ Right now, I am testing and reading through networking-related libraries such as
 
 The proposed projects that currently look most aligned with my background are:
 
-- **Ream: Minimal DAS**. This is the closest match to my DAS background and gives me a path to connect my previous research work with Ethereum client implementation. It also gives me a chance to contribute to the Lean client roadmap.
+- **Ream: Minimal DAS - most focus one**. This is the closest match to my DAS background and gives me a path to connect my previous research work with Ethereum client implementation. It also gives me a chance to contribute to the Lean client roadmap.
 - **Ream: Execution Layer**. Since I want to work on the Lean client, this project also seems relevant, and from the description, it looks like there is more room to contribute.
 
 I also plan to look further into:
 
 - **Grandine: Lean Client**. This is another project that could be relevant as I compare different client implementations and their approaches to the Lean Ethereum direction.
 
-For now, I will focus on reading the ream client, understanding how a DAS scheme could be applied to it, and thinking about a generic approach that could work for both the Beacon Chain with KZG and the Lean Chain with FRI. If everything works well, my main goal for this EPF will be “Ream: Minimal PeerDAS Data Availability Client”.
+For now, I will focus on reading the ream client, understanding how a DAS scheme could be applied to it, and thinking about a generic approach that could work for both the Beacon Chain with KZG and the Lean Chain with FRI.
 
-## Working Through
+## Working Through For Next Week
 
-My main task now is to read the Ream repository carefully, understand its architecture, and identify the parts where I can contribute realistically. I am also continuing to review the EPF material around Lean Ethereum, networking, and client architecture so that I can narrow my focus before moving deeper into a specific project.
+I have started running a Ream node locally and am now trying to understand the codebase more systematically before proposing an implementation plan.
 
-Next, I plan to read through Thomas Coratger’s Lean Consensus 2026 plan, take an initial look at leanSpec, and dive deeper into the `ream` codebase. The goal is to build enough context to form a concrete plan for implementing DAS later on.
+Since I have read about DAS specifications and have some experience with DAS, in Week 1 I plan to focus on two main tasks:
+
+- Study the ream codebase more deeply to get the bigger picture for planning the DAS implementation spec.
+- Start drafting the implementation specification for a standalone DA node. I aim to turn this into a more complete specification by Week 2.
 
 ## Links
 
