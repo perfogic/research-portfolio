@@ -14,7 +14,7 @@ async function walk(dir) {
       files.push(...(await walk(absolute)));
       continue;
     }
-    if (entry.isFile() && entry.name.endsWith(".md")) {
+    if (entry.isFile() && [".md", ".mmd"].includes(path.extname(entry.name))) {
       files.push(path.relative(process.cwd(), absolute).replaceAll(path.sep, "/"));
     }
   }

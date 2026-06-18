@@ -244,6 +244,10 @@ details summary,
   border-bottom: 0;
 }
 
+.lean-spec-page .document-section {
+  border-bottom: 0;
+}
+
 .engineer-heading {
   margin-bottom: 14px;
 }
@@ -256,6 +260,69 @@ details summary,
 
 .engineer-intro p {
   margin: 0;
+}
+
+.lean-spec-intro {
+  max-width: 64rem;
+  margin-bottom: 22px;
+  color: var(--muted);
+}
+
+.lean-spec-intro p {
+  margin: 0;
+}
+
+.lean-spec-intro code {
+  padding: 0.08rem 0.28rem;
+  border: 1px solid var(--line);
+  background: #f7f4ef;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.92em;
+}
+
+.lean-spec-list {
+  display: grid;
+  gap: 18px;
+}
+
+.lean-spec-card {
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.lean-spec-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.lean-spec-card-header h3 {
+  margin: 0;
+  font-family: "Source Serif 4", serif;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.lean-spec-card-header a {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+}
+
+.lean-spec-diagram {
+  overflow-x: auto;
+  padding: 18px;
+  background: #fff;
+}
+
+.lean-spec-diagram svg {
+  display: block;
+  min-width: 720px;
+  max-width: none;
+  margin: 0 auto;
 }
 
 .engineer-update-list {

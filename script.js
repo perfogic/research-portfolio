@@ -3,6 +3,7 @@ const roots = {
   publications: document.getElementById("publications-root"),
   research: document.getElementById("research-root"),
   engineer: document.getElementById("engineer-root"),
+  leanSpec: document.getElementById("lean-spec-root"),
   writing: document.getElementById("writing-root"),
   contact: document.getElementById("contact-root"),
 };
@@ -405,6 +406,18 @@ async function getMarkdownFile(path) {
     path,
     filename: path.split("/").pop() || path,
     ...parsed,
+  };
+}
+
+async function getTextFile(path) {
+  const response = await fetch(path);
+  if (!response.ok) {
+    throw new Error(`Could not load ${path}`);
+  }
+  return {
+    path,
+    filename: path.split("/").pop() || path,
+    body: await response.text(),
   };
 }
 
@@ -860,6 +873,75 @@ async function renderEngineer(manifest) {
   applyEngineerHash();
 }
 
+function leanSpecTitle(path) {
+  return stripNumericPrefix(baseName(path))
+    .replace(/\-/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+async function renderLeanSpec(manifest) {
+  if (!roots.leanSpec) {
+    return;
+  }
+
+  const folder = "content/engineer/epf-cohort-seven/lean-spec/";
+  const files = manifest.files
+    .filter((path) => path.startsWith(folder) && path.endsWith(".mmd"))
+    .sort((a, b) => filenameSortKey(a).localeCompare(filenameSortKey(b)));
+  const diagrams = await Promise.all(files.map((path) => getTextFile(path)));
+
+  if (!diagrams.length) {
+    roots.leanSpec.innerHTML = `<p class="error-block">No Mermaid diagrams found in ${folder}</p>`;
+    return;
+  }
+
+  roots.leanSpec.innerHTML = `
+    <div class="lean-spec-intro">
+      <p>
+        Mermaid previews for the Lean specification diagrams under
+        <code>${folder}</code>.
+      </p>
+    </div>
+    <div class="lean-spec-list">
+      ${diagrams
+        .map(
+          (entry) => `
+            <article class="lean-spec-card">
+              <header class="lean-spec-card-header">
+                <h3>${leanSpecTitle(entry.path)}</h3>
+                <a href="${entry.path}" target="_blank" rel="noopener noreferrer">${entry.filename}</a>
+              </header>
+              <div class="lean-spec-diagram">
+                <pre class="mermaid">${escapeHtml(entry.body)}</pre>
+              </div>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+
+  if (window.mermaid && typeof window.mermaid.run === "function") {
+    window.mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "base",
+      themeVariables: {
+        fontFamily: "IBM Plex Sans, sans-serif",
+        primaryColor: "#faf8f3",
+        primaryTextColor: "#171717",
+        primaryBorderColor: "#bdb7ae",
+        lineColor: "#6b5847",
+        clusterBkg: "#fcfbf8",
+        clusterBorder: "#d9d5ce",
+      },
+    });
+    await window.mermaid.run({
+      nodes: roots.leanSpec.querySelectorAll(".mermaid"),
+    });
+  }
+}
+
 async function renderWriting(manifest) {
   if (!roots.writing) {
     return;
@@ -1000,6 +1082,13 @@ async function init() {
       tasks.push(
         renderWriting(manifest).catch((error) =>
           renderError(roots.writing, error)
+        )
+      );
+    }
+    if (roots.leanSpec) {
+      tasks.push(
+        renderLeanSpec(manifest).catch((error) =>
+          renderError(roots.leanSpec, error)
         )
       );
     }
