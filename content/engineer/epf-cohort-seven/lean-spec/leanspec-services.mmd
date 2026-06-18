@@ -1,0 +1,43 @@
+%% Node tier: how the leanSpec node services interact.
+%% Services orchestrate I/O around the shared fork-choice Store.
+%% All run concurrently on one asyncio event loop (Node.run).
+graph TD
+    subgraph externalworld["External world"]
+        NET["libp2p / peers"]
+        WALL["Wall clock"]
+        USER["HTTP client"]
+    end
+
+    CLOCK["SlotClock<br/>shared time source<br/>wall time to slot/interval"]
+
+    NETSVC["NetworkService<br/>gossip + req/resp transport"]
+    SYNC["SyncService<br/>OWNS the Store<br/>ingest + sync state machine"]
+    CHAIN["ChainService<br/>consensus clock / ticks store"]
+    VAL["ValidatorService<br/>propose blocks + attest"]
+    API["ApiServer<br/>REST endpoints"]
+    DB[("Database<br/>SQLite, optional")]
+    SPEC[["LstarSpec<br/>pure consensus logic"]]
+
+    WALL --> CLOCK
+    NET -->|incoming block/attestation| NETSVC
+    NETSVC -->|on_gossip_block / on_gossip_attestation| SYNC
+
+    CLOCK --> CHAIN
+    CLOCK --> VAL
+
+    CHAIN -->|tick_interval| SPEC
+    CHAIN -->|read+write store| SYNC
+    CHAIN -->|new aggregates| NETSVC
+
+    VAL -->|produce_block / produce_attestation_data| SPEC
+    VAL -->|read store| SYNC
+    VAL -->|new block/attestation| NETSVC
+
+    SYNC -->|on_block / on_attestation| SPEC
+    SYNC -->|persist| DB
+    SYNC -->|publish aggregate| NETSVC
+
+    API -->|store_getter read| SYNC
+    USER --> API
+
+    NETSVC -->|outgoing gossip| NET

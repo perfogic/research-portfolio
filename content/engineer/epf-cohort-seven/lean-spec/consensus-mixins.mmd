@@ -1,0 +1,42 @@
+%% Consensus spec tier: how the LstarSpec mixins call each other.
+%% LstarSpec is composed from all these mixins (spec/forks/lstar/spec.py).
+graph TD
+    BASE["LstarSpecBase<br/>class types + abstract interface"]
+
+    subgraph pure["Pure computation"]
+        ST["StateTransitionMixin<br/>process_slots / process_block<br/>process_attestations"]
+        SIG["SignatureMixin<br/>verify_signatures"]
+        AGG["AggregationMixin<br/>aggregate<br/>select_proofs_for_coverage"]
+    end
+
+    subgraph forkchoice["Fork choice"]
+        FC["ForkChoiceMixin<br/>on_block / update_head<br/>update_safe_target / LMD-GHOST<br/>accept_new_attestations"]
+    end
+
+    subgraph orchestration["In-spec orchestration"]
+        TL["TimelineMixin<br/>tick_interval / on_tick"]
+        BP["BlockProductionMixin<br/>build_block"]
+        VD["ValidatorDutiesMixin<br/>produce_block / produce_attestation_data<br/>get_attestation_target"]
+    end
+
+    FC -->|verify_signatures| SIG
+    FC -->|state_transition| ST
+    FC -->|self.update_head| FC
+
+    TL -->|accept_new_attestations| FC
+    TL -->|update_safe_target| FC
+    TL -->|aggregate| AGG
+
+    VD -->|on_tick| TL
+    VD -->|accept_new_attestations| FC
+    VD -->|build_block| BP
+    VD -->|reads safe_target| FC
+
+    BP -->|process_slots / process_block| ST
+    BP -->|select_proofs_for_coverage| AGG
+
+    ST -->|process_block calls process_attestations| ST
+
+    pure -.->|inherit types| BASE
+    forkchoice -.-> BASE
+    orchestration -.-> BASE
