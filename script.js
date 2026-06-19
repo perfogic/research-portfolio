@@ -4,6 +4,7 @@ const roots = {
   research: document.getElementById("research-root"),
   engineer: document.getElementById("engineer-root"),
   leanSpec: document.getElementById("lean-spec-root"),
+  reamSpec: document.getElementById("ream-spec-root"),
   writing: document.getElementById("writing-root"),
   contact: document.getElementById("contact-root"),
 };
@@ -21,7 +22,7 @@ function stripNumericPrefix(value) {
 
 function baseName(path) {
   const file = path.split("/").pop() || path;
-  return file.replace(/\.md$/i, "");
+  return file.replace(/\.(mmd|md)$/i, "");
 }
 
 function slugifyAnchor(value) {
@@ -873,45 +874,45 @@ async function renderEngineer(manifest) {
   applyEngineerHash();
 }
 
-function leanSpecTitle(path) {
+function specDiagramTitle(path) {
   return stripNumericPrefix(baseName(path))
     .replace(/\-/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-async function renderLeanSpec(manifest) {
-  if (!roots.leanSpec) {
+async function renderSpecPreview(root, manifest, options) {
+  if (!root) {
     return;
   }
 
-  const folder = "content/engineer/epf-cohort-seven/lean-spec/";
+  const folder = `content/engineer/epf-cohort-seven/${options.folder}/`;
   const files = manifest.files
     .filter((path) => path.startsWith(folder) && path.endsWith(".mmd"))
     .sort((a, b) => filenameSortKey(a).localeCompare(filenameSortKey(b)));
   const diagrams = await Promise.all(files.map((path) => getTextFile(path)));
 
   if (!diagrams.length) {
-    roots.leanSpec.innerHTML = `<p class="error-block">No Mermaid diagrams found in ${folder}</p>`;
+    root.innerHTML = `<p class="error-block">No Mermaid diagrams found in ${folder}</p>`;
     return;
   }
 
-  roots.leanSpec.innerHTML = `
-    <div class="lean-spec-intro">
+  root.innerHTML = `
+    <div class="spec-preview-intro">
       <p>
-        Mermaid previews for the Lean specification diagrams under
+        Mermaid previews for the ${options.label} specification diagrams under
         <code>${folder}</code>.
       </p>
     </div>
-    <div class="lean-spec-list">
+    <div class="spec-preview-list">
       ${diagrams
         .map(
           (entry) => `
-            <article class="lean-spec-card">
-              <header class="lean-spec-card-header">
-                <h3>${leanSpecTitle(entry.path)}</h3>
+            <article class="spec-preview-card">
+              <header class="spec-preview-card-header">
+                <h3>${specDiagramTitle(entry.path)}</h3>
                 <a href="${entry.path}" target="_blank" rel="noopener noreferrer">${entry.filename}</a>
               </header>
-              <div class="lean-spec-diagram">
+              <div class="spec-preview-diagram">
                 <pre class="mermaid">${escapeHtml(entry.body)}</pre>
               </div>
             </article>
@@ -937,9 +938,23 @@ async function renderLeanSpec(manifest) {
       },
     });
     await window.mermaid.run({
-      nodes: roots.leanSpec.querySelectorAll(".mermaid"),
+      nodes: root.querySelectorAll(".mermaid"),
     });
   }
+}
+
+async function renderLeanSpec(manifest) {
+  return renderSpecPreview(roots.leanSpec, manifest, {
+    folder: "lean-spec",
+    label: "Lean",
+  });
+}
+
+async function renderReamSpec(manifest) {
+  return renderSpecPreview(roots.reamSpec, manifest, {
+    folder: "ream-spec",
+    label: "Ream",
+  });
 }
 
 async function renderWriting(manifest) {
@@ -1089,6 +1104,13 @@ async function init() {
       tasks.push(
         renderLeanSpec(manifest).catch((error) =>
           renderError(roots.leanSpec, error)
+        )
+      );
+    }
+    if (roots.reamSpec) {
+      tasks.push(
+        renderReamSpec(manifest).catch((error) =>
+          renderError(roots.reamSpec, error)
         )
       );
     }

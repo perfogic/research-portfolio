@@ -1,0 +1,35 @@
+%% Ream lean node services (mirror of leanSpec leanspec-services).
+%% KEY DIFFERENCE vs leanSpec: services are independent tokio tasks that
+%% communicate by CHANNELS (message passing), not direct method calls on a
+%% single event loop. One shared state (the Store) is owned by the chain
+%% service via a single Writer; readers get a Reader handle.
+%% Wired in bin/ream/src/main.rs::run_lean_node.
+graph TD
+    NET["libp2p / peers"]
+    USER["HTTP client"]
+
+    NETSVC["LeanNetworkService<br/>gossip + req/resp transport"]
+    CHAIN["LeanChainService<br/>OWNS Store writer<br/>process_new_block / tick / sync<br/>deconstruct_block_into_store"]
+    VAL["LeanValidatorService<br/>propose + attest duties"]
+    RPC["RPC - rpc/lean<br/>REST handlers (read-only)"]
+
+    STORE[("LeanChain Store<br/>Arc Mutex LeanDB<br/>Writer + Reader split")]
+    LOGIC[["Store impl + LeanState<br/>consensus logic (see ream-consensus.mmd)"]]
+
+    NET -->|incoming block/attestation| NETSVC
+    NETSVC -->|chain_sender msg| CHAIN
+    VAL -->|chain_sender msg| CHAIN
+
+    CHAIN -->|outbound_p2p_sender| NETSVC
+    NETSVC -->|outgoing gossip| NET
+
+    CHAIN -->|calls consensus methods| LOGIC
+    CHAIN -->|writer: read + write| STORE
+    LOGIC -->|read / write| STORE
+
+    RPC -->|reader: read only| STORE
+    USER --> RPC
+
+    CLOCK["SlotClock - chain/lean/clock.rs<br/>wall time to slot/interval"]
+    CLOCK --> CHAIN
+    CLOCK --> VAL

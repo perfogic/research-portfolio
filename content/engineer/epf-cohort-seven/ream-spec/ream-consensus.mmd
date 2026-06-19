@@ -1,0 +1,34 @@
+%% Ream consensus tier (mirror of leanSpec consensus-mixins).
+%% leanSpec splits consensus into mixins; Ream groups them as method
+%% blocks on one Store impl (fork_choice/lean/store.rs), calling
+%% LeanState (consensus/lean/state.rs) for the state transition.
+graph TD
+    subgraph storeimpl["Store impl - crates/common/fork_choice/lean/store.rs"]
+        FC["Fork choice<br/>on_block / update_head<br/>update_safe_target / compute_lmd_ghost_head<br/>accept_new_attestations / validate_attestation<br/>checkpoint_is_ancestor / prune_stale_attestation_data<br/>on_gossip_attestation / on_gossip_aggregated_attestation"]
+        TL["Timeline<br/>tick_interval / on_tick"]
+        AGG["Aggregation<br/>aggregate / select_aggregated_proofs / state_aggregate"]
+        BP["Block production<br/>build_block / build_block_tiered / build_block_with<br/>select_round_based / select_tiered / seal_block"]
+        VD["Validator duties<br/>get_attestation_target / get_proposal_head<br/>produce_attestation_data / produce_block_with_signatures"]
+    end
+
+    ST["LeanState - crates/common/consensus/lean/state.rs<br/>state_transition / process_slots<br/>process_block / process_attestations"]
+    SIG["post_quantum::leansig<br/>signature verify + aggregate"]
+    DB[("LeanDB - Arc Mutex<br/>blocks / states / pools / checkpoints")]
+
+    FC -->|verify_signatures| SIG
+    FC -->|state_transition| ST
+    FC -->|self update_head| FC
+
+    TL -->|accept_new_attestations / update_safe_target| FC
+    TL -->|aggregate| AGG
+
+    VD -->|on_tick| TL
+    VD -->|build_block| BP
+    VD -->|reads safe_target| FC
+
+    BP -->|process_slots / process_block| ST
+    BP -->|select proofs| AGG
+
+    ST -->|process_block calls process_attestations| ST
+
+    storeimpl -->|read / write| DB

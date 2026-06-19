@@ -1,10 +1,12 @@
 {
-  "generatedAt": "2026-06-18T11:08:56.534Z",
+  "generatedAt": "2026-06-19T14:53:25.908Z",
   "files": [
     "content/about.md",
     "content/contact.md",
     "content/engineer/epf-cohort-seven/lean-spec/consensus-mixins.mmd",
     "content/engineer/epf-cohort-seven/lean-spec/leanspec-services.mmd",
+    "content/engineer/epf-cohort-seven/ream-spec/ream-consensus.mmd",
+    "content/engineer/epf-cohort-seven/ream-spec/ream-services.mmd",
     "content/engineer/epf-cohort-seven/week-0.md",
     "content/publications/01-coded-distributed-arrays.md",
     "content/research/consensus-reading-log/index.md",
