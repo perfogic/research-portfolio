@@ -1,0 +1,2942 @@
+Polygraph
+Accountable Byzantine Agreement
+Pierre Civit
+
+Seth Gilbert
+
+Vincent Gramoli
+
+University of Sydney
+Sydney, Australia
+pierrecivit@gmail.com
+
+NUS
+Singapore, Singapore
+seth.gilbert@comp.nus.edu.sg
+
+University of Sydney
+Sydney, Australia
+vincent.gramoli@sydney.edu.au
+
+ABSTRACT
+
+real world, we can prevent bad blockchain behavior: if the
+attacker has strictly less than 1/3 of the network under their
+control then consensus is reached, otherwise we record sufficient information to catch the third of the network that is
+criminal and take remedial actions. Accountability has been
+increasingly discussed as a desirable property in blockchains
+to slash stake of cheating peers [9, 32]. The problem is to
+avoid suspecting correct peers while provably identifying
+cheating ones.
+
+In this paper, we introduce Polygraph, the first accountable
+Byzantine consensus algorithm. If among 𝑛 users 𝑡 < 𝑛/3 are
+malicious then it ensures consensus; otherwise (if 𝑡 ≥ 𝑛/3),
+it eventually detects malicious users that cause disagreement. Polygraph is appealing for blockchain applications as
+it allows them to totally order blocks in a chain whenever
+possible, hence avoiding forks and double spending and, otherwise, to punish (e.g., via slashing) at least 𝑛/3 malicious
+users when a fork occurs. This problem is more difficult
+than perhaps it first appears. One could try identifying malicious senders by extending classic Byzantine consensus
+algorithms to piggyback signed messages. We show however
+that to achieve accountability the resulting algorithms would
+then need to exchange Ω(𝜅 2 · 𝑛 5 ) bits, where 𝜅 is the security
+parameter of the signature scheme. By contrast, Polygraph
+has communication complexity 𝑂(𝜅 · 𝑛 4 ). Finally, we implement Polygraph in a blockchain and compare it to the Red
+Belly Blockchain to show that it commits more than 10,000
+Bitcoin-like transactions per second when deployed on 80
+geodistributed machines.
+
+1
+
+Why is it a hard problem? As far as we know, there is
+no generic way of getting definitive evidence of the guilt
+of processes (or nodes) for all systems. Previous work introduced a method to transform any distributed system into
+one that is accountable but it only guarantees that faulty
+processes will be suspected forever if the network is partially synchronous [18]. We thus narrow down the problem
+to accountable Byzantine agreement, specifically reaching
+agreement when there are fewer than 𝑛/3 Byzantine participants or detecting at least 𝑛/3 Byzantine participants in case
+of a disagreement. Most partially synchronous Byzantine
+consensus protocols, like PBFT [11], Tendermint [8] or HotStuff [35], already collect forms of cryptographic evidence
+like signatures or certificates to guarantee agreement upon
+a decision. So one might think of simply recording the quorum certificates containing honest processes signatures that
+attest the decision to detect 𝑛/3 Byzantine processes in case
+of disagreement. In fact, we show that justifications should
+contain at least Ω(𝜅 · 𝑛 2 ) bits (where 𝜅 is the security parameter of the signature scheme) for a simple piggybacking
+extension to make any of these algorithms accountable (see
+Theorem 4.3).
+
+INTRODUCTION
+
+Over the last several years we have seen a boom in the development of new Byzantine agreement protocols, in large
+part driven by the excitement over blockchains and cryptocurrencies. Unfortunately, Byzantine agreement protocols
+have some inherent limitations: it is impossible to ensure
+correct operation when more than 1/3 of the processing
+power in the system is controlled by a single malicious party,
+unless the network can guarantee perfect synchrony in communication. At first, one might hope to relax the liveness
+guarantees, while always ensuring safety. Alas, in a partially
+synchronous network, this type of guarantee is impossible.
+If the adversary controls more than 1/3 of the computing
+power, it can always force disagreement.
+
+Results. In this paper, we propose Polygraph, the first accountable Byzantine agreement solution. The idea is to offer
+accountability guarantees to the participants of the service.
+Intuitively, one cannot hold 𝑛 servers accountable to separate clients (distinct from the servers) that interact with
+the blockchain when more than 𝑡 ≥ 2𝑛/3 of the servers
+are Byzantine. The reason is that the coalition is sufficiently
+large to rewrite the blockchain and prevent a client from distinguishing the response of honest servers from the response
+of malicious servers [13]. This was confirmed by concurrent
+
+Accountability. What if, instead of preventing bad behavior
+by a party that controls too much power, we guarantee accountability, i.e., we can provide irrefutable evidence of the
+bad behavior and the identifier of the perpetrator of those
+illegal actions? Much in the way we prevent crime in the
+1
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+Algorithm Msgs Bits
+
+depicted in Table 1 because Polygraph simply needs to exchange signed messages received within at most the two
+latest previous asynchronous rounds. In particular, both the
+binary and the multivalue versions of Polygraph share the
+same asymptotic complexity as PBFT, which does not offer accountability. Second, we evaluate the performance of
+Polygraph in a blockchain application that thus becomes
+accountable. We deploy this blockchain application on 80
+machines across continents and compare its performance to
+the Red Belly Blockchain [15]. Even though it presents some
+overheads compared to this non-accountable baseline, our
+accountable blockchain still exceeds 10,000 TPS at 80 nodes.
+This high performance can be attributed to the reasonable
+complexity of the multivalue variant of Polygraph depicted
+in Table 1.
+
+Account.
+
+PBFT [11] 𝑂(𝑛 3 ) 𝑂(𝜅 · 𝑛 4 )
+Tendermint [7] 𝑂(𝑛 3 ) 𝑂(𝜅 · 𝑛 3 )
+HotStuff [35] 𝑂(𝑛 2 ) 𝑂(𝜅 · 𝑛 2 )
+HotStuff w/o thres. sig. [21] 𝑂(𝑛 2 ) 𝑂(𝜅 · 𝑛 3 )
+DBFT binary consensus [14] 𝑂(𝑛 3 ) 𝑂(𝑛 3 )
+DBFT multivalue consensus [14] 𝑂(𝑛 4 ) 𝑂(𝑛 4 )
+
+✗
+✗
+✗
+✗
+✗
+✗
+
+Polygraph (Sect. 5) 𝑂(𝑛 3 ) 𝑂(𝜅 · 𝑛 4 )
+Naive Multiv. Polygraph (App. C) 𝑂(𝑛 4 ) 𝑂(𝜅 · 𝑛 5 )
+Multivalue Polygraph (App. D) 𝑂(𝑛 4 ) 𝑂(𝜅 · 𝑛 4 )
+
+✓
+✓
+✓
+
+Table 1: Differences in communication complexities after global stabilization time between Polygraph and non-accountable Byzantine consensus algorithms, where 𝑛 is the number of consensus participants and 𝜅 is the security parameter of the corresponding encryption scheme.
+
+Roadmap. The background is given in Section 2. The model
+and the accountable Byzantine consensus problem are presented in Section 3, and impossibility results are given in
+Section 4. Section 5 describes the Polygraph protocol, which
+solves the accountable binary Byzantine consensus problem. Section 6 analyses empirically the Polygraph protocol
+in a geodistributed blockchain. blockchain and Section 7
+concludes.
+An Appendix is left to the discretion of the reader. Appendix A presents the proof of the impossibility result, Appendix B presents the proof of correctness of the Polygraph protocol, Appendix C presents the multivalue Polygraph protocol that supports arbitrary values. Appendix D presents some
+optimizations to reduce the complexity of the multivalue
+Polygraph protocol. Appendix E discusses the applications
+of the Polygraph protocol to blockchain. Finally, Appendix F
+shows that a naive extension of classic blockchain consensus
+protocols, including PBFT, HotStuff and Tendermint, cannot
+make them accountable.
+
+research to ours that showed it is impossible to hold servers
+accountable to separate clients for any number of Byzantine
+participants [33].
+Our solution, called Polygraph, ensures that in a symmetric system where all 𝑛 participants are peers that take part as
+clients and servers in the accountable Byzantine consensus,
+then accountability is ensured for any number 𝑡 ≤ 𝑛 of
+Byzantine participants. Note that the problem is trivial
+when 𝑡 > 𝑛 − 2 as no disagreement among correct processes
+is possible, but otherwise Polygraph guarantees all honest
+participants undeniably detect at least 𝑛/3 Byzantine participants responsible for disagreement. Because it is resilient
+to any number of failures, Polygraph is particularly interesting for peer-to-peer blockchain networks. In particular, it
+allows to hold all peers accountable to other peers, which is
+appealing for consortium blockchains and shard chains [17].
+We also show that Polygraph is optimal in that stronger
+forms of accountability are impossible. For example, we cannot guarantee agreement when 𝑡 > 𝑛/3, even if we are
+willing to tolerate a failure of liveness (Theorem 4.1); and
+processes cannot detect even one guilty participant within a
+fixed time limit (e.g., prior to decision), since (intuitively) that
+would enable processes to determine guilt before deciding in
+a way that leads to disagreement. Nor can we guarantee detection of more than 𝑛/3 malicious users, since it takes only
+𝑛/3 malicious users to cause disagreement and additional
+malicious users could simply stay mute to not be detected.
+Finally, we show that Polygraph is efficient. First, its communication complexity is 𝑂(𝜅 ·𝑛 4 ) bits, where 𝑛 is the number
+of participants and 𝜅 is the security parameter of its signature
+scheme. This complexity is comparable to the communication complexity of state-of-the-art consensus algorithms as
+
+2
+
+BACKGROUND AND RELATED WORK
+
+In this section, we review existing work on accountability in
+distributed systems.
+
+2.1
+
+PeerReview
+
+Haeberlen, Kuznetsov, and Druschel [18] pioneered the idea
+of accountability in distributed systems. They developed a
+system called PeerReview that implemented accountability
+as an add-on feature for any distributed system. Each process in the system records messages in tamper-evident logs;
+an authenticator can challenge a process, retrieve its logs,
+and simulate the original protocol to ensure that the process
+behaved correctly. They show that in doing so, you can always identify at least one malicious process (if some process
+acts in a detectably malicious way). Their technique is quite
+2
+
+Polygraph
+
+powerful, given its general applicability which can be used
+in any (deterministic) distributed system!
+The issue has to do with (partial) synchrony. The PeerReview approach is challenge-based: to prove misbehavior,
+an auditor must receive a response from the malicious process. If no response is received, the auditor cannot determine
+whether the process is malicious, or whether the network
+has not yet stabilized. It follows that the malicious coalition
+will only be suspected forever but not proved guilty. There is
+no fixed point at which the auditor can be completely certain
+that the sender is malicious; the auditor may never have definitive proof that the process is malicious; it always might
+just be poor network performance. The Polygraph Protocol,
+by contrast, produces a concrete proof of malicious behavior
+that is completely under the control of the honest processes.
+
+2.2
+
+Holding 𝑛 servers accountable to separate clients in the Tendermint consensus algorithm [4, 8] as well as HotStuff [35]
+was shown possible when 𝑡 < 2𝑛/3 in recent research [33]
+but could not be achieved when 𝑡 ≥ 2𝑛/3, which confirms
+our observations (Appendix E).
+
+2.3
+
+Earlier work on accountability
+
+Even before PeerReview, others had suggested the idea of accountability in distributed systems as an alternate approach
+to security (see, e.g., [26, 36, 37]). Yumerefendi and Chase [37]
+developed an accountable system for network storage, and
+Michalakis et al. [30] developed an accountable peer-to-peer
+content distribution network. The idea of accountability appeared less explicit in many earlier systems. For example,
+Aiyer et al. [3] proposed the BAR model for distributed systems, which relied on incentives to ensure good behavior;
+one key idea was in detecting and punishing bad behaviors. Finally, Intrusion Detection Systems (e.g., [16, 22, 28]
+provided heuristics and techniques for detecting malicious
+behaviors in a variety of different systems.
+
+Accountable blockchains
+
+Recently, accountability has been an important goal in “proofof-stake” blockchains, where users that violate the protocol
+can be punished by confiscating their deposited stake.
+Buterin and Griffith [9] have proposed a blockchain protocol, Casper, that provides this type of accountability guarantee. Validators try to agree on (or “finalize”) a branch of
+𝑘 hundreds of consecutive blocks, by gathering signatures
+for this branch or “link” from validators jointly owning at
+least 2𝑛/3 of the deposited stake. If a validator signs multiple links at the same height, Casper uses its signatures as
+proofs to slash its deposited stake. This is very similar in intent to Polygraph’s notion of identifying 𝑛/3 malicious users
+when there is disagreement. Like most blockchain protocols, however, Casper implicitly assumes some synchronous
+underlying (overlay) network and allows the blockchain to
+fork into a tree until some branch is finalized. To guarantee
+“plausible liveness” or that Casper does not block when not
+enough signatures are collected to finalize a link, validators
+are always allowed to sign links that overlap but extend links
+they already signed. However, this does not guarantee that
+consensus terminates.
+The longlasting blockchain [32] builds upon our companion technical report [13] to recover from forks by excluding guilty participants and compensating transient losses
+with the deposit of guilty participants. It recovers from 𝑓 =
+⌈2𝑛/3⌉ − 1 failures as long as there are less than min(𝑛/3, 𝑛 −
+𝑓 ) processes experiencing benign (e.g., crash) failures. Accountability in the context of blockchain fairness was raised
+by Herlihy and Moir in a keynote address [20], and the
+idea of “accountable Byzantine fault tolerance” has been
+discussed [7]. The goal in the latter case is to suggest a
+broadcast after the consensus in order to detect a fault by
+matching pre-vote and pre-commit messages of the same
+validator in Tendermint, but the algorithm is not detailed.
+
+2.4
+
+Failure detectors
+
+There is a connection between accountability and failure detectors. A failure detector is designed to provide each process
+in the system with some advice, typically a list of processes
+that are faulty in some manner. However, failure detectors
+tend to have a different set of goals. They are used during an
+execution to help make progress, while accountability is usually about what can be determined post hoc after a problem
+occurs. They provide advice to a process, rather than proofs
+of culpability that can be shared. Most of the work in this
+area has focused on detecting crash failures (see, e.g., [12]).
+There has been some interesting work extending this idea
+to detecting Byzantine failures [18, 19, 23, 28]. Malkhi and
+Reiter [28] introduced the concept of an unreliable Byzantine failure detector that could detect quiet processes, i.e.,
+those that did not send a message when they were supposed
+to. They showed that this was sufficient to solve Byzantine
+Agreement.
+Kihlstrom, Moser, and Melliar-Smith [23] continue this
+direction, considering failures of both omission and commission. Of note, they define the idea of a mutant message, i.e., a
+message that was received by multiple processes and claimed
+to be identical (e.g., had the same header), but in fact was not.
+The Polygraph Protocol is designed so that only malicious
+users sending a mutant message can cause disagreement. In
+fact, the main task of accountability in this paper is identifying processes that were supposed to broadcast a single
+message to everyone and instead sent different messages to
+different processes.
+3
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+Maziéres and Shasha propose SUNDR [29] that detects
+Byzantine behaviors in a network file system if all clients
+are honest and can communicate directly. Polygraph clients
+request multiple signatures from servers so that they do not
+need to be honest. Li and Maziéres [27] improves on SUNDR
+with BFT2F, a weakly consistent protocol when the number
+of failures is 𝑛/3 ≤ 𝑡 < 2𝑛/3 and its BFTx variant that copes
+with more than 2𝑛/3 failures but does not guarantee liveness
+even with less than 𝑡 failures.
+
+3
+
+Byzantine users, the probability that the verification algorithm returns a set containing 𝑝 𝑗 is negligible. In practice,
+this will reduce to the non-forgeability of signatures.)
+Accountable Byzantine agreement. The problem of Byzantine Agreement, first introduced by Pease, Shostak, and Lamport [25], assumes that each process begins with a binary
+input, i.e., either a 0 or a 1, outputs a decision, and requires
+three properties: agreement, validity, and termination.
+We define the Accountable Byzantine Agreement problem
+in a similar way, with the additional requirement that there
+exists a verification algorithm that can identify at least 𝑡 0 + 1
+Byzantine users whenever there is disagreement. (Recall that
+𝑡 0 = ⌈ 𝑛3 ⌉ − 1.) More precisely:
+
+MODEL AND PROBLEM
+
+We first define the problem in the context of a traditional
+distributed computing setting. (We later discuss applications
+to blockchains.)
+
+Definition 3.1 (Accountable Byzantine Agreement). We say
+that an algorithm solves Accountable Byzantine Agreement
+if each process takes an input value, possibly produces a
+decision, and satisfies the following properties:
+• Agreement: If 𝑡 ≤ 𝑡 0 , then every honest process that
+decides outputs the same decision value.
+• Validity: If all processes are honest and begin with the
+same value, then that is the only decision value.
+• Termination: If 𝑡 ≤ 𝑡 0 , every honest process eventually
+outputs a decision value.
+• Accountability: There exists a verification algorithm
+𝑉 such that: if two honest processes output disagreeing decision values, then eventually for every honest
+process 𝑝 𝑗 , for every state 𝑠 𝑗 reached by 𝑝 𝑗 from that
+point onwards, the verification 𝑉 (𝑠 𝑗 ) outputs a guilty
+set of size at least 𝑡 0 + 1.
+
+System. We consider 𝑛 processes. A subset 𝐶 of the processes
+are honest, i.e., always follow the protocol; the remaining
+𝑡 < 𝑛 are Byzantine, i.e., may maliciously violate the protocol,
+under the control of a dynamic adversary that fixes the set
+of Byzantine processes for the duration of each round. We
+define 𝑡 0 = max(𝑡 ∈ N0 : 𝑡 < 𝑛/3), i.e., 𝑡 0 = ⌈ 𝑛3 ⌉ − 1, a useful
+threshold on the number of Byzantine behaviors.
+Processes execute one step at a time and are asynchronous, proceeding at their own arbitrary, unknown speed. We
+assume local computation time is zero, as it is negligible with
+respect to message delays.
+We assume that there is an idealized PKI (public-key infrastructure) so that each process has a public/private key
+pair that it can use to sign messages and to verify signatures.
+Partial synchrony. We consider a partially synchronous
+network. During some intervals of time, messages are delivered in a reliable and timely fashion, while in other intervals
+of time messages may be arbitrarily delayed. More specifically, we assume that there is some time 𝜏GST known as the
+global stabilization time, unknown to the processes, such
+that any message sent after time 𝜏GST will be delivered with
+latency at most 𝑑. We say that an event occurs eventually
+if there exists an unknown but finite time when the event
+occurs. (Note that we tolerate that messages be dropped before 𝜏GST as long as messages are sent infinitely often.) For
+the sake of simplicity in the presentation, we write “receive
+𝑘 messages” to explain “receive messages from 𝑘 distinct
+processes”.
+
+Our validity definition is sometimes called weak validity [31], but Lemma B.8 shows that our accountable binary
+Byzantine consensus protocol ensures even a stronger validity property (if 𝑡 ≤ 𝑡 0 and an honest process decides 𝑣, then
+some honest process proposed 𝑣).
+
+4
+
+IMPOSSIBILITY RESULTS
+
+It may seem that accountability can be obtained by always
+guaranteeing agreement but failing to terminate as soon
+as 𝑡 ≥ 𝑛/3, by checking evidence before deciding, or by
+piggybacking a subquadratic number of bits as justifications
+in classic consensus algorithms. In this section, we show that
+none of these ideas lead to accountability.
+
+4.1
+
+Verification algorithm. A verification algorithm 𝑉 takes
+as input the state of a process and returns a set 𝐺 of undeniable guilty processes, that is, every process-id of 𝐺 is tagged
+with an unforgeable proof of culpability. (More formally, this
+means that for every computationally bounded adversary,
+for every execution in which a process 𝑝 𝑗 is honest, for every
+state 𝑠 generated during the execution or constructed by
+
+Avoiding disagreement when 𝑡 ≥ 𝑛/3 is
+impossible
+
+A couple of natural questions arise regarding accountable
+algorithms: Can we design an algorithm that always guarantees agreement, and simply fails to terminate if there are too
+many Byzantine users? If so, we would trivially get accountability! Can we design an algorithm that provides earlier
+4
+
+Polygraph
+
+Two local variables per process, preparation and decision,
+have values that relate with each other such that for a process 𝑗 to have a decision, 𝑛 − 𝑡 0 processes, including 𝑗 itself,
+must have had the same value as a preparation. During view
+changes, if 𝑡 < 𝑡 0 , then a preparation implies a propagation
+of a value to the leader within messages announcing the new
+view.
+
+evidence of Byzantine behavior, even before the decision is
+possible? If so, we could provide stronger guarantees than
+are provided in this paper. Alas, neither is possible. The details of the following theorems are deferred to Appendix A
+(and follow from standard partitioning arguments).
+Theorem 4.1. In a partially synchronous system, no algorithm solves both the Byzantine consensus problem when
+𝑡 < 𝑛/3 and the agreement and validity of the Byzantine
+consensus problem when 𝑡 > 𝑡 0 .
+
+(2) HotStuff, PBFT and Tendermint belong to L. By examination of the code of HotStuff, PBFT and Tendermint, we
+can see that they all belong to L. HotStuff’s leader, PBFT’s
+primary and Tendermint’s proposer of an epoch all aim at
+proposing a suggestion within the view they coordinate. A
+decision value always requires the same preparation value
+from 𝑛 − 𝑡 0 distinct processes. These two values correspond
+to HotStuff’s commitQC and prepareQC, to Tendermint’s
+decision and validValue, and to PBFT’s commit and prepare.
+In all these three consensus algorithms, a suggestion value in
+view 𝑣 + 1 must be proposed by its leader and correspond to
+a preparation motivated by 𝑛 − 𝑡 0 messages sent in view 𝑣.
+
+We say that a verification algorithm 𝑉 is swift if it guarantee the following: assume 𝑝𝑖 has already decided some value
+𝑣, and that 𝑝 𝑗 is in a state 𝑠 wherein it will decide 𝑤 ≠ 𝑣 in
+its next step; then 𝑉 (𝑠) ≠ ∅. Notice that a swift verification
+algorithm may only detect one Byzantine process (i.e., it is
+not sufficient evidence for 𝑝 𝑗 to decide never to decide).
+Theorem 4.2. Consider an algorithm that solves consensus
+when 𝑡 < 𝑛/3. There is no swift verification algorithm when
+𝑡 > 𝑡0 .
+
+4.2
+
+(3) Extensions of a PBFT-like algorithm. The 𝑡 0 -bounded
+extension of a PBFT-like consensus algorithm 𝐴 is an algorithm 𝐴¯ like 𝐴 except that it piggybacks a justification within
+all its new-view and suggestion messages at each view 𝑣𝑘 = 𝑘.
+This justification consists of a chain of the past alternating
+sets Sugg𝑥 of suggestion messages sent by the leader ℓ𝑣𝑥 of
+view 𝑣 𝑥 = 𝑥 and sets NV 𝑥 of new-view messages sent by
+processes 𝜙 𝑥 for view 𝑣 𝑥 . Each piggybacked chain sent in
+view 𝑣𝑘 has a bounded depth 𝑡 0 − 1 = Θ(𝑛), which means that
+it contains a (possibly empty) suffix of this sequence of sets:
+NV 𝑘−(𝑡0 −1), Sugg𝑘−(𝑡0 −2), NV 𝑘−(𝑡0 −2), · · · , Sugg𝑘−1 , NV 𝑘−1 .
+
+Classic PBFT-like algorithms
+
+It is interesting to see that most partially synchronous consensus algorithms already collect forms of cryptographic evidence like signatures or certificates to guarantee agreement
+upon decision. While this is a characteristic of PBFT [11], this
+is the case of modern algorithms that build upon it including
+Tendermint [8] and HotStuff [35]. One could naturally be
+tempted to reuse these signatures and certificates to piggyback practical justifications in the existing messages of the
+original consensus algorithms to turn them into accountable consensus algorithms. Although threshold signatures
+do not convey enough information to identify which process
+is guilty, signatures are generally sufficient. We show below
+that, unfortunately, this transformation cannot work.
+The intuition of the proof is split in the four following
+steps while the full proof is deferred to our technical report.
+First, we define the class of ‘classic’ or PBFT-like consensus algorithms and denote it L. Second, we show that HotStuff [35], PBFT [11] and Tendermint [4] belong to this class
+L. (As we need to remove threshold signatures, we adopt
+the version of HotStuff without threshold signatures [21].)
+Third, we define a practical extension of PBFT-like consensus algorithms that piggybacks messages. By ‘practical’ we
+mean that piggybacked messages have a bounded staleness
+to prevent the justification communication to be superlinear
+(e.g., quadratic) in 𝑛. Finally, we prove that there exist executions leading to disagreement with different sets of Byzantine
+processes that correct processes cannot distinguish.
+
+Theorem 4.3. HotStuff, PBFT and Tendermint as well as
+all their 𝑡 0 -bounded extensions are not accountable.
+(4) Intuition of the proof. For the proof we consider two
+executions 𝑒 1 and 𝑒 2 , in which process 𝑖 decides 𝑠𝑖 at view
+𝑣𝑖 while process 𝑗 decides 𝑠 𝑗 ≠ 𝑠𝑖 at view 𝑣 𝑗 >> 𝑣𝑖 . Process
+𝑖’s decision implies preparation of 𝑠𝑖 by a quorum 𝑄𝑖 at
+view 𝑣𝑖 . In a later view numbered 𝑣𝑧 , a set 𝜙 of processes
+send a set 𝑁𝑉 𝑣𝑧 −1 of new-view messages to the leader
+ℓ𝑣𝑧 of this view. A set 𝐵 = 𝜙 ∩ 𝑄𝑖 of at least 𝑡 0 + 1 guilty
+processes did not propagate their preparation of 𝑠𝑖 and
+provoked the disagreement. The view 𝑣𝑧 is the first link of
+a chain of successive views 𝜒 = [𝑣𝑧 , 𝑣𝑧 + 1, . . . , 𝑣𝑧 + 𝑘 − 1]
+where the leaders of views 𝜒 are in 𝑃, |𝑃 | ≤ 𝑡 0 − 1. At view
+𝑣𝑧 + 𝑘, process 𝑗 prepares 𝑠 𝑗 and eventually decides 𝑠 𝑗 at
+view 𝑣 𝑗 ≥ 𝑣𝑧 + 𝑘. When 𝑖 and 𝑗 detect the disagreement,
+they can neither distinguish 𝑒 1 from 𝑒 2 nor identify the
+senders 𝜙 of 𝑁𝑉 𝑣𝑧 −1 . Process 𝑗 cannot wait without deciding
+because we can construct an execution 𝑒 0 indistinguishable
+by 𝑗 from 𝑒 1 with less than 𝑡 0 Byzantine processes, where
+
+(1) Class L of PBFT-like algorithms. L contains algorithms that all rely on a leader, which rotates in a round-robin
+fashion across views and proposes a suggestion in its view.
+5
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+the leaders 𝑃 (and 𝑖) of the chain 𝜒 appear mute to 𝑗 and
+where 𝑗 must decide. Leaders of 𝑃 prepare 𝑠 𝑗 as 𝑗 ignores
+the decision 𝑠𝑖 . After the disagreement, 𝑃 does not reveal
+𝑁𝑉 𝑣𝑧 −1 that is necessary to detect the guilty processes. This
+argument holds as long as 𝑘 < 𝑡 0 . The full proof is deferred
+to Appendix F.
+
+ledger or has an improperly formed ledger is discarded. (See
+the discussion below regarding ledgers.)
+
+5.1
+
+The basic protocol operates in two phases, after which a possible decision is taken. Each process maintains an estimate.
+In the first phase, each process broadcasts its estimate using
+a reliable broadcast service, bv-broadcast (discussed below),
+as introduced previously [1]. The protocol uses a rotating
+coordinator; whoever is the assigned coordinator for a round
+broadcasts its estimate with a special designation.
+All processes then wait until they receive at least one
+message, and until a timer expires. (The timeout is increased
+with each iteration, so that eventually once the network
+stabilizes it is long enough.) If a process receives a message
+from the coordinator, then it chooses the coordinator’s value
+to “echo”, i.e., to rebroadcast to everyone in the second phase.
+Otherwise, it simply echoes all the messages received in the
+first phase.
+At this point, each process 𝑝𝑖 waits until it receives enough
+compatible ECHO messages. Specifically, it waits to receive
+at least (𝑛 − 𝑡 0 ) messages sent by distinct processes where
+every value in those messages was also received by 𝑝𝑖 in
+the first phase. In this case, it adopts the collection of values
+in those (𝑛 − 𝑡 0 ) messages as its candidate set. In fact, if a
+process 𝑝𝑖 receives a set of (𝑛 − 𝑡 0 ) messages that all contain
+exactly the coordinator’s value, then it chooses only that
+value as the candidate value.
+Finally, the processes try to come to a decision. If process
+𝑝𝑖 has only one candidate value 𝑣, then 𝑝𝑖 adopts that value
+𝑣 as its estimate. In that case, it can decide 𝑣 if it matches the
+parity of the round, i.e., if 𝑣 = 𝑟𝑖 mod 2. Otherwise, if 𝑝𝑖 has
+more than one candidate value, then it adopts as its estimate
+𝑟𝑖 mod 2, the parity of the round.
+To see that this ensures agreement (when 𝑡 < 𝑛/3), consider a round in which some process 𝑝𝑖 decides value 𝑣 = 𝑟𝑖
+mod 2. Since 𝑝𝑖 receives (𝑛 − 𝑡 0 ) echo messages containing
+only the value 𝑣, we know that every honest process must
+have value 𝑣 in every possible set of (𝑛 − 𝑡 0 ) echo messages,
+and hence every honest process included 𝑣 in its candidate
+set. Every honest process that only had 𝑣 as a candidate
+also decided 𝑣. The remaining honest processes must have
+adopted 𝑣 = 𝑟𝑖 mod 2 as their estimate when they adopted
+the parity bit of the round. And if all the honest processes
+begin a round 𝑟 with estimate 𝑣, then that is the only possible
+decision due to the reliable broadcast bv-broadcast in Phase
+1 (see below) and all honest processes decide at round 𝑟 + 2
+or earlier (regardless of whether 𝜏𝐺𝑆𝑇 is reached).
+Processes always continue to make progress, if 𝑡 < 𝑛/3.
+Termination is a consequence of the coordinator: eventually,
+after GST when the network stabilizes, there is a round where
+
+This result (Theorem 4.3) simply shows that piggybacking 𝑡 0 -bounded justifications is insufficient to make PBFTlike algorithms accountable, however, it does not mean that
+they cannot be transformed into an accountable algorithm.
+First, one could probably make PBFT-like algorithms accountable with a longer justification, exchanging Ω(𝜅 · 𝑛 2 ) times
+more bits, where 𝜅 is the security parameter of the signature
+scheme. This new extension would result in an accountable version of Tendermint, HotStuff and PBFT requiring
+between Ω(𝜅 2 · 𝑛 5 ) and Ω(𝜅 2 · 𝑛 6 ) bits. Second, transforming
+any of these algorithms into Polygraph (Section 5) is a way
+of obtaining accountability with a lower complexity than
+the previous extension. Such a transformation would however be non-trivial because Polygraph relies on DBFT that
+differs from PBFT-like algorithms in various ways: every
+process participating in DBFT can propose a value, DBFT is
+signature-free and there is no view change in DBFT as there
+is no need to recover from a failed leader.
+
+5
+
+Protocol overview
+
+POLYGRAPH, AN ACCOUNTABLE
+BYZANTINE CONSENSUS ALGORITHM
+
+In this section, we introduce Polygraph, a Byzantine agreement protocol that is accountable. We begin by giving the
+basic outline of the protocol for ensuring agreement when
+𝑡 < 𝑛/3. The protocol is derived from the DBFT consensus algorithm [14] that was proved correct using the ByMC model
+checker [34] and that does not use the leader-based pattern
+mentioned in the proof of Theorem 4.3. Then, we focus on
+the key aspects that lead to accountability, specifically, the
+“ledgers” and “certificates.” For the sake of simplicity, this
+section tackles the binary agreement, however, Appendix C
+generalizes this result to arbitrary values. In Appendix B, we
+prove that the algorithm is correct.
+As a notation, we indicate that a process 𝑝𝑖 sends a
+message to every other process by: broadcast(TAG, 𝑚) →
+messages, where TAG is the type of the message, 𝑚 is the
+message content, and messages is the location to store any
+messages received.
+Throughout we assume that every message is signed by
+the sender so the receiver can authenticate who sent it. (Any
+improperly signed message is discarded.) Thus we can identify messages sent by distinct processes. Similarly, the protocol will at times include cryptographically signed “ledgers”
+in messages; again, any message that is missing a required
+6
+
+Polygraph
+
+Algorithm 1 The Polygraph Protocol
+1: bin-propose(𝑣𝑖 ):
+2: est𝑖 = 𝑣𝑖
+3: r𝑖 = 0
+4: timeout𝑖 = 0
+5: ledgeri [0] = ∅
+6: repeat:
+7:
+𝑟𝑖 ← 𝑟𝑖 + 1;
+8:
+timeout𝑖 ← timeout𝑖 + 1
+9:
+coord𝑖 ← ((𝑟𝑖 − 1) mod 𝑛) + 1
+⊲ Phase 1:
+10:
+bv-broadcast(EST[𝑟𝑖 ], est𝑖 , ledger 𝑖 [𝑟𝑖 − 1], 𝑖, bin_values𝑖 [𝑟𝑖 ])
+11:
+if 𝑖 = coord𝑖 then
+12:
+wait until (bin_valuesi [ri ] = {𝑤 })
+13:
+broadcast(COORD[𝑟𝑖 ], 𝑤) → messages𝑖
+
+ increment the round number and the timeout
+ rotate the coordinator
+ binary value broadcast the current estimate
+ coordinator rebroadcasts first value received
+ bin_values stores messages received by binary value broadcast
+
+StartTimer(timeout𝑖 )
+wait until (bin_valuesi [ri ] ≠ ∅ ∧ timer 𝑖 expired)
+⊲ Phase 2:
+16:
+if (COORD[𝑟𝑖 ], 𝑤) ∈ messages𝑖 from 𝑝 coord𝑖 ∧ 𝑤 ∈ bin_values𝑖 [𝑟𝑖 ]) then
+17:
+aux𝑖 [𝑟𝑖 ] ← {𝑤 }
+18:
+else aux𝑖 [𝑟𝑖 ] ← bin_values𝑖 [𝑟𝑖 ]
+19:
+signature𝑖 = sign(aux𝑖 [𝑟𝑖 ], 𝑟𝑖 , 𝑖)
+20:
+broadcast(ECHO[𝑟𝑖 ], aux𝑖 [𝑟𝑖 ], signature𝑖 ) → messages𝑖
+21:
+wait until valuesi = ComputeValues(messages𝑖 , bin_values𝑖 [𝑟𝑖 ], aux𝑖 [𝑟𝑖 ]) ≠ ∅
+14:
+15:
+
+22:
+23:
+24:
+25:
+26:
+27:
+28:
+
+⊲ Decision phase:
+if values𝑖 = {𝑣 } then
+est𝑖 ← 𝑣
+if 𝑣 = (𝑟𝑖 mod 2) then
+if no previous decision by 𝑝𝑖 then decide(𝑣)
+else
+𝑒𝑠𝑡𝑖 ← (𝑟𝑖 mod 2)
+ledger 𝑖 [𝑟𝑖 ] = ComputeJustification(valuesi , esti , ri , bin_valuesi [𝑟𝑖 ], messagesi )
+
+ reset the timer
+ favor the coordinator
+ otherwise, use any value received
+
+ sign the messages
+ broadcast second phase message
+
+ if there is only one value, then adopt it
+ decide if value matches parity
+ otherwise, adopt the current parity bit
+ broadcast certificate
+
+Rules:
+(1) Every message that is not properly signed by the sender is discarded.
+(2) Every message that is sent by bv-broadcast without a valid ledger after Round 1, except for messages containing value 1 in Round 2, are discarded.
+(3) On first discovering a ledger ℓ that conflicts with a certificate, send ledger ℓ to all processes.
+
+the coordinator is honest and the timeout is larger than the
+message delay. At this point, every honest process receives
+the coordinator’s Phase 1 message and echoes the coordinator’s value. In that round, every honest process adopts
+the coordinator’s estimate, and the decision follows either
+in that round or the next one (if 𝑡 < 𝑛/3).
+
+5.2
+
+Lemma B.2); (ii) every message delivered to an honest process
+was broadcast by at least 𝑡 + 1 processes (see Lemma B.1).
+These properties are ensured by a simple echo procedure.
+When a process first tries to bv-broadcast a message, it broadcasts it to everyone. When a process receives 𝑡 0 + 1 copies of
+a message, then it echoes it. When a process receives 𝑛 − 𝑡 0
+copies of a message, then it delivers it. Notice that if a message is not bv-broadcast by at least 𝑡 0 + 1 processes, then it is
+never echoed and hence never delivered. And if a message is
+bv-broadcast by 𝑡 0 + 1 (honest) processes is echoed by every
+honest process and hence delivered to every honest process.
+This reliable broadcast routine ensures validity, since
+a Phase 1 message that is echoed in Phase 2 must have
+been delivered by bv-broadcast, and hence must have been
+bv-broadcast by at least one honest process.
+
+Binary value broadcast
+
+The protocol relies in Phase 1 on a reliable broadcast routine
+bv-broadcast proposed before [1], which is used to ensure
+validity, i.e., any estimate adopted (and later decided) must
+have been proposed by some honest process. Moreover, it
+guarantees that if every honest process begins a round with
+the same value, then that is the only possible estimate for
+the remainder of the execution (if 𝑡 < 𝑛/3). Specifically,
+bv-broadcast guarantees the following critical properties
+while 𝑡 < 𝑛/3: (i) every message broadcast by 𝑡 0 + 1 honest
+processes is eventually delivered to every honest process (see
+7
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+Algorithm 2 Helper Components
+1: bv-broadcast(MSG, 𝑣𝑎𝑙, 𝑙𝑒𝑑𝑔𝑒𝑟, 𝑖, bin_values):
+2: broadcast(BVAL, ⟨𝑣𝑎𝑙, 𝑙𝑒𝑑𝑔𝑒𝑟, 𝑖 ⟩) → 𝑚𝑠𝑔𝑠
+3: After round 2, and in round 1 if 𝑣𝑎𝑙 = 0, discard all messages received without a proper ledger.
+4: upon receipt of (BVAL, ⟨𝑣, ·, 𝑗 ⟩)
+5:
+if (BVAL, ⟨𝑣, ·, ·⟩) received from (𝑡 0 + 1) distinct processes and (BVAL, ⟨𝑣, ·, ·⟩) not yet broadcast then
+6:
+Let ℓ be any non-empty ledger received in these messages.
+7:
+broadcast(BVAL, ⟨𝑣, ℓ, 𝑗 ⟩)
+8:
+if (BVAL, ⟨𝑣, ·, ·⟩) received from (2𝑡 0 + 1) distinct processes then
+9:
+Let ℓ be any non-empty ledger received in these messages.
+10:
+bin_values ← bin_values ∪ { ⟨𝑣, ℓ, 𝑗 ⟩ }
+11: ComputeValues(messages, b_set, aux_set):
+12: if ∃𝑆 ⊆ messages where the following conditions hold:
+13:
+(i) 𝑆 contains (𝑛 − 𝑡 0 ) distinct ECHO[𝑟𝑖 ] messages
+14:
+(ii) aux _set is equal to the set of values in 𝑆 .
+15:
+then return(aux _set )
+16: if ∃𝑆 ⊆ messages where the following conditions hold:
+17:
+(i) 𝑆 contains (𝑛 − 𝑡 0 ) distinct ECHO[𝑟𝑖 ] messages
+18:
+(ii) Every value in 𝑆 is in b_set .
+19:
+then return(𝑉 = the set of values in 𝑆 )
+20: else return( ∅)
+
+Ledgers and certificates
+
+ one of the received ledgers is enough
+ deliver after receiving (2𝑡 0 + 1) copies
+
+ compute ledger and broadcast certificate
+
+ transmit certificate to everyone
+
+is one exception: in Round 1, no ledger will be available to
+justify value 1, so no ledger is generated in that case.)
+The bv-broadcast ignores the ledger for the purpose of
+deciding when to echo a message. When it echoes a message
+𝑚, it chooses any arbitrary non-empty ledger that was attached to a message containing 𝑚 (if any such ledgers are
+available). However, every message that does not contain a
+valid ledger justifying its value is discarded, with the following exception: in Round 2, messages containing the value 1
+can be delivered without a ledger (since no justification is
+available for adopting the value 1 in Round 1).
+Whenever there is only one candidate value received in
+Phase 2, a process adopts that value and either: (i) decides and
+constructs a certificate, or (ii) does not decide and constructs
+a ledger. In both cases, this construction simply relies on
+the signed messages received in Phase 2 of that round (and
+hence is always feasible).
+If a process decides a value 𝑣 in round 𝑟 > 1, or adopts
+𝑣 because it is the parity bit for round 𝑟 > 1, then it also
+constructs a ledger justifying why it adopted that value 𝑣.
+It accomplishes this by examining all the bv-broadcast messages received for value 𝑣 and copying a round 𝑟 − 1 ledger.
+Again, this is always possible since any message that is not
+accompanied by a valid ledger is ignored. (The only possible
+problem occurs in Round 2 where messages for value 1 are
+
+In order to ensure accountability, we need to record enough
+information during the execution to justify any decision that
+is made, and hence to allow processes to determine accountability. For this purpose, we define two types of justifications:
+ledgers and certificates. A ledger is designed to justify adopting a specific value. A certificate justifies a decision. We will
+attach ledgers to certain messages; any message containing
+an invalid or malformed ledger is discarded.
+We define a ledger for round 𝑟 and value 𝑣 as follows. If
+𝑣 ≠ 𝑟 mod 2, then the ledger consists of the (𝑛−𝑡 0 ) ECHO messages, each properly signed, received in Phase 2 of round 𝑟
+that contain only value 𝑣 (and no other value). If 𝑣 = 𝑟 mod 2,
+then the ledger is simply a copy of any other ledger from
+the previous round 𝑟 − 1 justifying value 𝑣. (The asymmetry
+may seem strange, but is useful in finding the guilty parties!)
+We define a certificate for a decision of value 𝑣 in round
+𝑟 to consist of (𝑛 − 𝑡 0 ) echo messages, each properly signed,
+received in Phase 2 of round 𝑟 that contain only value 𝑣 (and
+no other value).
+
+5.4
+
+ one of the received ledgers is enough
+ Echo after receiving (𝑡 0 + 1) copies.
+
+ check if there are 𝑛 − 𝑡 0 compatible messages
+
+21: ComputeJustification(valuesi , esti , ri , bin_valuesi , messagesi ):
+22: if 𝑒𝑠𝑡𝑖 = (𝑟𝑖 mod 2) then
+23:
+if 𝑟𝑖 > 1 then
+24:
+ledger 𝑖 [𝑟𝑖 ] ← ledger ℓ where (EST[𝑟𝑖 ], ⟨𝑣, ℓ, ·⟩) ∈ bin_values𝑖
+25:
+else ledger 𝑖 [𝑟𝑖 ] ← ∅
+26: else ledger 𝑖 [𝑟𝑖 ] ← (𝑛 − 𝑡 0 ) signed messages from messages𝑖 containing only value est𝑖
+27: if values𝑖 = {(𝑟𝑖 mod 2)} ∧ no previous decision by 𝑝𝑖 in previous round then
+28:
+certificate𝑖 ← (𝑛 − 𝑡 0 ) signed messages from messages𝑖 containing only value est𝑖
+29:
+broadcast(est𝑖 , 𝑟𝑖 , 𝑖, certificate𝑖 )
+30: return ledger 𝑖 [𝑟𝑖 ]
+
+5.3
+
+ broadcast message
+
+Accountability
+
+We now explain how the ledgers and certificates are used.
+In every round, when a process uses bv-broadcast to send a
+message containing a value, it attaches a ledger from the previous round justifying why that value was adopted. (There
+8
+
+Polygraph
+
+5.6
+
+not accompanied by a ledger; however ledgers for value 1 in
+round 2 do not require copying old ledgers.)
+
+5.5
+
+Analysis of the Polygraph Protocol
+
+In Appendix B.1, we show that the the BV-broadcast routine provides the requisite properties. This then allows us to
+prove the main correctness theorem, which follows immediately from Lemma B.7, Corollary B.9, and Lemma B.10 in
+Appendix B.2:
+
+Proving culpability
+
+Theorem 5.1. The Polygraph Protocol is a correct Byzantine consensus protocol guaranteeing agreement, validity, and
+termination.
+
+How do disagreeing processes decide which processes were
+malicious? When a process decides in round 𝑟 , it sends its
+certificate to all the other processes. Any process that decides
+a different value in a round > 𝑟 can prove the culpability of at
+least ⌈𝑛/3⌉ Byzantine processes by comparing this certificate
+to its logged ledgers. (It can then broadcast the proper logged
+ledgers to ensure that everyone can identify the malicious
+processes.)
+We will say that a certificate (e.g., from 𝑝 1 ) and a ledger
+(e.g., from 𝑝 2 ) conflict if they are constructed in the same
+round 𝑟 , but for different values 𝑣 and 𝑤. That is, both the
+certificate and the ledger attest to (𝑛 − 𝑡 0 ) ECHO messages
+from round 𝑟 sent to 𝑝 1 and 𝑝 2 (respectively) that contain
+only value 𝑣 and only value 𝑤, respectively. Since every two
+sets of size (𝑛 − 𝑡 0 ) intersect in at least (𝑛 − 2 · 𝑡 0 ) locations,
+fixing 𝑡 0 = ⌈𝑛/3⌉ − 1 helps identify at least (𝑡 0 + 1) processes
+that sent different Phase 2 messages in round 𝑟 to 𝑝 1 and 𝑝 2
+and hence they are malicious.
+We now discuss how to find conflicting certificates and
+ledgers. Assume that process 𝑝𝑖 decides value 𝑣 in round 𝑟 ,
+and that process 𝑝 𝑗 decides a different value 𝑤 in a round > 𝑟 .
+(Recall that 𝑣 is the only possible value that can be decided
+in round 𝑟 .) There are two cases to consider, depending on
+whether 𝑝 𝑗 decides in round 𝑟 + 1 or later.
+• Round 𝑟 +1: If 𝑝 𝑗 decides in round 𝑟 +1, then value 𝑤 was
+the only candidate value after Phase 2. This implies
+that 𝑤 was received by some bv-broadcast message.
+Since 𝑟 > 1, we know that the message must have
+contained a valid ledger ℓ from round 𝑟 for value 𝑤 ≠ 𝑣.
+This ledger ℓ conflicts with the decision certificate of
+𝑝𝑖 .
+• Round ≥ 𝑟 + 2: Since 𝑝 𝑗 decides 𝑤 ≠ 𝑣, it does not
+decide 𝑣 in round 𝑟 + 2. This means that 𝑝 𝑗 has 𝑤 as a
+candidate value, which implies that 𝑝 𝑗 received 𝑤 in a
+bv-broadcast. Since 𝑟 > 1, we know that the message
+must have contained a valid ledger ℓ from round 𝑟 + 1
+for value 𝑤 ≠ 𝑣. This ledger ℓ consists of a copy of a
+ledger from round 𝑟 for value 𝑤 which conflicts with
+the decision certificate of 𝑝𝑖 .
+In either case, if 𝑝 𝑗 does not decide 𝑣, then, by looking at the
+messages received in round 𝑟 + 1 and 𝑟 + 2, it can identify a
+ledger that conflicts with the decision certificate of 𝑝𝑖 and
+hence can prove the culpability of at least 𝑡 0 + 1 malicious
+processes.
+
+Accountability follows from Lemma B.11, which shows
+that disagreement leads every honest process to eventually
+receive a certificate and a ledger that conflict:
+Theorem 5.2. The Polygraph Protocol is accountable.
+If all the processes are honest, then the protocol terminates
+in 𝑂(1) rounds after GST. Otherwise, it may take 𝑡 + 1 rounds
+after GST to terminate. Lastly, we bound the message and
+communication complexity of the protocol. The number of
+rounds depends on when the network stabilizes (i.e., we
+cannot guarantee a decision for any consensus protocol prior
+to GST). We bound, however, the communication complexity
+of each round:
+Lemma 5.3 (Polygraph Complexity). After 𝜏𝐺𝑆𝑇 , the Polygraph protocol has message complexity 𝑂(𝑛 3 ) and communication complexity 𝑂(𝜅 ·𝑛 4 ), where 𝑛 is the number of participants
+and 𝜅 is the security parameter.
+Proof. The Polygraph protocol terminates in 𝑂(𝑡) rounds
+after 𝜏𝐺𝑆𝑇 both to reach consensus or detect processes responsible for disagreement. As each round executes a bvbroadcast of 𝑂(𝑛 2 ) messages and as 𝑡 = 𝑂(𝑛) we obtain 𝑂(𝑛 3 )
+messages. The communication complexity is 𝑂(𝜅 · 𝑛 4 ) since
+each message may contain a ledger of 𝑂(𝑛) signatures or
+𝑂(𝜅 · 𝑛) bits. The remainder of the protocol involves only
+𝑂(𝑛 2 ) messages and only 𝑂(𝑛 3 ) communication complexity
+(e.g., for the coordinator to broadcast its message, and for
+processes to send their ECHO messages).
+□
+Note that in the good case (after 𝜏𝐺𝑆𝑇 and when 𝑡 < 𝑡 0 )
+Polygraph reaches consensus in three message delays. In
+Appendix C, we show that the multivalue generalization of
+the Polygraph protocol is also correct and accountable.
+
+6
+
+EXPERIMENTS: POLYGRAPH WITH A
+BLOCKCHAIN APPLICATION
+
+To understand the overhead of Polygraph over a nonaccountable consensus, we compare the throughput of the
+original Red Belly Blockchain [15] based on DBFT [14] and
+the “Accountable Red Belly Blockchain” based on Polygraph.
+The reason is that DBFT and Polygraph are both one-shot
+consensus protocols while a blockchain application allows
+9
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+Throughput (tx/sec)
+
+20000
+
+geo-distributed processes, which remains superior to most
+non-accountable blockchains. Finally, the Accountable Red
+Belly Blockchain commits several thousands of transactions
+per second on 80 geodistributed machines, which indicates
+that the cost of accountability remains practical.
+
+15000
+10000
+5000
+0
+20
+
+Red Belly Blockchain
+Accountable Red Belly Blockchain
+30
+
+40
+
+50
+Number of replicas
+
+60
+
+70
+
+7
+
+80
+
+CONCLUSION
+
+We introduced Polygraph, the first accountable Byzantine
+consensus algorithm. If 𝑡 < 𝑛/3, it ensures consensus, otherwise it eventually detects users that cause disagreement.
+Thanks to its bounded justification size, Polygraph can be
+used to commit tens of thousands of blockchain transactions.
+
+Figure 1: The overhead of accountability in the Red Belly
+Blockchain with 400 byte transactions cryptographically verified
+with ECDSA signatures and parameters secp256k1 when deployed
+on 80 replicas geo-distributed in Frankfurt, Ireland, London, N. California and N. Virginia.
+
+Acknowledgements. We wish to thank Alejandro Ranchal
+Pedrosa for his help in reproducing the experimental results.
+This research is supported under Australian Research Council DP180104030 and FT180100496.
+
+for a more realistic comparison of the performance. To this
+end, we implemented the naive multivalue generalization
+of Polygraph as described in Appendices C and E. We then
+turn the Multivalue Polygraph Protocol into a state machine
+replication with the classic technique [2, Fig.4] by tagging
+messages with their consensus instance. Finally, we build
+a blockchain layer using the Red Belly Blockchain UTXO
+model with signed Bitcoin-style transaction requests. We
+implemented Polygraph using the RSA 2048 bits signature
+scheme to authenticate messages.
+We deployed both blockchains on up to 𝑛 = 80 c4.xlarge
+AWS virtual machines located in 5 availability zones on
+two continents: Frankfurt, Ireland, London, North California
+and North Virginia. All machines issue transactions, insert
+transactions in their memory pool, propose blocks of 10,000
+transactions, verify transaction signatures (and account integrity, and run their respective consensus algorithm with
+𝑡 = 𝑡 0 = ⌈ 𝑛3 ⌉ −1, before storing decided blocks to non-volatile
+storage. Red Belly Blockchain commits tens of thousands of
+Bitcoin TPS on hundreds of geo-distributed processes [15].
+Figure 1 represents the throughput while increasing the
+number of consensus participants from 20 (4 machines per
+zone) to 80 (16 machines per zone). We observe that the cost
+of accountability varies from 10% at 20 processes to 40% at
+80 processes. The reason is twofold: (i) the accountability
+presents an overhead due to the signing and verification
+of messages authenticated using RSA 2048 bits in addition
+to the verifications of built-in Red Belly Blockchain UTXO
+transaction signatures. (ii) the c4.xlarge instances are lowend instances with an Intel Xeon E5-2666 v3 processor of
+4 vCPUs, 7.5 GiB memory, and “moderate” network performance. On the one hand, as was observed [15], even in
+this low-end situation, the Red Belly Blockchain scales in
+that its performance does not drop. On the other hand, we
+can see the Accountable Red Belly Blockchain still offers a
+throughput of more than 10,000 transactions per second at 80
+
+REFERENCES
+[1] Mostéfaoui A., Moumen H., and Raynal M. Signature-free asynchronous Byzantine consensus with 𝑇 < 𝑁 /3 and 𝑂(𝑁 2 ) messages. In
+PODC, pages 2–9, 2014.
+[2] Abhinav Aggarwal and Yue Guo. A simple reduction from state machine replication to binary agreement in partially synchronous or
+asynchronous networks. IACR Cryptology ePrint Archive, 2018.
+[3] Amitanand S. Aiyer, Lorenzo Alvisi, Allen Clement, Michael Dahlin,
+Jean-Philippe Martin, and Carl Porth. BAR fault tolerance for cooperative services. In SOSP, 2005.
+[4] Yackolley Amoussou-Guenou, Antonella Del Pozzo, Maria PotopButucaru, and Sara Tucci Piergiovanni. Dissecting tendermint. In
+NETYS, pages 166–182, 2019.
+[5] Emmanuelle Anceaume, Antonella Del Pozzo, Romaric Ludinard,
+Maria Potop-Butucaru, and Sara Tucci-Piergiovanni. Blockchain abstract data type. In SPAA, pages 349–358, 2019.
+[6] Gabriel Bracha. Asynchronous Byzantine agreement protocols. Information and Computation 75:130-143, 1985.
+[7] Ethan Buchman. Tendermint: Byzantine Fault Tolerance in the Age of
+Blockchains. PhD thesis, The University of Guelph, June 2016.
+[8] Ethan Buchman, Jae Kwon, and Zarko Milosevic. The latest gossip on
+BFT consensus. Technical Report 1807.04938v3, arxiv, 2018.
+[9] Vitalik Buterin and Virgil Griffith. Casper the friendly finality gadget.
+Technical Report 1710.09437v4, arXiv, Jan 2019.
+[10] Christian Cachin and Stefano Tessaro. Asynchronous verifiable information dispersal. In SRDS, pages 191–202, 2005.
+[11] Miguel Castro and Barbara Liskov. Practical Byzantine fault tolerance
+and proactive recovery. ACM Transactions on Computer Systems, 20(4),
+2002.
+[12] Tushar Deepak Chandra and Sam Toueg. Unreliable failure detectors
+for reliable distributed systems. Journal of the ACM, Volume 43 Issue 2,
+Pages 225-267, 1996.
+[13] Pierre Civit, Seth Gilbert, and Vincent Gramoli. Polygraph: Accountable byzantine agreement. IACR Cryptol. ePrint Arch., 2019:587, 2019.
+[14] Tyler Crain, Vincent Gramoli, Mikel Larrea, and Michel Raynal.
+DBFT: Efficient leaderless Byzantine consensus and its applications to
+blockchains. In NCA, pages 1–8, 2018.
+[15] Tyler Crain, Chris Natoli, and Vincent Gramoli. Red belly: A secure,
+fair and scalable open blockchain. In S&P, 2021.
+10
+
+Polygraph
+
+set of initial states, Σ an input alphabet of receivable message,
+Λ an output alphabet of messages to send, 𝛿 : Σ𝑛 × 𝑆 → 𝑆 a
+transition function and 𝜔 : Σ𝑛 × 𝑆 → Λ𝑛 an output function.
+The absence of message is denoted by {𝜖}, {𝜖} ∈ Σ and
+{𝜖} ∈ Λ . The process is fitted with a clock which allows it to
+take a transition after a certain timeout with {𝜖} as argument
+for 𝛿.
+
+[16] Dorothy E. Denning. An intrusion-detection model. IEEE Trans.
+Software Eng., 13(2), 1987.
+[17] The eth2 upgrades. Accessed: 2020-12-12, https://ethereum.org/en/
+eth2/.
+[18] Andreas Haeberlen, Petr Kouznetsov, and Peter Druschel. PeerReview:
+Practical accountability for distributed systems. SOSP, 2007.
+[19] Andreas Haeberlen and Petr Kuznetsov. The fault detection problem.
+In OPODIS, pages 99–114, 2009.
+[20] Maurice Herlihy and Mark Moir. Blockchains and the logic of accountability: Keynote address. In LICS, pages 27–30, 2016.
+[21] libhoststuff.
+Accessed: 2021-03-01 https://github.com/hot-stuff/
+libhotstuff.
+[22] Márk Jelasity, Alberto Montresor, and Ozalp Babaoglu. Detection and
+removal of malicious peers in gossip-based protocols. In In Proceedings
+of FuDiCo, June 2004.
+[23] Kim P. Kihlstrom, Louise E. Moser, and Peter M. Melliar-Smith. Byzantine fault detectors for solving consensus. British Computer Society,
+2003.
+[24] Eleftherios Kokoris Kogias, Dahlia Malkhi, and Alexander Spiegelman.
+Asynchronous distributed key generation for computationally-secure
+randomness, consensus, and threshold signatures. In CCS, pages 1751–
+1767, 2020.
+[25] Leslie Lamport, Robert Shostak, and Marshall Pease. The Byzantine
+generals problem. ACM Transactions on Programming Languages and
+Systems, 4(3):382–401, 1982.
+[26] Butler W. Lampson. Computer security in the real world. In In Proc.
+Annual Computer Security Applications Conference, December 2000.
+[27] Jinyuan Li and David Mazières. Beyond one-third faulty replicas in
+Byzantine fault tolerant systems. In NSDI, pages 10–10, 2007.
+[28] Dahlia Malkhi and Michael K. Reiter. Unreliable intrusion detection
+in distributed computations. In CSFW, pages 116–125, 1997.
+[29] David Mazières and Dennis Shasha. Building secure file systems out
+of Byzantine storage. In PODC, pages 108–117, 2002.
+[30] Nikolaos Michalakis, Robert Soulé, and Robert Grimm. Ensuring content integrity for untrusted peer-to-peer content distribution networks.
+In NSDI, page 11, 2007.
+[31] Roberto De Prisco, Dahlia Malkhi, and Michael K. Reiter. On k-set
+consensus problems in asynchronous systems. In PODC, pages 257–
+265, 1999.
+[32] Alejandro Ranchal-Pedrosa and Vincent Gramoli. Blockchain is dead,
+long live blockchain! Technical Report 10541v2, arXiv, 2020.
+[33] Peiyao Sheng, Gerui Wang, Kartik Nayak, Sreeram Kannan, and
+Pramod Viswanath. BFT protocol forensics. Technical Report
+2010.06785, arXiv, 2020.
+[34] Pierre Tholoniat and Vincent Gramoli. Formal verification of
+blockchain Byzantine fault tolerance. Technical Report 1909.07453v2,
+arXiv, 2019.
+[35] Maofan Yin, Dahlia Malkhi, Michael K. Reiter, Guy Golan Gueta, and
+Ittai Abraham. HotStuff: BFT consensus with linearity and responsiveness. In PODC, pages 347–356, 2019.
+[36] Aydan R. Yumerefendi and Jeffrey S. Chase. Trust but verify: accountability for network services. In Proceedings of the 11st ACM SIGOPS
+European Workshop, page 37, 2004.
+[37] Aydan R. Yumerefendi and Jeffrey S. Chase. Strong accountability for
+network storage. TOS, 3(3):11:1–11:33, 2007.
+
+A
+
+The agreement according to a local view. A process executing an agreement protocol follows an ordered succession
+of states 𝑝(𝑠𝑘 ) = 𝑠 0, ..., 𝑠𝑘 called a path. On the path, the
+process has received messages which constitutes an history
+ℎ(𝑝(𝑠𝑘 )). The set 𝑆 is a partition of the set of states before decision 𝑆𝑏𝑑 and the set of states after decision 𝑆𝑎𝑑 . The image
+of the restriction of 𝛿 on 𝑆𝑎𝑑 is 𝑆𝑎𝑑 , which means a decision
+is irrevocable. Among the attribute of 𝑠 ∈ 𝑆, we note 𝑠.𝑟 the
+associated round number and 𝑠.𝑑𝑒𝑐 the decided value.
+To show that it is impossible to devise a swift Accountability algorithm, we show that no consensus algorithm can be
+safe when 𝑡 ≥ 𝑛/3 and that it is impossible given a consensus
+algorithm to design a swift verification algorithm for it when
+𝑡 0 < 𝑡. Let 𝑛 ∈ {3𝑡 0 + 1, 3𝑡 0 + 2, 3𝑡 0 + 3}. Let 𝑃, 𝑄 and 𝑅 be
+three sets of 𝑛 processes such that |𝑃 | ≤ 𝑡 0 , |𝑅| ≤ 𝑡 0 and
+|𝑄 | = 𝑛 − |𝑃 | − |𝑅|. The proofs rely on the indistinguishability between pairs of distinct scenarios A, B and C such that
+processes in 𝑃 cannot distinguish 𝐴 from 𝐶 and 𝑅 cannot
+distinguish 𝐵 from 𝐶.
+• Scenario A: All initial values are 0 and the processes in
+𝑅 are inactive. The messages sent from 𝑃∪𝑄 to 𝑃∪𝑄 are
+delivered in time 1. By 𝑡-resiliency, processes in 𝑃 reach
+a decision (0 by validity) within a certain time, noted
+𝑇𝐴 . To take this decision, every process 𝑖 of 𝑃 followed
+𝑖 , 𝑠 𝑖 where 𝑠 𝑖 ∈ 𝑆
+𝑖
+a path 𝑠 0𝑖 , ..., 𝑠𝑏𝑑
+𝑏𝑑 and 𝑠𝑎𝑑 .𝑑𝑒𝑐 = 0.
+𝑎𝑑
+𝑏𝑑
+• Scenario B: All initial values are 1 and the processes in
+𝑃 are inactive. The messages sent from 𝑅∪𝑄 to 𝑅∪𝑄 are
+delivered in time 1. By 𝑡-resiliency, processes in 𝑅 reach
+a decision (1 by validity) within a certain time, noted
+𝑇𝐵 . To take this decision, every process 𝑗 of 𝑅 followed
+𝑗
+𝑗
+𝑗
+𝑗
+a path 𝑠 0𝑗 , ..., 𝑠𝑏𝑑
+, 𝑠𝑎𝑑
+where 𝑠𝑏𝑑
+∈ 𝑆𝑏𝑑 and 𝑠𝑎𝑑
+.𝑑𝑒𝑐 = 1
+• Scenario C: All initial values in 𝑃 are 0, all initial values
+in 𝑅 are 1 and processes of 𝑄 are Byzantine. These
+Byzantine processes behave with respect to those in 𝑃
+exactly as they do in Scenario A and with respect to
+those in 𝑅 exactly as they do in Scenario B. Messages
+sent from 𝑃 ∪ 𝑄 to 𝑃 ∪ 𝑄 are delivered in time 1, as
+well as the ones from 𝑅 ∪ 𝑄 to 𝑅 ∪ 𝑄, while the ones
+from 𝑃 ∪ 𝑅 to 𝑃 ∪ 𝑅 are delivered in a time greater than
+max(𝑇𝐴 ,𝑇𝐵 ).
+
+PROOFS OF THE IMPOSSIBILITY
+RESULT
+
+Theorem A.1 (Theorem 4.1). In a partially synchronous
+system, no algorithm solves both the Byzantine consensus problem when 𝑡 < 𝑛/3 and the agreement and validity of the
+Byzantine consensus problem when 𝑡 0 < 𝑡.
+
+Process. More formally, a process 𝑝𝑖 , 𝑖 ∈ [1, 𝑛] is seen as a
+Mealy machine (𝑆, 𝑆 0, Σ, Λ, 𝛿, 𝜔) where 𝑆 is a set of states, 𝑆 0 a
+11
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+Proof. Assume for the sake of contradiction that it exists
+an algorithm preserving the agreement for 𝑡 0 < 𝑡. Because
+scenarios A and B are indistinguishable from 𝑃’s standpoint
+while scenarios B and C are indistinguishable for 𝑅’s standpoint, 𝑃 must decide 0 while 𝑅 must decide 1 in scenario C.
+This yields a contradiction.
+□
+
+BV-broadcast the same value, then every honest process
+delivers it; and if 𝑝𝑖 is honest and delivers a value, then every
+honest process also delivers it.
+Lemma B.2 (BV-Obligation). If 𝑡 ≤ 𝑡 0 and at least (𝑡 0 +
+1) honest processes BV-Broadcast the same value 𝑣, then 𝑣
+is eventually added to the set 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠 of each non-faulty
+process 𝑝𝑖 .
+
+Theorem A.2 (Theorem 4.2). For an algorithm that solves
+consensus when 𝑡 < 𝑛/3, there is no swift verification algorithm
+when 𝑡 > 𝑡 0 .
+
+Proof. Let 𝑣 be a value such that (𝑡 0 + 1) honest processes
+invoke BV-broadcast(MSG, 𝑣, ·, ·, ·). Each of these processes
+then sends a BVAL message with value 𝑣 and a valid ledger,
+and consequently each honest process receives at least 𝑡 0 + 1
+BVAL messages for value 𝑣 along with valid ledgers for 𝑣.
+Therefore each honest process (i.e., at least 2𝑡 0 + 1 ≤ 𝑛 − 𝑡 0 )
+broadcasts a BVAL message for 𝑣 with a valid ledger, and
+consequently eventually every honest process receives receives at least 2𝑡 0 +1 BVAL messages for 𝑣. Thus every honest
+process adds value 𝑣 to bin_values.
+□
+
+Proof. Assume for the sake of contradiction that such a
+swift verification algorithm exists. The paths followed by the
+honest processes are the same in the scenario C, than in the
+scenarios A and B. Because no comission message has been
+𝑖 ) = ∅ and ∀𝑗 ∈ 𝑅, 𝑉 (𝑠 𝑗 ) = ∅.
+sent in A and B, ∀𝑖 ∈ 𝑃, 𝑉 (𝑠𝑏𝑑
+𝑏𝑑
+𝑖 ) ≠ ∅ or
+But in scenario C, we should have ∃𝑖 ∈ 𝑃𝑉 (𝑠𝑏𝑑
+𝑗
+∃𝑗 ∈ 𝑅, 𝑉 (𝑠𝑏𝑑
+) ≠ ∅ which yields a contradiction.
+□
+
+B
+
+PROOF OF CORRECTNESS OF
+POLYGRAPH
+
+Lemma B.3 (BV-Uniformity). If 𝑡 ≤ 𝑡 0 and a value 𝑣 is
+added to the set 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠 of an honest process 𝑝𝑖 , eventually
+𝑣 ∈ 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠 at every honest process 𝑝 𝑗 .
+
+In this section, we provide the complete proofs that the
+binary consensus protocol presented in Section 5 is a correct, accountable Byzantine agreement protocol. First, in
+Section B.1, we focus on the properties satisfied by the accountable BV-Broadcast algorithm. Then we return to show
+the correctness of the consensus algorithm, as well as prove
+that it ensures accountability.
+
+B.1
+
+Proof. If a value 𝑣 is added to the set 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠 of an
+honest process 𝑝𝑖 , then this process has received at least
+(2𝑡 0 + 1) distinct BVAL messages for 𝑣 with valid ledgers (line
+7). This implies that at least (𝑡 0 + 1) different honest processes
+sent BVAL messages with valid ledgers. So every non-faulty
+process receives at least (𝑡 0 +1) BVAL messages with the value
+𝑣. Therefore every honest process eventually broadcasts a
+BVAL message for 𝑣, and so eventually every honest process
+receives receives at least 2𝑡 0 + 1 ≤ 𝑛 − 𝑡 0 BVAL messages for
+𝑣 with valid ledgers. Thus every honest process adds value 𝑣
+to bin_values.
+□
+
+Acccountable BV-Broadcast
+
+The BV-broadcast algorithm is presented in lines 1–9 of Algorithm 2. The protocol and proof presented here are quite
+similar to that in [14], with small changes to accomodate
+ledgers.
+First, we prove that it satisfies certain useful properties
+when 𝑡 ≤ 𝑡 0 . (These properties will not necessarily hold
+when there are more than 𝑡 0 Byzantine processes.) We begin
+with a simple structural property (that is later useful for
+ensuring validity of consensus): a value is only delivered if
+at least one honest process sends it.
+
+Finally, we show termination:
+Lemma B.4 (BV-Termination). If 𝑡 ≤ 𝑡 0 and if every honest process BV-broadcasts some value, then eventually, every
+honest process has at least one value in 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠.
+Proof. As there are at least (𝑛 −𝑡 0 ) honest processes, each
+of them BV-broadcasts some value, and ‘0’ and ‘1’ are the
+only possible values, it follows that there is a value 𝑣 ∈ {0, 1}
+that is BV-broadcast by at least (𝑛 − 𝑡 0 )/2 ≥ 𝑡 0 + 1 processes
+(since one of the two values must be BV-broadcast by at
+least half the honest processes). The claim then follows by
+Lemma B.2.
+□
+
+Lemma B.1 (BV-Justification). If 𝑡 ≤ 𝑡 0 and if 𝑝𝑖 is honest
+and 𝑣 ∈ bin_values, then 𝑣 has been BV-broadcast by some
+honest process.
+Proof. By contraposition, assume 𝑣 has been BVbroadcast only by faulty processes, i.e., by at most 𝑡 0 processes. Then no process ever receives 𝑡 0 + 1 distinct BVAL
+messages for 𝑣, and hence the conditions on lines 4 and 7 are
+never met. Thus, no process ever adds 𝑣 to bin_values. □
+
+Finally, we observe the straightforward fact that messages
+are only delivered with valid ledgers (with the exception of
+messages in Round 1, and message containing value 1 in
+Round 2):
+
+We next show that BV-broadcast satisfies some typical
+properties of reliable broadcast, i.e., if at least 𝑡 0 + 1 process
+12
+
+Polygraph
+
+only value 𝑣. Consider now the ECHO messages received by
+some other honest process 𝑝𝑘 . If 𝑣𝑎𝑙𝑢𝑒𝑠𝑘 = {𝑣 } or 𝑣𝑎𝑙𝑢𝑒𝑠𝑘 =
+{𝑣, 𝑤 }, then process 𝑝𝑘 adopts estimate 𝑣. Otherwise, process
+𝑝𝑘 has 𝑣𝑎𝑙𝑢𝑒𝑠𝑘 = {𝑤 }, which implies that it received at least
+𝑛 − 𝑡 0 distinct ECHO messages containing only value 𝑤.
+Thus there are at least 𝑡 0 + 1 processes that sent an ECHO
+message to 𝑝𝑖 containing only 𝑣 and an ECHO message to
+𝑝𝑘 containing only 𝑤. That, however, is illegal (see line 21),
+as a process must send the same ECHO message to all. Since
+only 𝑡 ≤ 𝑡 0 processes are Byzantine, this is impossible, so we
+conclude that every honest process adopts estimate 𝑣 by the
+end of round 𝑟 .
+We then conclude, by Lemma B.6, that every honest process decides value 𝑣 in either round 𝑟 + 1 or round 𝑟 + 2. (In
+this case, of course, it will be round 𝑟 + 2.)
+□
+
+Lemma B.5 (BV-Accountability). If a value 𝑣 is added to
+the set bin_values of a non-faulty process 𝑝𝑖 in round 𝑟 (with
+the exception of messages in Round 1, and message containing
+value 1 in Round 2), then associated with the value 𝑣 is a valid
+ledger from round 𝑟 − 1.
+Proof. Since every BVAL message without a valid ledger
+is discarded (aside from above mentioned exceptions), it
+follows immediately that when the conditions on lines 4 and
+7 are met, then the process has access to a valid ledger, which
+is then included when the value is added to bin_values. □
+
+B.2
+
+Accountable Byzantine Agreement
+
+Here, we prove that the Polygraph protocol is a correct accountable Byzantine agreement protocol. We begin with the
+standard properties of consensus, which hold when 𝑡 ≤ 𝑡 0 ,
+and then continue to discuss accountability. First, we observe that if every honest process begins a round 𝑟 with the
+same estimate, then that value is decided either in round 𝑟
+or round 𝑟 + 1. This follows immediately from the fact that
+if every honest process BV-broadcasts the same value, then
+that is the only value delivered, and so it is the only value
+that remains in the system.
+
+It is immediate from BV-broadcast that Polygraph guarantees a stronger form of validity (Lemma B.8) than the one
+required by blockchains (Corollary B.9). (The general Polygraph protocol stated in Appendix C that applies to arbitrary
+values only ensures the required validity.)
+Lemma B.8 (Strong validity). If 𝑡 ≤ 𝑡 0 and an honest
+process decides 𝑣, then some honest process proposed 𝑣.
+
+Lemma B.6. Assume that each honest process begins round 𝑟
+with the estimate 𝑣. Then every honest process decides 𝑣 either
+at the end of round 𝑟 or round 𝑟 + 1.
+
+Proof. Let round 𝑟 be the first round where a process
+𝑝𝑖 adopts a value 𝑣 that was not initially proposed by an
+honest process at the beginning of round 1. There are two
+possibilities depending on whether 𝑝𝑖 adopts 𝑣 in line 24 or
+line 28.
+Assume that honest process 𝑝𝑖 in round 𝑟 adopts value 𝑣
+in line 24. Then 𝑣𝑎𝑙𝑢𝑒𝑠𝑖 = {𝑣 } in round 𝑟 . This can only happen if 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠𝑖 = {𝑣 }, since ComputeValues only returns
+values that are in 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠𝑖 or 𝑎𝑢𝑥𝑖 , and 𝑎𝑢𝑥𝑖 only includes
+values in 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠𝑖 . However, 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠𝑖 only includes
+values delivered by BV-broadcast, and Lemma B.1 implies
+that every value delivered value was BV-broadcast by an
+honest process. So value 𝑣 was the estimate of an honest process 𝑝 𝑗 at the beginning of round 𝑟 . If 𝑟 = 1 then we are done.
+If 𝑟 > 1, then we conclude that 𝑣 was adopted as an estimate
+in round 𝑟 − 1 by process 𝑝 𝑗 , and hence by induction, we
+conclude that 𝑣 was initially proposed by an honest process
+at the beginning of round 1.
+Assume that honest process 𝑝𝑖 executes line 28, adopting
+the parity of the round number as its estimate. This implies
+that 𝑣𝑎𝑙𝑢𝑒𝑠𝑖 = {0, 1} in round 𝑟 . This can only happen if
+𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠𝑖 = {0, 1} also, since ComputeValues only returns
+values that are in 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠𝑖 or 𝑎𝑢𝑥𝑖 , and 𝑎𝑢𝑥𝑖 only includes
+values in 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠𝑖 . However, 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠𝑖 only includes
+values delivered by BV-broadcast, and Lemma B.1 implies
+that every value delivered value was BV-broadcast by an
+honest process. So at least one honest process 𝑝 𝑗 began round
+𝑟 with value ‘0’ and at least one honest process 𝑝𝑘 began
+
+Proof. Since every honest process BV-broadcasts the
+value 𝑣, we know from Lemma B.2 that 𝑣 is eventually delivered to every honest process, and from Lemma B.1 that 𝑣
+is the only value delivered to each honest process. Since 𝑣
+is the only value in 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠𝑖 for each honest 𝑝𝑖 , it is also
+the only value echoed via 𝑎𝑢𝑥𝑖 messages, and eventually it
+is the only value in 𝑣𝑎𝑙𝑢𝑒𝑠𝑖 .
+There are now two cases. If 𝑣 = 𝑟 mod 2, every honest
+process decides 𝑣. Otherwise, every honest process continues
+to the next round with its estimate equal to 𝑣. In the next
+round, 𝑣 = (𝑟 + 1) mod 2, and by the same argument, every
+process will then decide 𝑣 in round 𝑟 + 1.
+□
+We can now observe that if 𝑡 ≤ 𝑡 0 , we get agreement,
+because after the first round in which some process decides
+𝑣, then every process adopts value 𝑣 as its estimate.
+Lemma B.7 (Agreement). If 𝑡 ≤ 𝑡 0 and some honest processes 𝑝𝑖 and 𝑝 𝑗 decide 𝑣 and 𝑤, respectively, then 𝑣 = 𝑤.
+Proof. Without loss of generality, assume that 𝑝𝑖 decides
+no later than 𝑝 𝑗 . Assume for the sake of contradiction that
+𝑣 ≠ 𝑤. Assume that 𝑝𝑖 decides 𝑣 in round 𝑟 . If process 𝑝 𝑗
+also decides in round 𝑟 , then 𝑣 = 𝑤 = 𝑟 mod 2. Thus, we
+conclude that 𝑝 𝑗 decides in some round > 𝑟 .
+In round 𝑟 , we know that 𝑣𝑎𝑙𝑢𝑒𝑠𝑖 = {𝑣 }. This implies that
+𝑖 received at least 𝑛 − 𝑡 0 distinct ECHO messages containing
+13
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+round 𝑟 with ‘1’. If 𝑟 = 1, then we are done. Otherwise, we
+conclude that 𝑝 𝑗 adopted ‘0’ in round 𝑟 − 1 and 𝑝𝑘 adopted
+‘1’ in round 𝑟 − 1, and hence by induction we conclude that
+both ‘0’ and ‘1’ were initially proposed by honest processes
+at the beginning of round 0.
+□
+
+of round 𝑟 , every process adopts the same value, and hence
+decides either in round 𝑟 or round 𝑟 + 1 by Lemma B.6. □
+Thus we conclude (see Theorem 5.1) that when 𝑡 ≤ 𝑡 0 , the
+binary agreement protocol is correct. We now consider the
+case where 𝑡 > 𝑡 0 and show that it still provides accountability.
+
+Corollary B.9 (Validity). If all processes are honest and
+begin with the same value, then that is the only decision value.
+
+Lemma B.11 (Accountability). If 𝑡 > 𝑡 0 and two honest processes 𝑝𝑖 and 𝑝 𝑗 decide different values 𝑣 and 𝑤, then
+eventually every honest process receives a ledger and a certificate that conflict (providing irrefutable proof that a specific
+collection of 𝑡 0 + 1 processes are Byzantine).
+
+Finally, we argue that the protocol terminates:
+Lemma B.10 (Termination). If 𝑡 ≤ 𝑡 0 , every honest process
+decides.
+Proof. First, we observe that processes continue executing increasing rounds (i.e., no process gets stuck in some
+round). Assume, for the sake of contradiction, that 𝑟 is the
+first round where some process gets stuck forever, and 𝑝𝑖 is
+the process that gets stuck.
+A process cannot get stuck in line 12 or line 15 waiting
+for a BV-broadcast, since every honest process performs a
+BV-broadcast and so by Lemma B.4, every honest process
+eventually delivers a value. (And a process cannot get stuck
+waiting on a timer, since the timer will always eventually
+expire.)
+A process also cannot get stuck waiting on line 22: Eventually process 𝑝𝑖 will receive ECHO messages from each of
+the 𝑛 − 𝑡 0 honest processes. And by Lemma B.3, every value
+that is delivered by BV-broadcast to an honest process will
+eventually be delivered to 𝑝𝑖 . Specifically, every value that
+is included in an ECHO message from an honest process is
+eventually delivered to 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠𝑖 . Thus, eventually a set
+of 𝑛 − 𝑡 0 messages is identified, and the waiting condition on
+line 22 is satisfied.
+The last issue that might prevent progress is if process 𝑝𝑖 ,
+or some other process, cannot transmit a proper message due
+to missing ledgers. This can only be a problem with messages
+being BV-broadcast. If a process completed round 𝑟 −1 and its
+estimate was ≠ 𝑟 − 1 mod 2, then it could always construct
+a proper ledger in round 𝑟 − 1 from the estimates received. If
+a process completed round 𝑟 − 1 and its estimate was = 𝑟 − 1
+mod 2, then it must have received a valid ledger for the value
+in round 𝑟 − 1 as part of the BV-broadcast; otherwise, it could
+not have completed round 𝑟 − 1.
+Thus we conclude that every process executes an infinite
+number of rounds. The remaining question is whether processes ever decide. Consider the first round 𝑟 after GST where
+the timer is sufficiently large that (i) every BV-broadcast
+message is delivered, and (ii) the coordinators message is
+delivered before the timer expires. In this case, every honest
+process will prioritize the coordinator’s value, adopting it
+as their 𝑎𝑢𝑥 message in line 18, echoing it in line 21, and
+adding only that value to 𝑣𝑎𝑙𝑢𝑒𝑠 in line 22. Thus at the end
+
+Proof. Assume that 𝑝𝑖 decided 𝑣 in round 𝑟 and 𝑝 𝑗 decided
+𝑤 in the round 𝑟 ′ where 𝑤 = 𝑛𝑜𝑡(𝑣) = 1 − 𝑣 and 𝑟 ≤ 𝑟 ′. It is
+undeniable (by construction, line 25–26) that 𝑣 = 𝑟 𝑚𝑜𝑑 2.
+There are only four possible cases to consider:
+(1) Case 1: 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 ≠ {0, 1}
+(2) Case 2: 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 = {0, 1} and 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 +1 ≠ {𝑣 }
+(3) Case 3: 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 = {0, 1} and 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 +1 = {𝑣 } and
+𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 +2 ≠ {𝑣 }
+(4) Case 4: 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 = {0, 1} and 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 +1 = {𝑣 } and
+𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 +2 = {𝑣 }
+We now consider each of the cases in turn.
+Case 1. If 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 = {𝑣 }, then process 𝑝 𝑗 would have decided 𝑣 ≠ 𝑤 in round 𝑟 . So we conclude that 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 = {𝑤 }.
+In that case, 𝑙𝑒𝑑𝑔𝑒𝑟 [𝑟 ] 𝑗 and 𝑐𝑒𝑟𝑡𝑖 𝑓 𝑖𝑐𝑎𝑡𝑒 [𝑟 ] 𝑖 conflict.
+Case 2. Assume 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 = {0, 1} and 𝑤 ∈ 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 +1 . This
+implies that 𝑤 ∈ 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠 𝑗 in round 𝑟 + 1. Notice that
+round 𝑟 + 1 cannot be round 1, and if it is round 2, then
+the value 𝑣 = 1 and so 𝑤 ≠ 1. Thus, BV-Accountability
+(Lemma B.5 indicates that 𝑝 𝑗 receives a valid ledger for 𝑤
+from round 𝑟 . That ledger conflicts with the certificate for
+𝑣 from 𝑟 (and consists of 𝑛 − 𝑡 0 distinct ECHO messages
+containing only value 𝑤 in round 𝑟 ).
+Case 3. Assume 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 = {0, 1}, 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 +1 = {𝑣 }, and
+𝑤 ∈ 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 +2 . This implies that 𝑤 ∈ 𝑏𝑖𝑛_𝑣𝑎𝑙𝑢𝑒𝑠 𝑗 in round
+𝑟 + 2. Since round 𝑟 + 2 > 2, BV-Accountability (Lemma B.5
+indicates that 𝑝 𝑗 receives a valid ledger for 𝑤 from round 𝑟 +1.
+Since 𝑤 = 𝑟 + 1 mod 2, the ledger for 𝑤 from round 𝑟 + 1 is a
+copy of a ledger for 𝑤 from round 𝑟 , which therefore conflicts
+with the certificate for 𝑣 for round 𝑟 (and consists of 𝑛 − 𝑡 0
+distinct ECHO messages containing only value 𝑤 in round 𝑟 ).
+Case 4. Assume 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 = {0, 1}, 𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 +1 = {𝑣 }, and
+𝑣𝑎𝑙𝑢𝑒𝑠 𝑟𝑗 +2 = {𝑣 }. Then process 𝑝 𝑗 decides 𝑣 in round 𝑟 + 2
+and there is agreement.
+14
+
+Polygraph
+
+All the cases have been examined, and in each case, process
+𝑝 𝑗 has a ledger constructed in round 𝑟 conflicting with the certificate delivered from process 𝑝𝑖 . The conflicting ledger/certificate each contain 𝑛 − 𝑡 0 signed, distinct ECHO messages
+containing only value 𝑣 and only value 𝑤 respectively. Since
+any two sets of size 𝑛 − 𝑡 0 have an intersection of size 𝑡 0 + 1,
+the signatures in the conflicting ledgers prove the existence
+of a set 𝐺 of 𝑡 0 + 1 Byzantine processes.
+□
+
+C
+
+of a reliable broadcast service satisfying the above properties. Then, in Section C.2, we describe the reliable broadcast
+service and prove that it is correct.
+
+C.1
+
+Accountable Byzantine Agreement
+
+We now present the algorithm in more detail. The general
+algorithm has three phases.
+• First, in lines 1–8, each process uses reliable broadcast
+to transmit its value to all the others. Then, whenever
+a process receives a reliable broadcast message from
+a process 𝑝𝑘 , it proposes ‘1’ in binary consensus instance 𝑘. The first phase ends when there is at least
+one decision of ‘1’.
+• Second, in lines 10–12, each process proposes ‘0’ in
+every remaining binary consensus instance for which
+it has not yet proposed a value. The second phase ends
+when every consensus instance decides.
+• Third, in lines 14–16, each process identifies the smallest consensus instance 𝑗 that has decided ‘1’. (If there
+is no such consensus instance, then it does not decide
+at all.) It then waits until it has received the reliable
+broadcast message from 𝑝 𝑗 and outputs that value.
+First, we argue that it solves the consensus problem as
+long as 𝑡 ≤ 𝑡 0 :
+
+MULTIVALUE CONSENSUS
+
+In this section, we discuss how to generalize the binary consensus to ensure accountable Byzantine agreement for arbitrary values. We follow the approach from [14]: First, all 𝑛
+processes use a reliable broadcast service to send their proposed value to all the other 𝑛 processes. Then, all the process
+participate in parallel in 𝑛 binary agreement instances, where
+each instance is associated with one of the processes. Lastly,
+if 𝑗 is the smallest binary consensus instance to decide 1,
+then all the processes decide the value received from process
+𝑝𝑗.
+The key to making this work is that we need the reliable
+broadcast service to be accountable, that is, if it violates
+the reliable delivery guarantees, then each honest process
+has irrefutable proof of the culpability of 𝑡 + 1 processes.
+Specifically, we want a single-use reliable broadcast service
+that allows each process to send one message, delivers at
+most one message from each process, and guarantees the
+following properties:
+• RB-Validity: If an honest process RB-delivers a message
+𝑚 from an honest process 𝑝 𝑗 , then 𝑝 𝑗 RB-broadcasts
+𝑚.
+• RB-Send: If 𝑡 ≤ 𝑡 0 and 𝑝 𝑗 is honest and RB-broadcasts
+a message 𝑚, then all honest processes eventually
+RB-deliver 𝑚 from 𝑝 𝑗 .
+• RB-Receive: If 𝑡 ≤ 𝑡 0 and an honest process RB-delivers
+a message 𝑚 from 𝑝 𝑗 (possibly faulty) then all honest
+processes eventually RB-deliver the same message 𝑚
+from 𝑝 𝑗 .
+• RB-Accountability: If an honest process 𝑝𝑖 RB-delivers
+a message 𝑚 from 𝑝 𝑗 and some other honest process 𝑝 𝑗
+RB-delivers 𝑚 ′ from 𝑝 𝑗 , and if 𝑚 ≠ 𝑚 ′, then eventually
+every process has irrefutable proof of the culpability
+of 𝑡 0 + 1 processes.
+The resulting algorithm provides a weaker notion of validity: if all processes are honest, then the decision value is
+one of the values proposed. (A stronger version of validity
+could be achieved with a little more care, but is not needed
+for blockchain applications, which depend on an external
+validity condition.)
+We first, in Section C.1, present the general multivalue
+algorithm, and prove that it is correct—assuming the existing
+
+Lemma C.1 (Agreement). If 𝑡 ≤ 𝑡 0 , then every honest
+process eventually decides the same value. If all processes are
+honest and propose the same value, that is the only possible
+decision.
+Proof. First we focus on termination. Since 𝑡 ≤ 𝑡 0 , by
+the RB-Send property, we know that every honest process
+eventually delivers every value that was proposed by an
+honest process. Assume for the sake of contradiction that no
+binary consensus instance every decides ‘1’. Then eventually,
+every honest process proposes ‘1’ for every binary consensus
+instance associated with an honest process. By the validity
+and termination properties of binary consensus (and since
+𝑡 ≤ 𝑡 0 ), we conclude that these instances all decide ‘1’, which
+is a contradiction. Thus eventually every honest process
+executes line 10.
+Since every honest process eventually proposes a value to
+every binary consensus instance, we conclude (since 𝑡 ≤ 𝑡 0 )
+that eventually every binary consensus instance decides and
+every honest process reaches line 15. Let 𝑗 be the minimum
+binary consensus instance that decides ‘0’. Assume (for the
+sake of contradiction) that no honest process received the
+value from 𝑝 𝑗 . Then every honest process proposed ‘0’ to the
+binary consensus instance for 𝑗, and hence by the validity
+property, the decision would have been ‘0’, i.e., a contradiction. Thus we know that at least one honest process received
+the value that was reliably broadcast by 𝑝 𝑗 .
+15
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+Algorithm 3 The (Naive) Multivalue Polygraph Protocol
+1: gen-propose(𝑣𝑖 ):
+2:
+RB-broadcast(EST, ⟨𝑣𝑖 , 𝑖 ⟩) → messages𝑖
+3:
+4:
+repeat:
+5:
+if ∃ 𝑣, 𝑘 : (EST, ⟨𝑣, 𝑘 ⟩) ∈ messages𝑖 then
+6:
+if BIN-CONSENSUS[𝑘 ] not yet invoked then
+7:
+BIN-CONSENSUS[𝑘 ].bin-propose(1) → bin-decisions [𝑘 ]𝑖
+8:
+until ∃𝑘 : bin-decisions [𝑘 ] = 1
+9:
+10:
+for all 𝑘 such that BIN-CONSENSUS[𝑘 ] not yet invoked do
+11:
+BIN-CONSENSUS[𝑘 ].bin-propose(0) → bin-decisions [𝑘 ]𝑖
+12:
+wait until for all 𝑘, bin-decisions [𝑘 ] ≠ ⊥
+13:
+14:
+𝑗 = min{𝑘 : bin-decisions [𝑘 ] = 1}
+15:
+wait until ∃ 𝑣 : (EST, ⟨𝑣, 𝑗 ⟩) ∈ messages𝑖
+16:
+
+ reliable broadcast value to all
+ when you recieve a value from 𝑝𝑘 , begin consensus instance 𝑘 with a proposal of 1
+
+ wait until the first decision
+ begin consensus on the remaining instances
+ for these, propose 0
+ wait until all the instances decide
+
+ choose the smallest instance that decides 1
+ wait until you receive that value
+
+decide 𝑣
+
+ return that value
+
+C.2
+
+Finally, by the RB-Receive property, we know that every
+honest process must eventually deliver the value that was
+reliably broadcast by 𝑝 𝑗 , and hence every process eventually
+returns a value, i.e., we satisfy the termination property.
+Next, we argue agreement. Since 𝑡 ≤ 𝑡 0 , by the guarantees of the binary consensus instances, every honest process
+decides the same thing for each of the instances. Therefore,
+all honest processes will choose the same 𝑗 that is the minimum binary consensus instance that decides 1. As we have
+already argued, every honest process must eventually deliver
+the value reliably broadcast by 𝑝 𝑗 , and that must be the same
+value. This guarantees agreement.
+Finally, we argue validity: if all the processes are honest,
+then every value received by reliable broadcast is from an
+honest value, and hence validity is immediate.
+□
+
+Reliable Broadcast
+
+We now describe the reliable broadcast service, which is a
+straightforward extension of the broadcast protocol proposed
+by Bracha [6]. A process begins by broadcasting its message
+to everyone. Every process that receives the message directly,
+echoes it, along with a signature. Every process that receives
+𝑛 −𝑡 0 distinct ECHO messages, sends a READY message. And
+if a process receives 𝑡 0 + 1 distinct READY messages, it also
+sends a READY message. Finally, if a process receives 𝑛 − 𝑡 0
+distinct READY messages, then it delivers it.
+The key difference from [6] is that, as in the binary value
+consensus protocol, we construct ledgers to justify the messages we send. Specifically, when a process sends a READY
+message, if it has received 𝑛 − 𝑡 0 distinct ECHO messages,
+each of which is signed, it packages them into a ledger, and
+forwards that with its READY message. Alternatively, if a
+process sends a READY message because it received 𝑡 0 + 1
+distinct READY messages, then it simply copies an existing
+(valid) ledger. Either way, if a process 𝑝𝑖 sends a READY message for value 𝑣 which was sent by process 𝑝 𝑗 , then it has
+stored a ledger containing 𝑛 − 𝑡 0 signed ECHO messages for
+𝑣, and it has sent that ledger to everyone.
+As before, two ledgers conflict if they justify two different
+values 𝑣 and 𝑣 ′, both supposedly sent by the same process 𝑝 𝑗 .
+In that case, one ledger contains 𝑛 −𝑡 0 signed ECHO message
+for 𝑣 and the other contains 𝑛 − 𝑡 0 signed ECHO message for
+𝑣 ′. Since any two sets of size 𝑛 − 𝑡 0 have an intersection of
+size 𝑡 0 + 1, this immediately identifies at least 𝑡 0 + 1 processes
+that illegally sent ECHO messages for both 𝑣 and 𝑣 ′. These
+process can by irrefutably proved to be Byzantine.
+We now prove that the reliable broadcast protocol satisfies
+the desired properties. First, we show that it delivers only
+one value from each process, and that if 𝑡 ≤ 𝑡 0 , then it only
+delivers a value if it was previously RB-broadcast by that
+process:
+
+Next, we prove that if there is any disagreement, then the
+algorithm guarantees accountability:
+Lemma C.2 (Accountability). If two honest process 𝑝𝑖
+and 𝑝 𝑗 decide different values, then honest processes eventually
+receive irrefutable proof of at least 𝑡 0 + 1 Byzantine processes.
+Proof. First, assume that 𝑝𝑖 and 𝑝 𝑗 decide different values
+for some binary consensus instance. Then, by the accountability of binary consensus, we know that every process
+eventually receives the desired irrefutable proof. Alternatively, if 𝑝𝑖 and 𝑝 𝑗 agree for every instance of binary consensus, then they choose the same value 𝑘 that is the minimum
+binary consensus instance to decide ‘1’, and they output the
+value delivered by the reliable broadcast service from 𝑝𝑘 .
+(Recall that the reliable broadcast service delivers only one
+value from each process, and 𝑝𝑖 and 𝑝 𝑗 do not decide until
+they receive that value.) However, by the RB-accountability
+property, we conclude that eventually every process receives
+irrefutable proof of at least 𝑡 0 + 1 Byzantine processes. □
+16
+
+Polygraph
+
+Algorithm 4 Reliable Broadcast
+1: RB-broadcast(𝑣𝑖 ):
+2: broadcast(INITIAL, 𝑣𝑖 )
+3: upon receiving a message (INITIAL, 𝑣) from 𝑝 𝑗 :
+4: broadcast(ECHO, 𝑣, 𝑗)
+5: upon receiving 𝑛 − 𝑡 0 distinct messages (ECHO, 𝑣, 𝑗) and not having sent a READY message:
+6: Construct a ledger ℓ𝑖 containing the 𝑛 − 𝑡 0 signed messages (ECHO, 𝑣, 𝑗).
+7: broadcast(READY, 𝑣, ℓ𝑖 , 𝑗)
+8: upon receiving 𝑡 0 + 1 distinct messages (READY, 𝑣, ·, 𝑗) and not having sent a READY message:
+9: Set ℓ𝑖 to be one of the (valid) ledgers received (READY, 𝑣ℓ, 𝑗).
+10: broadcast(READY, 𝑣, ℓ, 𝑗)
+11: upon receiving 𝑛 − 𝑡 0 distinct messages (READY, 𝑣, ·, 𝑗) and not having delivered a message from 𝑗:
+12: Let ℓ be one of the (valid) ledgers received (READY, 𝑣, ℓ, 𝑗).
+13: deliver(𝑣, 𝑗)
+
+ only executed by the source
+ broadcast value 𝑣𝑖 to all
+ echo value 𝑣 to all
+ send READY message and ledger for 𝑣 to all.
+ send READY message for 𝑣 to all.
+ send READY message for 𝑣 to all
+
+Since any two sets of size 𝑛 − 𝑡 0 must have an intersection
+of size at least 𝑡 0 + 1, we conclude that if 𝑣 ≠ 𝑣 ′, then the
+ledgers ℓ𝑖 and ℓ 𝑗 conflict, i.e., prove that at least 𝑡 0 +1 processes
+illegally sent ECHO messages for both 𝑣 and 𝑣 ′.
+□
+
+Lemma C.3 (RB-Unicity). At most one value (𝑣, 𝑗) is delivered from process 𝑝 𝑗 .
+Proof. Follows immediately by inspection: only one message from 𝑝 𝑗 is every delivered to each process..
+□
+
+We can now show that if an honest process performs a
+RB-broadcast, then as long as 𝑡 ≤ 𝑡 0 , every honest process
+delivers its message:
+
+Lemma C.4. (RB-Validity) If 𝑡 ≤ 𝑡 0 , and if an honest process RB-delivers a value 𝑣 from an honest process 𝑝 𝑗 , then 𝑝 𝑗
+RB-broadcasts 𝑚.
+
+Lemma C.6. (RB-Send) If 𝑡 ≤ 𝑡 0 , and if 𝑝 𝑗 is honest and
+RB-broadcasts a value 𝑣, then all honest processes eventually
+RB-deliver 𝑣 from 𝑝 𝑗 .
+
+Proof. A process only delivers a value 𝑣 for 𝑝 𝑗 if it received (READY, 𝑣, ·, 𝑗) messages from 𝑛 − 𝑡 0 processes, implying that at least one honest process sent a READY message for
+𝑣. Let 𝑝𝑖 be the first honest process to send a (READY, 𝑣, ·, 𝑗).
+In that case, we know that 𝑝𝑖 must have received 𝑛 − 𝑡 0
+distinct (ECHO, 𝑣, 𝑗), implying that at least one honest process sent an ECHO message for 𝑣. An honest process only
+sends an (ECHO, 𝑣, 𝑗) message if it received 𝑣 directly from
+𝑝 𝑗 . And if 𝑝 𝑗 is honest, it onlys sends 𝑣 if the value was
+RB-broadcast.
+□
+
+Proof. If 𝑝 𝑗 is honest, then it broadcasts its value 𝑣, properly signed, to all processes. All honest processes receive it
+directly from 𝑝 𝑗 and immediately broadcast an ECHO message. (Moreover, there is no other message they could echo,
+because there is no other message they could have received
+directly from 𝑝 𝑗 .)
+Since 𝑡 ≤ 𝑡 0 , we know that there are at least 𝑛 − 𝑡 0 honest
+processes that perform the ECHO, and hence every honest
+process receives at least 𝑛 −𝑡 0 ECHO messages, and hence every honest process broadcasts a READY message. (Of course
+there is no other message that an honest process could send
+a READY message for, since the first honest process to send
+a READY message for some other value must have received
+at least 𝑛 − 𝑡 0 distinct ECHO messages for that value; at least
+one of those ECHO messages must have been sent by an honest process which received it directly from 𝑝 𝑗 , which—being
+honest—only sent value 𝑣.)
+Since 𝑡 ≤ 𝑡 0 , there are at least 𝑛 − 𝑡 0 honest processes that
+send READY messages, and so every honest process receives
+𝑛 − 𝑡 0 READY messages and delivers the value 𝑣 from 𝑝 𝑗 . (Of
+course 𝑝 𝑗 cannot have delivered any other values 𝑣 ′ from 𝑝 𝑗
+earlier, since 𝑝 𝑗 is honest there is no other value 𝑣 ′ that it
+RB-broadcast.)
+□
+
+Next, we prove a key lemma, showing that either all honest process send READY messages only for one value, or
+two conflicting ledgers are eventually received by all honest
+processes.
+Lemma C.5. Assume that 𝑝𝑖 is an honest process that sends
+a READY message for value 𝑣 and that 𝑝 𝑗 is an honest process
+that sends a READY message for value 𝑣 ′. Then either 𝑣 = 𝑣 ′
+or the ledgers ℓ𝑖 and ℓ 𝑗 constructed by 𝑝𝑖 and 𝑝 𝑗 , respectively,
+conflict.
+Proof. Process 𝑝𝑖 sends the READY message for 𝑣 either
+because (i) it has received 𝑛−𝑡 0 distinct messages (ECHO, 𝑣, ·)
+and has constructed a ledger ℓ𝑖 containing those signed messages, or (ii) it has received 𝑡 0 + 1 distinct READY messages
+(ECHO, 𝑣, ·, 𝑗), each containing a valid ledger for 𝑣, one of
+which it copies as ℓ𝑖 . Either way, process 𝑝𝑖 has a valid ledger
+ℓ𝑖 containing 𝑛 − 𝑡 0 signed echo messages for 𝑣. Similarly, by
+the same logic, process 𝑝 𝑗 has a valid ledger ℓ 𝑗 containing
+𝑛 − 𝑡 0 signed echo message for 𝑣 ′.
+
+Next, we can show that if any honest process delivers a
+value 𝑣, then every honest process also delivers value 𝑣—as
+long as 𝑡 ≤ 𝑡 0 .
+17
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+Lemma C.7. (RB-Receive) If 𝑡 ≤ 𝑡 0 and an honest process
+𝑝𝑘 RB-delivers a value 𝑣 from 𝑝 𝑗 (possibly faulty), then all
+honest processes eventually RB-deliver the same message 𝑣
+from 𝑝 𝑗 .
+
+and (2) if the aux messages were reliable broadcast, it would
+be not necessary to broadcast the heavy ledger in the Phase
+1. Note that to bypass the need of a trusted dealer, we build
+upon recent results [24]. Indeed, if a correct is able to compute a ledger attached to a value 𝑣 from some RB-delivered
+aux-messages, it will be eventually the case for any other
+correct process.
+With these two observations, we can improve the bitcomplexity of the algorithm, avoiding the costly broadcast of
+ledgers and replacing this cost by a cheaper one, i.e., the reliable broadcast of hyper-aux messages with the optimization
+of [10].
+
+Proof. Assume 𝑝𝑘 delivers 𝑣 from 𝑝 𝑗 . In this case, 𝑝𝑘 must
+have received at least 𝑛 − 𝑡 0 valid READY messages for (𝑣, 𝑗).
+Therefore, there must have been at least 𝑡 0 + 1 honest processes that broadcast valid READY messages. This implies
+that every honest process receives at least 𝑡 0 + 1 valid READY
+messages for (𝑣, 𝑗), and hence also sends a READY message
+for (𝑣, 𝑗). (Since 𝑡 ≤ 𝑡 0 , we know that an honest process
+cannot send a READY message for any other value 𝑣 ′ ≠ 𝑣
+for process 𝑗, by Lemma C.5.) Therefore everyone honest
+process receives at least 2𝑡 0 + 1 valid READY message for
+value 𝑣 for process 𝑗, and hence delivers value 𝑣 from 𝑝 𝑗 . □
+
+Quick and slow instances. We add to the Multivalue Polygraph protocol a variable wait, initially wait = 1. As long as
+wait = 1, we have: (a) any proposal for bit 0 is stored but not
+taken into account, (b) any proposal for round ≥ 2 is stored
+but not take into account.
+We replace line 8 of algorithm 3 by line 10 at updated algorithm 5 with the following predicate, called
+the (𝑛-𝑡 0 )-predicate: “until ∃𝐾𝑖 , |𝐾𝑖 | ≥ 𝑛 − 𝑡 0, ∀𝑘 ∈
+𝐾𝑖 , 𝑏𝑖𝑛_𝑑𝑒𝑐𝑖𝑠𝑖𝑜𝑛[𝑘] = 1”. After line 10, the variable wait is
+updated to 0, that is the (a) proposals with bit 0 and (b) proposals for round 𝑟 > 1 can be taken into account for the
+instances in [1, 𝑛] \ 𝐾𝑖 .
+
+Finally, we show the accountability property: either all
+honest processes deliver the same value, or two conflicting
+ledgers are received by every honest process:
+Lemma C.8. RB-Accountability: If an honest process 𝑝𝑖
+RB-delivers value 𝑣 from 𝑝 𝑗 and some other honest process
+𝑝 𝑗 RB-delivers 𝑣 ′ from 𝑝 𝑗 , and if 𝑣 ≠ 𝑣 ′, then eventually every
+honest process receives two ledgers ℓ and ℓ ′ that conflict.
+Proof. If process 𝑝𝑖 delivers 𝑣 from 𝑝 𝑗 , then it received
+at least 𝑛 − 𝑡 0 READY messages for value 𝑣, which implies
+that at least one honest process 𝑝𝑢 sent a READY message
+for 𝑣. Similarly, since 𝑝 𝑗 delivers 𝑣 ′ from 𝑝 𝑗 , we know that at
+least one honest process 𝑝 𝑤 sent a READY message for 𝑣 ′. By
+Lemma C.5, we know that if 𝑣 ≠ 𝑣 ′, then the ledgers ℓ𝑢 and ℓ𝑤
+conflict. Moreover, since both 𝑝𝑢 and 𝑝 𝑤 are honest, they sent
+their respective READY messages to all processes, and hence
+every honest process receives the conflicting ledgers.
+□
+
+D
+
+Lemma D.1 (Liveness). This transformation preserve Liveness.
+Proof. Eventually, it exists a set 𝐾𝑐 , |𝐾𝑐 | ≥ 𝑛 − 𝑡 0
+such that for every instance 𝑘 ∈ 𝐾𝑐 , the proposal is RBdelivered by every correct process, which then invokes 𝐵𝐼 𝑁 𝐶𝑂𝑁 𝑆𝐸𝑁 𝑆𝑈 𝑆 [𝑘].𝑏𝑖𝑛_𝑝𝑟𝑜𝑝𝑜𝑠𝑒(1). Thus, eventually, the set
+𝐾𝑐 receives 𝑛 − 𝑡 0 proposals for the binary value 1 such that
+every process can decide binary value 1 at round 1.
+□
+
+OPTIMIZING THE MULTIVALUE
+POLYGRAPH
+
+Lemma D.2 (Local 1 round shot). For every process 𝑖, it
+exists a set 𝐾𝑖 , |𝐾𝑖 | ≥ 𝑛 − 𝑡 0 such that process 𝑖 decides the
+binary value 1 within 1 round at each instance 𝑘 ∈ 𝐾𝑖 .
+
+In this section, we present some optimizations (Algorithms 5,
+6 and 7) to the Multivalue Polygraph Protocol to improve the
+bit-complexity by a linear multiplicative factor, from 𝑂(𝜅 ·𝑛 5 )
+to 𝑂(𝜅 · 𝑛 4 ). To this end, we use two techniques:
+First, we wait for the termination of certain “quick” instances that complete in 1 round. When these quick instances
+are decided, a correct process knows what it will propose
+for all the 𝑛 different instances. This allows to couple the 𝑛
+instances, where each correct process sends a vector message
+that contains 𝑛 message contents for the 𝑛 different instances.
+(see algorithm A vector of 𝑛 aux messages is called an hyperaux message.
+Second, we remark that (1) the Cachin-Tessaro optimization [10] reduces the bit complexity of the reliable broadcast
+for value with great length ℓ (𝑂(𝑛ℓ + 𝜅 ′𝑛 2 ) instead of 𝑂(𝑛 2 ℓ))
+
+Proof. As liveness is preserved, the (𝑛-𝑡 0 )-predicate is
+satisfied.
+□
+Combining the instances. Each process 𝑖 knows (1) it will
+eventually reach a state 𝜎𝑖 where 𝐾𝑖 is decided in one round
+and (2) this is the case for any other correct process 𝑗.
+Thus after reaching such a state, it becomes possible to
+start all the instances I = {𝑖 1, ..., 𝑖𝑛 } and combine the proposals of all the instances. To do so, the processes send vector
+that include all these instances, namely, the ones where processes already proposed at round 1. Thus at hyper-round 1
+(which is this new round 1 within which all instances are
+treated altogether), a correct process is “repeating itself”,
+which is not a problem. If a vector of hyper-round 1 does not
+18
+
+Polygraph
+
+Algorithm 5 The Optimized Multivalue Polygraph Protocol
+1: gen-propose(𝑣𝑖 ):
+2:
+𝑤𝑎𝑖𝑡𝑖 = 1
+3:
+hyper-proposal ∈ {0, 1}𝑛 , initially ∀𝑘 ∈ [1, 𝑛], hyper-proposal [𝑘 ] = 0
+4: RB-broadcast(EST, ⟨𝑣𝑖 , 𝑖 ⟩) → messages𝑖
+5:
+6:
+repeat:
+7:
+if ∃ 𝑣, 𝑘 : (EST, ⟨𝑣, 𝑘 ⟩) ∈ messages𝑖 then
+8:
+if BIN-CONSENSUS[𝑘 ] not yet invoked then
+9:
+BIN-CONSENSUS[𝑘 ].bin-propose(1) → bin-decisions [𝑘 ]𝑖
+10:
+until ∃𝐾𝑖 , |𝐾𝑖 | ≥ 𝑛 − 𝑡 0 , ∀𝑘 ∈ 𝐾𝑖 , 𝑏𝑖𝑛_𝑑𝑒𝑐𝑖𝑠𝑖𝑜𝑛 [𝑘 ] = 1
+11:
+12:
+𝑤𝑎𝑖𝑡𝑖 = 0
+13:
+∀𝑘 ∈ 𝐾𝑖 , hyper-proposal [𝑘 ] = 1
+14: BIN-CONSENSUS.combine-propose(hyper-proposal) → bin-decisions𝑖
+15: wait until for all 𝑘, bin-decisions [𝑘 ] ≠ ⊥
+16:
+17:
+𝑗 = min{𝑘 : bin-decisions [𝑘 ] = 1}
+18: wait until ∃ 𝑣 : (EST, ⟨𝑣, 𝑗 ⟩) ∈ messages𝑖
+19:
+
+ reliable broadcast value to all
+ when you recieve a value from 𝑝𝑘 , begin consensus instance 𝑘 with a proposal of 1
+
+ wait until the 𝑛 − 𝑡 0 first decisions
+ re-propose 1 for all the decided instances in 𝐾𝑖 and propose 0 for the other instances
+ One message for all the instances
+ wait until all the instances decide
+ choose the smallest instance that decides 1
+ wait until you receive that value
+
+decide 𝑣
+
+ return that value
+
+correspond to the binary values that have been sent in the
+first phase (without vector), the vector is ignored. When a
+process 𝑗 decides at instance 𝑘 at round 𝑟 𝑘𝑗 , it continues to
+“help” until round 𝑟 ∗𝑗 + 2, where 𝑟 ∗𝑗 is the highest round of
+decision of 𝑗 among all the instances.
+At each round 𝑟 ∈ N, , for every process 𝑝, we note
+𝐴𝑈 𝑋 𝑝 [𝑟 ] = ⟨𝑎𝑢𝑥 𝑝𝑖 1 [𝑟 ], ..., 𝑎𝑢𝑥 𝑝𝑖𝑛 [𝑟 ]⟩𝜎𝑝 and call this message
+an hyper-aux message.
+In the optimized version, the hyper-aux message is RBbcast with the optimization of Cachin and Tessaro [10]) (see
+line 22 in algoritm 6).
+
+other process. To do so it can use a Solomon code to build
+𝐴𝑈 𝑋˜ 𝑗 [𝑟 ] where |𝐴𝑈 𝑋˜ 𝑗 [𝑟 ] | = 𝑂(1)|𝐴𝑈 𝑋 𝑗 [𝑟 ] |. Then it can
+𝑝
+split 𝐴𝑈 𝑋˜ [𝑟 ] into 𝑛 chunks 𝐴𝑈 𝑋˜ [𝑟 ]
+and send to
+
+Avoiding the bv-bcast of ledgers. Now, an hyperestimation is justified by an hyper-aux message that has
+been RB-delivered. Thus, this justification will be eventually
+RB-delivered by all the correct processes, avoiding the costly
+broadcast of ledgers.
+A disagreement implies a binary disagreement at a particular instance 𝑘. Two correct processes 𝑖 and 𝑗 that disagree at
+instance 𝑘 at rounds 𝑟𝑖 and 𝑟 𝑗 with 𝑟 𝑗 > 𝑟𝑖 , can compare the
+hyper-aux messages that have been RB-delivered at round
+𝑟𝑖 .
+At the end, after GST, the optimized multivalue protocol has a message complexity of 𝑂(𝑛) processes times 𝑂(𝑡 0 )
+rounds times 𝑂(𝑛 2 ) (RB-bcast), which is 𝑂(𝑛 4 ) messages.
+The optimized multivalue protocol has a bit-complexity of
+𝑂(𝜅 ·𝑛 4 ), since the bit complexity of 𝑅𝐵−𝑏𝑐𝑎𝑠𝑡 is only 𝑂(𝜅 ·𝑛 2 )
+[10].
+
+In this section we explain how the general Polygraph protocol can held blockchain service providers accountable to
+blockchain client processes that do not run the consensus as
+long as 𝑡 < 2𝑛/3. Note that a blockchain service can be implemented with a replicated state machine to which separate
+clients send requests. A predetermined set of 𝑛 processes,
+called a consortium, can propose and decide valid blocks that
+they append to their local view of the blockchain through the
+General Polygraph Protocol that accepts arbitrary values. A
+client can send a get requests to the members of the consortium and if it receives the same view of the blockchain from
+a certain number 𝑚 of members (𝑚 = (𝑛 − 𝑡 0 ) by default), it
+considers the transactions of this common view as valid. In
+case of disagreement (𝑡 > 𝑡 0 ), the blockchain forks in that
+multiple blocks get appended to the same index of the chain,
+which could lead to double spending if the resulting branches
+have conflicting transactions.
+
+𝑗
+
+𝑗
+
+𝑝 ∈ [1,𝑛]
+
+each process the chunk and an additional constant-size
+piece of information used for verification. When a process 𝑝
+receives its chunk, it can verify it and then echo it. When
+𝑝
+a process 𝑞 receives 𝑛 − 𝑡 0 chunks (𝐴𝑈 𝑋˜ 𝑗 [𝑟 ])𝑝 ∈𝜙, |𝜙 |=𝑛−𝑡0 , it
+can build 𝐴𝑈 𝑋 𝑗 [𝑟 ] and verify it.
+
+E
+
+A brief explanation of the optimized Reliablebroadcast [10]. The algorithm of Cachin and Tessaro
+works as follows: At each round 𝑟 , each process is supposed
+to reliably broadcast its hyper-aux 𝐴𝑈 𝑋 𝑗 [𝑟 ] to every
+
+APPLICATION TO BLOCKCHAIN
+
+Preliminaries. We now restate the existing blockchain formalism by Anceaume et al. [5]. A blockchain is a chain of
+blocks whose score() function takes as input a blockchain
+and returns its score 𝑠 as a natural number, which can be its
+19
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+Algorithm 6 Coupled Polygraph Protocols
+1: combined-propose(hyper-proposal):
+2:
+hyper-est𝑖 = hyper-proposal
+3: r𝑖 = 0
+4: timeout𝑖 = 0
+5: hyper-aux-msgs𝑖 [−1] = hyper-aux-msgs𝑖 [0] = ∅
+6: repeat:
+7:
+r𝑖 ← r𝑖 + 1;
+8:
+timeout𝑖 ← timeout𝑖 + 1
+9:
+coord𝑖 ← ((𝑟𝑖 − 1) mod 𝑛) + 1
+⊲ Phase 1:
+10:
+for 𝑘 ∈ [1 : 𝑛] do
+11:
+light-bv-bcast(LEST[𝑟𝑖 ] [𝑘 ], hyper-est [k]𝑖 , 𝑖, hyper-bin_values𝑖 [𝑘 ], hyper-aux-msgs𝑖 [𝑟 − 1], hyper-aux-msgs𝑖 [𝑟 − 2])  binary value broadcast the
+current estimate of all the instances, without broadcast any ledger. The bit-complexity is 𝑂(𝑛) per instance, per node, per round that is 𝑂(𝑛 4 ) in total after GST
+
+12:
+13:
+
+wait until ∀𝑘 ∈ [1, 𝑛], (hyper-bin_values𝑖 [𝑟𝑖 ] [𝑘 ] ≠ ∅ and
+note {𝑤𝑖 = ({𝑤 1 }, ..., {𝑤𝑛 })}) where ∀𝑘 ∈ [1, 𝑛], 𝑤𝑘 is the first value bv-delivered at instance 𝑘 by coord𝑖 .
+messages received by binary value broadcast for all the instances
+
+14:
+15:
+
+if 𝑖 = coord𝑖 then
+broadcast(HCOORD[𝑟𝑖 ], 𝑤𝑖 ) → hyper-messages𝑖
+
+ hyper-bin_values stores binary
+
+ coordinator rebroadcasts the first value received at each instance
+
+StartTimer(timeout𝑖 )
+wait until timer 𝑖 expired
+⊲ Phase 2:
+18:
+if (HCOORD[𝑟𝑖 ], 𝑤𝑐 ) ∈ hyper-messages𝑖 from 𝑝 coord𝑖 ∧ ∀𝑘 ∈ [1, 𝑛], 𝑤𝑐 [𝑘 ] ∈ hyper-bin_values𝑖 [𝑟𝑖 ] [𝑘 ]) then
+19:
+hyper-aux𝑖 ← 𝑤𝑐
+20:
+else hyper-aux𝑖 ← 𝑤𝑖
+16:
+17:
+
+21:
+22:
+
+ otherwise, use any value received
+
+signature𝑖 = sign(hyper-aux𝑖 , 𝑟𝑖 , 𝑖)
+ sign the hyper-aux messages. Each signed hyper-aux message has a size of 𝑂(𝑛 + 𝜅) (strictly lower than 𝑂(𝑛 · 𝜅))
+RB-broadcast(HECHO[𝑟𝑖 ], hyper-aux𝑖 [𝑟𝑖 ], signature𝑖 ) → hyper-aux-msgs𝑖 [𝑟 ]  Reliable broadcast the second phase messages of all the instances in a unique
+
+hyper-aux message with Cachin-Tessaro optimization. The bit-complexity per sender, per round is 𝑂(𝑛 2 · 𝜅), that is 𝑂(𝑛 4 · 𝜅) in total after GST
+
+23:
+24:
+25:
+26:
+27:
+28:
+29:
+30:
+31:
+32:
+
+wait until ∀𝑘 ∈ [1, 𝑛], hyper-valuesi [𝑘 ] = ComputeValues(hyper-aux-msgs𝑖 [𝑟 ] [𝑘 ], hyper-bin_values𝑖 [𝑘 ], hyper-aux𝑖 [𝑘 ]) ≠ ∅
+where hyper-aux-msgs𝑖 [𝑟 ] [𝑘 ] = {ℎ𝑎𝑢𝑥 [𝑘 ] |ℎ𝑎𝑢𝑥 ∈ hyper-aux-msgs𝑖 [𝑟 ] }
+⊲ Decision phase:
+for 𝑘 ∈ [1, 𝑛] do
+if hyper-values𝑖 [𝑘 ] = {𝑣 } then
+hyper-est𝑖 [𝑘 ] ← 𝑣
+if 𝑣 = (𝑟𝑖 mod 2) then
+if no previous decision by 𝑝𝑖 then decide(𝑘, 𝑣)
+else
+hyper-est𝑖 [𝑘 ] ← (𝑟𝑖 mod 2)
+
+ for each instance
+ if there is only one value at instance 𝑘 , then adopt it
+ decide at instance 𝑘 if value matches parity
+ otherwise, adopt the current parity bit
+
+nothing to do
+ No ledger to broadcast anymore because of the RB-bcast of Phase 2
+Rules:
+(1) Every message that is not properly signed by the sender is discarded.
+(2) Every message that is sent by bv-broadcast without a valid hyper-ledger after Round 1, except for messages containing value 1 in Round 2, are discarded.
+(3) On first discovering an hyper-ledger ℓ that conflicts with an hyper-certificate at an instance 𝑘, send ledger ℓ to all processes.
+
+• local monotonic read: given a sequence of read() operations at the same process, the score of the returned
+blockchains never decreases.
+• ever growing tree: given an infinite sequence of
+append() and read() operations, the score of the returned blockchains eventually grows.
+• strong (resp. eventual) prefix property: for each
+blockchain returned by a read() operation with score
+𝑠, then (resp. eventually) all the read() operations return blockchains sharing the same maximum common
+prefix of at least 𝑠 blocks.
+
+height, its weight, etc. A blocktree is a Mealy’s machine whose
+states are countable, with an input alphabet comprising operation append(block) to append a block to the blocktree
+and operation read() that returns a blockchain, and an oracle Θ distributing permission tokens to processes for them
+to include a new block. The blocktree strong (resp. eventual)
+consistency is the conjunction of the following properties:
+• block validity: each block in a blockchain returned by
+a read() operation is valid and has been inserted in the
+blocktree with the append() operation.
+
+20
+
+Polygraph
+
+Algorithm 7 Coupled Helper Components
+1: light-bv-broadcast(LBVAL[𝑘 ] [𝑟 ], 𝑣𝑎𝑙, 𝑖, bin_values, , hyper-aux-msgs−1 , hyper-aux-msgs−2 ):
+2: broadcast(LBVAL[𝑘 ] [𝑟 ], 𝑣𝑎𝑙) → 𝑚𝑠𝑔𝑠
+ broadcast message
+3: upon receipt of (LBVAL[𝑘 ] [𝑟 ], 𝑣)
+4:
+if (LBVAL[𝑘 ], 𝑣) received from (𝑡 0 + 1) distinct processes and (LBVAL[𝑘 ] [𝑟 ], 𝑣) not yet broadcast then
+5:
+broadcast(𝐿𝐵𝑉 𝐴𝐿 [𝑘 ] [𝑟 ], 𝑣)
+ Echo after receiving (𝑡 0 + 1) copies.
+6:
+if (BVAL[𝑘 ], 𝑣) received from (2𝑡 0 + 1) distinct processes and
+7:
+IsJustified(v, hyper-aux-msgs−1 , hyper-aux-msgs−2 , r, k)
+ Need to build a correctly signed ledger to bv-deliver a value. then
+8:
+bin_values ← bin_values ∪ {𝑣 }
+ deliver after receiving (2𝑡 0 + 1) copies only
+9: ComputeValues(messages, b_set, aux_set):
+10: if ∃𝑆 ⊆ messages where the following conditions hold:
+11:
+(i) |𝑆 | contains (𝑛 − 𝑡 0 ) distinct ECHO[𝑟𝑖 ] messages
+12:
+(ii) aux _set is equal to the set of values in 𝑆 .
+13:
+then return(aux _set )
+14: if ∃𝑆 ⊆ messages where the following conditions hold:
+15:
+(i) |𝑆 | contains (𝑛 − 𝑡 0 ) distinct ECHO[𝑟𝑖 ] messages
+16:
+(ii) Every value in 𝑆 is in b_set .
+17:
+then return(𝑉 = the set of values in 𝑆 )
+18: else return( ∅)
+
+ No modification
+
+19: IsJustified(v, hyper-aux-msgs−1 , hyper-aux-msgs−2 , r, k):
+ check if a bv-broadcasted value is justified by RB-delivered enough hyper-aux messages
+20: if 𝑟 > 1 then
+21:
+if 𝑣 == (𝑟 mod 2) then
+22:
+if | {h-aux ∈ hyper-aux-msgs−1 |h-aux [𝑘 ] == 𝑣 } | ≥ 𝑛 − 𝑡 0 then
+23:
+return true
+24:
+else return false
+25:
+else
+26:
+if | {h-aux ∈ hyper-aux-msgs−2 |h-aux [𝑘 ] == 𝑣 } | ≥ 𝑛 − 𝑡 0 or 𝑟 == 2 then
+27:
+return true
+28:
+else return false
+29: else
+30:
+return true
+
+• Stay mute to violate the liveness property of the consensus and so the ever growing tree property of the
+blockchain (and so the (even eventual) consistency of
+the blockchain).
+• Attempt an attack to create a disagreement among the
+consortium. Whatever the result of the bid, a proof
+of guilt will eventually be spread among all the honest processes (consortium members and clients). Then,
+regardless the sentence applied to the malicious processes, a special fork can be created to drop the illegitimate forks (labelled in consequence) due to the
+attack. The selection function returns then the unique
+blockchain which does not pass by a fork labelled illegitimate. The eventual prefix property is then satisfied.
+Moreover, if the potential punishment discourages any
+attempt of disagreement-attack (for example with a
+negative utility function in game theory approach),
+then the strong prefix property is ensured.
+So, as long 𝑡 < (𝑛−𝑡 0 ), the eventual prefix property is ensured,
+but the ever-growing tree property is violated if 𝑡 > 𝑡 0 .
+
+Now we consider three cases depending on the number of
+Byzantine processes, namely the nominal case, the degraded
+case and the zombie case when respectively 𝑡 ≤ 𝑡 0 , 𝑡 0 < 𝑡 <
+(𝑛 − 𝑡 0 ) and (𝑛 − 𝑡 0 ) ≤ 𝑡 ≤ 𝑛.
+Nominal case (𝑡 ≤ 𝑡 0 ). In this case the strong consistency is
+preserved. To read the state of a blockchain, a client asks the
+𝑛 members of the consortium (read() invocation) and waits
+for 𝑚 = 𝑛 − 𝑡 0 identical answers (read() response events).
+Indeed, if the assumption 𝑡 ≤ 𝑡 0 holds, the consensus will
+finish (the ever growing tree property is ensured) and the
+client will eventually receive at least 𝑛 − 𝑡 0 identical answers.
+But nothing prevents the Byzantine processes to stay mute
+forever or give false answers, that is why a client does not
+expect (a priori) more than 𝑛 − 𝑡 0 answers. While 𝑡 ≤ 𝑡 0 , the
+frugal Θ𝐹,𝑘=1 oracle manages tokens in a controlled way to
+guarantee that no more than 𝑘 = 1 forks can occur on a given
+block (𝑘-fork coherence), thus the consortium blockchain
+implements the blocktree strong consistency.
+Degraded case (𝑡 0 < 𝑡 < (𝑛 − 𝑡 0 )). In this case the evergrowing tree is violated but not the eventual prefix property. Moreover, if the threat of punishment (allowed by the
+accountability) disincentivizes a malicious coalition from
+attacking, then the strong prefix property is ensured. Let
+𝑡 0 < 𝑡 < 𝑛 − 𝑡 0 . A malicious coalition can do either one of
+these actions:
+• Follow the protocol.
+
+Zombie case ((𝑛 −𝑡 0 ) ≤ 𝑡 ≤ 𝑛). In this case a super coalition
+of 𝑡 > 2𝑛/3 Byzantine processes can override the General
+Polygraph Protocol by proposing directly two conflicting
+views to two different clients to then perform a doublespending attack. The coalition does not participate to the
+consensus in order to violate the liveness property. It follows
+21
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+protocol Π𝑝 , i.e., there exists a sequence of states 𝑠 0, 𝑠 1, ... in
+Σ𝑝 such that for all 𝑖 ≥ 1, 𝛼 𝑝 (𝑠𝑖−1, 𝐼𝑖 ) = (𝑠𝑖 , 𝑂𝑖 ).
+A behavior 𝛽𝑝 is a behavior fragment so that 𝑠 0 = 𝜎𝑝0 .
+An execution fragment 𝑒 is a sequence of events. For every
+process 𝑝, we note 𝛽𝑝 = 𝑒 |𝑝 the behavior fragment obtained
+after projection on the process 𝑝. We say that an execution
+𝑒 is valid if and only if for every process 𝑝, the behavior
+fragment 𝛽𝑝 = 𝑒 |𝑝 is valid.
+An execution is an execution fragment so that for every
+process 𝑝, the behavior fragment 𝛽𝑝 = 𝑒 |𝑝 is a behavior.
+
+that the ever growing tree property is violated. Note that
+safety is also violated: When a client invokes the read() primitive, the coalition can answer arbitrary values, despite the
+non-termination of the legitimate consensus. The client is
+supposed to trust the coalition, like all the other clients who
+can forever receive a different output for the read() primitive.
+Hence, for 𝑡 ≥ 𝑛 − 𝑡 0 , the eventual prefix property is violated.
+This makes the blockchain vulnerable to a double-spending
+attack.
+
+F
+
+Class of PBFT-like algorithms. We define a class L0 of
+algorithms that correspond to the leader-based consensus
+algorithms derived from PBFT, including Tendermint and
+HotStuff. They proceed in views, that can be triggered after
+a timeout, and whose leader, chosen in a round-robin fashion, sends a proposal (that we call here a suggestion). Two
+variables, preparation and decisions are key to the protocols
+and dictate what value can be proposed by the leader in a
+new view. Only when messages from sufficiently many distinct processes are collected, can the preparation be changed.
+This class L0 allows us to generalize the same result to other
+algorithms by simply showing that the algorithms belong to
+L0 .
+
+PBFT, TENDERMINT AND HOTSTUFF
+DO NOT SOLVE THE ACCOUNTABLE
+BYZANTINE AGREEMENT
+
+We now propose an extension that applies to a class of classic Byzantine fault tolerant consensus, that, despite being
+intuitive, cannot make these algorithms accountable. This
+algorithms corresponds to variants of PBFT [11] in that they
+inherits the leader, the views as well as preparation and
+decision values exchanged across view changes. In particular, we show that the result applies at least to PBFT [11],
+Tendermint [4] and HotStuff [35].
+Algorithms. Each process 𝑖 is assigned an algorithm A𝑖 =
+(𝑀𝑖 ,𝑇 𝐼𝑖 ,𝑇𝑂𝑖 , 𝑋𝑖 , Σ𝑖 , 𝜎𝑖0, 𝛼𝑖 ), where 𝑀𝑖 is the set of messages
+𝑖 can send or receive, 𝑇 𝐼𝑖 is a set of terminal inputs 𝑖 can
+receive, 𝑇𝑂𝑖 is a set of terminal outputs 𝑖 can produce, 𝑋𝑖 is
+a set of variables, Σ𝑖 is a set of states, based on an evaluation
+of the variables, 𝜎𝑖0 ∈ Σ𝑖 is the initial state, and 𝛼𝑖 : Σ𝑖 ×
+P(𝑀𝑖 ∪ 𝑇 𝐼𝑖 ) → Σ𝑖 × P(𝑀𝑖 ∪ 𝑇𝑂𝑖 ) maps a set of inputs and
+the current state to a set of outputs and the new state. Here,
+P(𝑋 ) denotes the power set of 𝑋 . For convenience, we define
+𝛼(𝜎, ∅) := (𝜎, ∅) for all 𝜎 ∈ Σ𝑖 .
+
+Definition F.1 (class L0 ). A 𝑡 0 -resilient asynchronous
+Byzantine consensus algorithm is in class L0 if it verifies the
+following properties:
+(1) There is a round-robin rotation of leader that can propose a suggestion at each view: ∀𝑣 ∈ N, ℓ𝑣 = 𝑝𝑥 ∈ Ψ
+with 𝑥 = 𝑣 𝑚𝑜𝑑 𝑛.
+(2) Each process stores two variables preparation and
+decision. These variables comprise a value 𝑠 (suggested by the leader of the last update), an integer representing the view number of the last update
+and a set of messages justifying the update. ∀𝑖 ∈
+Ψ preparation𝑖 , decision𝑖 ∈ 𝑋𝑖 , type(preparationi ) =
+type(decisioni ) = Val ∪ {⊥} × N × P(𝑀). Initially,
+𝜎𝑖0 .preparationi .val = 𝜎𝑖0 .decisioni .val = ⊥. The decision variable can be updated only once: a decision is
+irrevocable.
+(3) Variables preparation and decision can be assigned
+in a view 𝑣 (variable decision is assigned only once)
+if enough messages are collected from 𝑛 − 𝑡 0 distinct
+processes in this same view 𝑣. ∃𝐽 ∈ P(𝑀) where ∀𝑚 ∈
+𝐽, 𝑚.𝑣𝑖𝑒𝑤 = 𝑣, 𝜎𝑖 ∈ Σ𝑖 where 𝜎𝑖 .preparationi .view =
+𝑣 ′, 𝜎𝑖′ ∈ Σ𝑖 where 𝜎𝑖 .preparationi .view = 𝑣 such that
+𝛼𝑖 (𝜎𝑖 , 𝐽 ) = (𝜎𝑖′, .).
+(4) The variable decision in a view 𝑣 implies preparation in
+the same view 𝑣. If it exists 𝑣 ∈ N, 𝑠 ∈ 𝑉 𝑎𝑙, 𝐽 ∈ P(𝑀) ∩
+𝑙𝑜𝑔𝑖 s. t. decisioni = (𝑠, 𝑣, 𝐽 ) then ∃𝐽 ′ ∈ P(𝑀) ∩ 𝑙𝑜𝑔𝑖
+𝑑𝑒𝑐𝑖𝑠𝑖𝑜𝑛𝑖 = (𝑠, 𝑣, 𝐽 ′).
+
+Distributed algorithms. A distributed algorithm is a tuple
+(𝐴1, ..., 𝐴𝑛 ), one algorithm per process, such that 𝑀𝑖 = 𝑀 𝑗
+for all 𝑖, 𝑗. (The message does not need to contain the sender
+or the receiver identifier.) When we say that an execution
+𝑒 is an execution of a distributed algorithm 𝐴, this implies
+that each process 𝑖 is considered correct or faulty in 𝑒 with
+respect to the algorithm 𝐴𝑖 it has been assigned. We write
+𝑐𝑜𝑟𝑟 (𝐴, 𝑒) to denote the set of processes that are correct in 𝑒
+with respect to 𝐴. We note 𝑙𝑜𝑔𝑖 the variable representing the
+set of messages received by 𝑖.
+Execution. We define an event as a tuple (𝑝, 𝐼, 𝑂), where 𝑝
+is a process on which the event occurs, 𝐼 represents a set of
+received messages and observed internal events by 𝑝 and
+𝑂 represents a set of sent messages and internal events 𝑝
+produces.
+A behavior fragment 𝛽𝑝 is a sequence of
+events (𝑝, 𝐼 1, 𝑂 1 ), (𝑝, 𝐼 2, 𝑂 2 ), .... We say that 𝛽𝑝
+=
+(𝑝, 𝐼 1, 𝑂 1 ), (𝑝, 𝐼 2, 𝑂 2 ), ... is valid if and only if it conforms to a
+22
+
+Polygraph
+
+Proof. The proof consists of showing by examination of
+the code of HotStuff, PBFT and Tendermint that they verifiy
+the 8 properties of Def. F.1.
+(1) There is a unique process per view, called here a leader,
+that is picked in a round robin fashion across subsequent views. This unique process is called leader in
+HotStuff, the proposer that changes at each “epoch” in
+Tendermint and the primary in PBFT.
+(2) There are two variables we refer to as preparation
+and decision. These variables are called, respectively,
+prepareQC and commitQC in HotStuff, validValue
+and decision in Tendermint and prepare and commit
+in PBFT.
+(3) Let 𝐽 𝑝,𝑣 and 𝐽 𝑑,𝑣 be the justifications for preparation 𝑝
+and view 𝑣, and decision 𝑑 and view 𝑣, respectively.
+• HotStuff: 𝑚
+:
+𝑚𝑎𝑡𝑐ℎ𝑖𝑛𝑔𝑀𝑠𝑔(𝑚, 𝑝𝑟𝑒𝑝𝑎𝑟𝑒, 𝑣),
+𝑚 ′ : 𝑚𝑎𝑡𝑐ℎ𝑖𝑛𝑔𝑄𝐶(𝑚 ′ .𝑗𝑢𝑠𝑡𝑖 𝑓 𝑦, 𝑝𝑟𝑒𝑝𝑎𝑟𝑒, 𝑣) and
+𝑚 ′′ : 𝑚𝑎𝑡𝑐ℎ𝑖𝑛𝑔𝑄𝐶(𝑚 ′′ .𝑗𝑢𝑠𝑡𝑖 𝑓 𝑦, 𝑐𝑜𝑚𝑚𝑖𝑡, 𝑣)
+• Tendermint:
+– Preparation: Line 22: if ∃𝑣 ′
+:
+2𝑓 +
+1⟨𝑃𝑅𝑂𝑃𝑂𝑆𝐸, ℎ, 𝑒𝑖 , 𝑣 ′⟩
+∧
+𝑣𝑎𝑙𝑖𝑑(𝑣 ′)
+∧
+𝑠𝑒𝑛𝑑𝐵𝑦𝑃𝑟𝑜𝑝𝑜𝑠𝑒𝑟 (ℎ, 𝑒𝑖 , 𝑣 ′)
+then
+Line
+23:
+𝑣𝑎𝑙𝑖𝑑𝑉 𝑎𝑙𝑢𝑒𝑖 ← 𝑣 ′;
+– Decision: Line 24: if ∃𝑣𝑑 , 𝑒𝑑
+:
+2𝑓 +
+1⟨𝑉 𝑂𝑇 𝐸, ℎ, 𝑒𝑑 , 𝑣𝑑 ⟩∧𝑣𝑎𝑙𝑖𝑑(𝑣𝑑)∧decisioni = 𝑛𝑖𝑙 then
+line 25: decisioni ← 𝑣𝑑 .
+• PBFT: a new-view and a pre-prepare from the primary and 𝑛 − 𝑡 0 prepare messages.
+(4) Decision implies preparation. (FIFO is implicitly implemented, s. t. 𝑚 ′ is always sent after 𝑚 means 𝑚 ′ can
+be delivered only if 𝑚 has already been delivered).
+• HotStuff:
+broadcast𝑀𝑠𝑔(𝑑𝑒𝑐𝑖𝑑𝑒, ⊥, 𝑐𝑜𝑚𝑚𝑖𝑡𝑄𝐶)
+comes after 𝑏𝑟𝑜𝑎𝑑𝑐𝑎𝑠𝑡 𝑀𝑠𝑔(pre-commit, ⊥, 𝑝𝑟𝑒𝑝𝑎𝑟𝑒𝑄𝐶);
+• Tendermint:
+At
+line
+18,
+broadcast ⟨𝑉 𝑂𝑇 𝐸, ℎ, 𝑒𝑖 , 𝑣𝑜𝑡𝑒𝑖 ⟩ comes after line
+4: broadcast ⟨𝑃𝑅𝑂𝑃𝑂𝑆𝐸, ℎ, 𝑒𝑖 , proposali ⟩;
+• PBFT: a commit message is sent after a prepare message.
+(5) Decision implies preparation of (𝑛 − 𝑡 0 ) others.
+• HotStuff: To build a precommitQC, the leader
+need a threshold signature built from 𝑛 −
+𝑡 0 𝑣𝑜𝑡𝑒𝑀𝑠𝑔(pre-commit, 𝑚.𝑗𝑢𝑠𝑡𝑖 𝑓 𝑦.𝑝𝑟𝑜𝑐𝑒𝑠𝑠, ⊥) that
+comes after 𝑝𝑟𝑒𝑝𝑎𝑟𝑒𝑄𝐶 ← 𝑚.𝑗𝑢𝑠𝑡𝑖 𝑓 𝑦. Then
+𝑏𝑟𝑜𝑎𝑑𝑐𝑎𝑠𝑡 𝑀𝑠𝑔(𝑑𝑒𝑐𝑖𝑑𝑒, ⊥, 𝑐𝑜𝑚𝑚𝑖𝑡𝑄𝐶) comes after
+𝑏𝑟𝑜𝑎𝑑𝑐𝑎𝑠𝑡 𝑀𝑠𝑔(𝑐𝑜𝑚𝑚𝑖𝑡, ⊥, 𝑝𝑟𝑒𝑐𝑜𝑚𝑚𝑖𝑡𝑄𝐶)
+• Tendermint: A vote message is triggered by the reception of 𝑛 − 𝑡 0 valid propose messages. At line
+8: if ∃𝑣 : 2𝑓 + 1 ⟨𝑃𝑅𝑂𝑃𝑂𝑆𝐸, ℎ, 𝑒𝑖 , 𝑣⟩ ∧ 𝑣𝑎𝑙𝑖𝑑(𝑣) ∧
+𝑠𝑒𝑛𝑑𝐵𝑦𝑃𝑟𝑜𝑝𝑜𝑠𝑒𝑟 (ℎ, 𝑒𝑖 , 𝑣) then at sline 11: 𝑣𝑜𝑡𝑒𝑖 ← 𝑣
+and at line 17: if 𝑣𝑜𝑡𝑒𝑖 ≠ 𝑛𝑖𝑙 then at line 18: broadcast
+⟨𝑉 𝑂𝑇 𝐸, ℎ, 𝑒𝑖 , 𝑣𝑜𝑡𝑒𝑖 ⟩.
+
+(5) In a fully correct execution, a decision implies the
+preparation of the same value by 𝑛 −𝑡 0 other processes
+and the reception of as many messages that claim this
+fact. If it exists 𝑣 ∈ N, 𝑠 ∈ Val, 𝐽 𝑑 ∈ P(𝑀) ∩ 𝑙𝑜𝑔𝑖 s. t.
+decisioni = (𝑠, 𝑣, 𝐽 𝑑 ), then 𝐽 𝑑 stores a set 𝑚 of set of
+messages (𝑚𝑘 )𝑘 ∈Φ (Φ ⊂ Ψ, 𝑝𝑘 ∈ Ψ, |Φ| ≥ 𝑛 − 𝑡 0 ), s. t.
+(𝑚𝑘 sent in an execution 𝑒 by 𝑝𝑘 and 𝑝𝑘 correct) implies
+𝑝
+(it exists 𝐽𝑘 ∈ P(𝑀) and a state 𝑥𝑘 of the process 𝑘 in
+𝑝
+the execution 𝑒, s. t. 𝑥𝑘 .preparation𝑠𝑘 = (𝑠, 𝑣, 𝐽𝑘 )).
+(6) After a timer expires for view 𝑣, a process sends a newview message to the leader ℓ𝑣+1 of the next view 𝑣 + 1,
+containing its preparation and potential additional collected messages to justify its preparation. ∀𝑣 ∈ N, 𝜏𝑖𝑣 =
+timer of view 𝑣 expired ∈ 𝑇 𝐼𝑖 , 𝛼(𝜎𝑖 , 𝜏𝑖𝑣 ) = (𝜎𝑖′, {𝑛𝑣𝑖𝑣 })
+𝑝 𝑝 𝑝
+where 𝑛𝑣𝑖𝑣 = (𝑁𝑉 , 𝑖, 𝑣, (𝑠𝑖 , 𝑣𝑖 , 𝐽𝑖 )) with 𝑑𝑒𝑠𝑡(𝑛𝑣𝑖𝑣 ) = ℓ𝑣+1
+𝑝 𝑝 ′𝑝
+and 𝑝𝑟𝑒𝑝𝑎𝑟𝑎𝑡𝑖𝑜𝑛 = (𝑠𝑖 , 𝑣𝑖 , 𝐽𝑖 ).
+𝑣
+(7) A suggestion 𝑠 for a view 𝑣 can only be proposed by
+the leader (7.1).
+Additionnaly (the case of HotStuff and PBFT) this suggestion can be motivated by 𝑛 − 𝑡 0 new-view messages
+sent in the previous view 𝑣 − 1 (7.2), the suggestion
+will be the value of the propagated preparation prepared at the highest view number (7.3). The collected
+new-view messages will allow to build a justification
+for the computed suggestion (7.4). 𝛼𝑖 (𝜎𝑖 , 𝐼 ) = (𝜎𝑖′, 𝑂)
+with 𝑂 containing a suggestion 𝑠𝑢𝑔𝑔(𝑠 𝑣 , 𝑣, 𝐽 𝑠,𝑣 ) implies
+(a) 𝑖 is leader of view 𝑣 and (b) 𝜎𝑖 .𝑙𝑜𝑔𝑖 ∪ 𝐼 contains a
+set of at least 𝑛 − 𝑡 0 new-view messages (𝑛𝑣𝑘𝑣−1 )𝑘 ∈Φ
+(Φ ⊂ Ψ, 𝑝𝑘 ∈ Ψ, |Φ| ≥ 𝑛 − 𝑡 0 ) s. t. ∀𝑘 ∈ Φ
+𝑝
+(𝑛𝑣𝑘𝑣−1 ).𝑣𝑖𝑒𝑤 = 𝑣 − 1 (3) 𝑛𝑣ℎ𝑣−1𝑎𝑟𝑔𝑚𝑎𝑥 {𝑛𝑣𝑘𝑣−1 .𝑣𝑘 } and
+Ð
+𝑣−1
+𝑝
+𝑠,𝑣
+𝑣−1
+𝑝
+𝑣−1
+𝑠 = 𝑛𝑣ℎ .𝑠 (4) 𝐽 ⊂ 𝑘 ∈Φ (𝑛𝑣𝑘 .𝐽 ∪ 𝑛𝑣𝑘 ).
+(8) A preparation of a value 𝑠 at view 𝑣 implies the
+reception of a suggest message from the leader
+ℓ𝑣 at this view 𝑣 containing the suggestion 𝑠,
+potentially with additional received messages
+to justify 𝑠 so that 𝑠 verifies a predicate Safe: If
+it exists 𝑣 ∈ N, 𝑠 ∈ Val, 𝐽 ∈ P(𝑀) ∩ 𝑙𝑜𝑔𝑖 s. t.
+preparation𝑖 = (𝑠, 𝑣, 𝐽 ) then ∃𝐽 𝑠,𝑣 ∈ P(𝑀) ∩ 𝑙𝑜𝑔𝑖 ,
+Sugg = 𝑠𝑢𝑔𝑔(𝑠, 𝑣, 𝐽 𝑠,𝑣 ) ∈ 𝑙𝑜𝑔𝑖 s. t. a predicate Safe(Sugg)
+indicates the validity of the Sugg messages in the
+corresponding algorithm.
+
+Next, we explain why HotStuff [35], PBFT [11] and Tendermint [4] are part of this class L0 . For simplicity, we consider
+the version of HotStuff without threshold signatures as evaluated in [35]. Note that as we mentioned before in Section 4.2,
+threshold signatures are insufficient for accountability and
+thus cannot help make HotStuff, PBFT or Tendermint accountable.
+Lemma F.2. HotStuff, Tendermint and PBFT are in L0 .
+23
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+• PBFT: A commit message is triggered by the reception of 𝑛 −𝑡 0 prepare-messages that lead to the preparation.
+(6) Regarding the new-view message:
+• HotStuff: 𝑠𝑒𝑛𝑑 𝑀𝑠𝑔(new-view, ⊥, 𝑝𝑟𝑒𝑝𝑎𝑟𝑒𝑄𝐶) to
+𝑙𝑒𝑎𝑑𝑒𝑟 (𝑣 + 1).
+• Tendermint: at line 14, ∀𝑣, 𝑝 𝑗 : (⟨VOTE, ℎ, 𝑒𝑖 , 𝑣⟩, 𝑝 𝑗 ) ∈
+messageSet𝑖 , broadcast⟨VOTE, ℎ, 𝑒𝑖 , 𝑣⟩
+• PBFT: a view-change message containing a set 𝑃
+that contains a set 𝑃𝑚 for each message 𝑚 prepared,
+where each 𝑃𝑚 contains 𝑛 − 𝑡 0 prepare messages for
+𝑚.
+(7) Regarding the suggestion message, we describe the
+point of view of the leader as follows:
+• In HotStuff, during the prepare phase, for a process
+that acts as the leader we have: Property (7.2) holds
+with the line: ‘wait for (𝑛 − 𝑓 ) new-view messages:
+𝑀 ← {𝑚 | 𝑚𝑎𝑡𝑐ℎ𝑖𝑛𝑔𝑀𝑠𝑔(𝑚, 𝑛𝑒𝑤-𝑣𝑖𝑒𝑤, 𝑣 −1)}’. Properties (7.3) and (7.4) hold with the line: ’ℎ𝑖𝑔ℎ𝑄𝐶 ←
+(𝑚 ∈ 𝑀 {𝑚.𝑗𝑢𝑠𝑡𝑖 𝑓 𝑦.𝑣𝑖𝑒𝑤 𝑁𝑢𝑚𝑏𝑒𝑟 }). 𝑗𝑢𝑠𝑡𝑖 𝑓 𝑦’.
+
+• In Tendermint, the condition ∃𝑣 𝑗 , 𝑒 𝑗
+:
+𝑠𝑒𝑛𝑑𝐵𝑦𝑃𝑟𝑜𝑝𝑜𝑠𝑒𝑟 (ℎ, 𝑒𝑖 , 𝑣 𝑗 , 𝑒 𝑗 ) at line 21 and the condition 𝑣𝑎𝑙𝑖𝑑𝐸𝑝𝑜𝑐ℎ 𝑗 ≥ 𝑙𝑜𝑐𝑘𝑒𝑑𝐸𝑝𝑜𝑐ℎ𝑖 ∧ 𝑣𝑎𝑙𝑖𝑑𝐸𝑝𝑜𝑐ℎ 𝑗 <
+𝑒𝑖 at line 27 have to be respected to take into account
+the suggestion 𝑣 𝑗 .
+• In PBFT, a replica check the well-formedness of a
+new-view message.
+□
+The next definitions are crucial to determine whether an
+algorithm is accountable. We first define “justification chain”
+as an alternating sequence of sets of messages that transitively justify a proposal sent by a leader, before defining
+the “cautiousness” and the “recklessness” properties for algorithm in L0 .
+Definition F.3 (Justification chain of any depth 𝑑). Let 𝐴 ∈
+L0 , 𝑘, 𝑑 ∈ N, 𝑘 > 𝑑 and 𝑆𝑢𝑔𝑔𝑘 a suggestion of view 𝑘.
+A
+justification
+chain
+for
+𝑆𝑢𝑔𝑔𝑘
+of
+depth
+𝑑
+is
+an
+alternating
+sequence
+(𝑁𝑉 𝑘−𝑑 , 𝑆𝑢𝑔𝑔𝑘−(𝑑−1), 𝑁𝑉 𝑘−(𝑑−1), 𝑆𝑢𝑔𝑔𝑘−(𝑑−2) ,...,𝑁𝑉 𝑘−1 )
+of sets of messages 𝑁𝑉 ℎ ∈ P(𝑀), ℎ ∈ [𝑘 − 𝑑, 𝑘 − 1] and
+𝑆𝑢𝑔𝑔ℎ ∈ 𝑀, ℎ ∈ [𝑘 − (𝑑 − 1), 𝑘 − 1] where each 𝑁𝑉 ℎ is
+sent by a set of processes 𝜙 ℎ where 𝜙 ℎ = {𝑖ℎ,1, ..., 𝑖ℎ,𝑛−𝑡0 }
+and each 𝑆𝑢𝑔𝑔ℎ is sent by ℓℎ so that all these messages can be explained by a fully-correct execution.
+More formally, there exists a valid reachable execution fragment 𝑒 ∈ 𝐸, and 𝑒 ′ a sub-execution of 𝑒,
+where 𝑒 ′ = (𝑖𝑘−𝑑,1, 𝐼𝑘−𝑑,1, 𝑂𝑘−𝑑,1 ), (𝑖𝑘−𝑑,2, 𝐼𝑘−𝑑,2, 𝑂𝑘−𝑑,2 ), ...
+(𝑖𝑘−𝑑,𝑛−𝑡0 , 𝐼𝑘−𝑑,𝑛−𝑡0 , 𝑂𝑘−𝑑,𝑛−𝑡0 )
+(ℓ𝑘−(𝑑−1), 𝐼𝑘−(𝑑−1), 𝑂𝑘−(𝑑−1) )
+...(𝑖𝑘−1,1, 𝐼𝑘−1,1, 𝑂𝑘−1,1 ), (𝑖𝑘−1,2, 𝐼𝑘−1,2, 𝑂𝑘−1,2 ),
+...
+(𝑖𝑘−1,𝑛−𝑡0 , 𝐼𝑘−1,𝑛−𝑡0 , 𝑂𝑘−1,𝑛−𝑡0 ) (ℓ𝑘 , 𝐼𝑘 , 𝑂𝑘 ) where these three
+properties are all satisfied:
+(1) ∀ℎ ∈ [𝑘 − (𝑑 − 1), 𝑘], 𝑆𝑢𝑔𝑔ℎ ∈ 𝑂ℎ ,
+Ð
+(2) ∀ℎ ∈ [𝑘 − 𝑑, 𝑘 − 1], 𝑁𝑉 ℎ ⊂ 𝑥 ∈ [1,𝑛−𝑡0 ] 𝑂ℎ,𝑥 ,
+(3) ∀ℎ ∈ [𝑘 −𝑑, 𝑘 −1], 𝑁𝑉 ℎ ⊂ 𝐼ℎ+1 (the new-view messages
+trigger the suggestion (that could be never delivered
+by any process if the timer expires too soon) and
+(4) ∀ℎ ∈ [𝑘 −𝑑, 𝑘 −1], if it exists 𝑖𝑥 ∈ 𝜙 ℎ , 𝑛𝑣 𝑥ℎ ∈ 𝑁𝑉 ℎ ∩𝑂ℎ,𝑥
+s. t. 𝑛𝑣 𝑥ℎ .𝑣 𝑝 = ℎ and 𝑛𝑣 𝑥ℎ .𝑠 𝑝 = 𝑠, then 𝑆𝑢𝑔𝑔ℎ = 𝑠. (A
+preparation update is motivated by a new well-formed
+suggestion)(Nothing prevents the leader from having
+a very slow connection, s. t. 𝑛𝑣 𝑥ℎ is not motivated by
+𝑆𝑢𝑔𝑔ℎ .)
+We say that a justification chain for a suggestion 𝑆𝑢𝑔𝑔𝑘 of
+view 𝑘 is complete if its depth is 𝑘.
+We say that a justification chain is extractable from a set
+of messages 𝑙𝑜𝑔 ∈ P(𝑀) if it exists an algorithm that take
+𝑙𝑜𝑔 as input and outputs such a justification chain with a
+probability 1 (with a complexity polynomial with the security
+number 𝜅).
+
+𝑎𝑟𝑔𝑚𝑎𝑥
+
+Property (7.1) holds with the lines : ‘𝑐𝑢𝑟𝑃𝑟𝑜𝑝𝑜𝑠𝑎𝑙 ←
+𝑐𝑟𝑒𝑎𝑡𝑒𝐿𝑒𝑎𝑓 (ℎ𝑖𝑔ℎ𝑄𝐶.𝑝𝑟𝑜𝑐𝑒𝑠𝑠, 𝑐𝑙𝑖𝑒𝑛𝑡 ′𝑠 𝑐𝑜𝑚𝑚𝑎𝑛𝑑)
+𝑏𝑟𝑜𝑎𝑑𝑐𝑎𝑠𝑡 𝑀𝑠𝑔(𝑝𝑟𝑒𝑝𝑎𝑟𝑒, 𝑐𝑢𝑟𝑃𝑟𝑜𝑝𝑜𝑠𝑎𝑙, ℎ𝑖𝑔ℎ𝑄𝐶)’
+• In
+Tendermint,
+Property
+(7.1)
+holds
+with the lines 16 and 17: At line 16, if
+𝑝𝑟𝑜𝑝𝑜𝑠𝑒𝑟 (ℎ, 𝑒𝑖 ) = 𝑝𝑖 then, at line 17, 𝑏𝑟𝑜𝑎𝑑𝑐𝑎𝑠𝑡
+⟨𝑃𝑅𝐸-𝑃𝑅𝑂𝑃𝑂𝑆𝐸, ℎ, 𝑒𝑖 , 𝑝𝑟𝑜𝑝𝑜𝑠𝑎𝑙𝑖 , 𝑣𝑎𝑙𝑖𝑑𝐸𝑝𝑜𝑐ℎ𝑖 ⟩𝑖 . The
+variable 𝑝𝑟𝑜𝑝𝑜𝑠𝑎𝑙𝑖 is updated either a) at line 28 of
+PRE-PROPOSE round: 𝑝𝑟𝑜𝑝𝑜𝑠𝑎𝑙𝑖 ← 𝑣𝑖 or b) at line
+41 of VOTE round : 𝑝𝑟𝑜𝑝𝑜𝑠𝑎𝑙𝑖 ← 𝑣𝑎𝑙𝑖𝑑𝑉 𝑎𝑙𝑢𝑒𝑖 . In
+case a) 𝑝𝑟𝑜𝑝𝑜𝑠𝑎𝑙𝑖 verifies conditions of line 27: 2𝑓 + 1
+⟨𝑃𝑅𝑂𝑃𝑂𝑆𝐸, ℎ, 𝑣𝑎𝑙𝑖𝑑𝐸𝑝𝑜𝑐ℎ 𝑗 , 𝑣𝑖 ⟩𝑖 ∧ 𝑣𝑎𝑙𝑖𝑑𝐸𝑝𝑜𝑐ℎ 𝑗 ≥
+𝑙𝑜𝑐𝑘𝑒𝑑𝐸𝑝𝑜𝑐ℎ𝑖 ∧ 𝑣𝑎𝑙𝑖𝑑𝐸𝑝𝑜𝑐ℎ 𝑗 < 𝑒𝑖 ∧ 𝑣𝑎𝑙𝑖𝑑(𝑣𝑖 ). In case
+b) the last update of 𝑣𝑎𝑙𝑖𝑑𝑉 𝑎𝑙𝑢𝑒𝑖 corresponds to the
+last preparation.
+• In PBFT, a new-view messages containing 𝑉 containing 𝑛 − 𝑡 0 well-written view-change messages,
+O containing the pre-prepare messages according
+to 𝑉 .
+(8) Regarding the acceptation of a suggestion, we describe
+the point of view of a replica that accepts a suggestion
+only if it satisfies some properties chosen to ensure
+the suggestion is legitimate.
+• In HotStuff, during the prepare phase,
+a replica waits for message 𝑚 from
+𝑙𝑒𝑎𝑑𝑒𝑟 (𝑣), 𝑚
+:
+𝑚𝑎𝑡𝑐ℎ𝑖𝑛𝑔𝑀𝑠𝑔(𝑚, 𝑝𝑟𝑒𝑝𝑎𝑟𝑒, 𝑣).
+If 𝑚.𝑝𝑟𝑜𝑐𝑒𝑠𝑠 extends from 𝑚.𝑗𝑢𝑠𝑡𝑖 𝑓 𝑦.𝑝𝑟𝑜𝑐𝑒𝑠𝑠
+and
+𝑠𝑎𝑓 𝑒𝑝𝑟𝑜𝑐𝑒𝑠𝑠(𝑚.𝑝𝑟𝑜𝑐𝑒𝑠𝑠, 𝑚.𝑗𝑢𝑠𝑡𝑖 𝑓 𝑦)
+then
+𝑠𝑒𝑛𝑑 𝑣𝑜𝑡𝑒𝑀𝑠𝑔(𝑝𝑟𝑒𝑝𝑎𝑟𝑒, 𝑚.𝑝𝑟𝑜𝑐𝑒𝑠𝑠, ⊥) to 𝑙𝑒𝑎𝑑𝑒𝑟 (𝑣).
+
+24
+
+Polygraph
+
+A complete justification chain is a necessary piece of information to collect before decision to ensure accountability. If
+a "hole" appears in the chain, we call it a partial justification
+chain and we will show that this is not enough to ensure
+accountability.
+
+However, if 𝐴 allowed a correct process to decide at view
+𝑣 without an extractable sufficiently deep justification chain
+(but only a partial justification chain that contains a hole at
+view ℎ ′ ∈ [𝑣 − 𝑡 0 + 1, 𝑣]), we say that 𝐴 verifies recklessness
+and we will show (Theorem F.8) this is enough to build
+executions where accountability is impossible.
+
+Definition F.4 (Partial justification chain of any depth 𝑑).
+Let 𝐴 ∈ L0, 𝑘, 𝑑, 𝑞 ∈ N𝑘 > 𝑑 > 𝑞 and 𝑆𝑢𝑔𝑔𝑘 a suggestion
+of view 𝑘. A partial justification chain for Sugg𝑘 of depth 𝑑
+is an alternating sequence of sets of messages that mimics
+a justification chain, notwithstanding the fact that it exists
+at least an integer ℎ ′ < 𝑘 where the property (3) is not
+respected, that is, we do not know the new-view messasges
+′
+that motivated Suggℎ +1 in the chain. Since a set of new-view
+messages at view ℎ ′ is missing, we say that such a partial
+justification chain contains a “hole at view ℎ ′”.
+If a partial justification chain 𝑝 𝑗𝑐 contains a hole at view
+ℎ 𝑓 and for every other contained hole at another view ℎ ′, we
+have ℎ 𝑓 > ℎ ′, we say that ℎ 𝑓 is the view of the first hole of
+𝑝 𝑗𝑐.
+A partial justification chain 𝑝 𝑗𝑐 of a set 𝐽 of different
+partial justifications for the same value suggested at the
+same view is maximal in 𝐽 , if ∀𝑝 𝑗𝑐 ′ ∈ 𝐽 , the view ℎ ′ of the
+first hole of 𝑝 𝑗𝑐 ′ verifies ℎ ′ < ℎ where ℎ is the view of the
+first hole of 𝑝 𝑗𝑐.
+
+Definition F.6 (Recklessness). Let 𝐴 ∈ L0 . The recklessness
+property ensures that it exists 𝑣 ′ ∈ N, ∀𝑣 𝑗 ∈ N, 𝑣 𝑗 > 𝑣 ′,
+we can build an execution 𝑒 ∈ 𝑒𝑥𝑒𝑐𝑠(𝐴) where process 𝑗
+reaches a state 𝜎 𝑗 and decides 𝑠 𝑗 ∈ 𝑉 𝑎𝑙 at view 𝑣 𝑗 without a
+sufficiently deep justification chain for 𝑠 𝑗 . More formally:
+• ∃𝑠 𝑗 ∈ 𝑉 𝑎𝑙, 𝜎 𝑗 .𝑑𝑒𝑐𝑖𝑠𝑖𝑜𝑛 𝑗 ∈ {𝑠 𝑗 } × {𝑣 𝑗 } × P(M) and
+• no justification chain with depth greater than 𝑡 0 − 1
+can be extracted from 𝜎 𝑗 .𝑙𝑜𝑔 𝑗 , that is the maximal
+partial justification chain that can be extracted from
+𝑙𝑜𝑔 𝑗 contains at least a hole in a view 𝑣 − 𝑡 0 ≤ ℎ < 𝑣.
+Finally, we will show (Theorem F.11) that for every
+algorithm 𝐴 ∈ L0 that verifies recklessness, an extension
+𝐴¯ with bounded justification per message still verifies
+recklessness and by implication is still not accountable .
+Definition F.7 (Class L and L ′). We define L the class of
+algorithm in L0 that verifies recklessness and L ′ the class
+of algorithm in L0 that ensures cautiousness.
+
+We are ready to define two properties: recklessness
+and cautiousness. These properties are about the pieces
+of information that are collected before decision. For a
+𝑡 0 -resilient asynchronous Byzantine consensus algorithm,
+the required information before decision is big enough to
+ensure safety and small enough to ensure liveness. We have
+the same approach for accountability: we need enough
+information to ensure accountability in case of disagreement
+and not too much to continue to ensure liveness as long as
+𝑡 < 𝑡 0 . For an algorithm 𝐴 in L0 the necessary or sufficient
+pieces of information to collect before a decision at view 𝑣
+to ensure accountability can be reduced into a sufficiently
+deep justification chain.
+
+Theorem F.8. If an algorithm 𝐴 is in L, then it is not
+accountable.
+Intuition. We design three executions 𝑒 0, 𝑒 1, 𝑒 2 so that
+𝑖,𝑗
+𝑗
+𝑗
+(1) 𝑒 1 ∼ 𝑒 2 and (2) 𝑒 0 ∼ 𝑒 1 ∼ 𝑒 2 . In execution 𝑒 1 and 𝑒 2 ,
+process 𝑖 decides 𝑠𝑖 at view 𝑣𝑖 while process 𝑗 decides 𝑠 𝑗 at
+view 𝑣 𝑗 >> 𝑣𝑖 where 𝑠𝑖 and 𝑠 𝑗 are conflicting, which leads
+to a disagreement. To allow the decision of 𝑖, a quorum 𝑄𝑖
+prepared 𝑠𝑖 at view 𝑣𝑖 . Later, a set 𝜙 of some processes send
+a set 𝑁𝑉 𝑣𝑧 −1 of new-view messages to the leader ℓ𝑣𝑧 of view
+𝑣𝑧 to convince it to suggest 𝑠 𝑗 . The processes in 𝐵 = 𝜙 ∩ 𝑄𝑖
+with |𝐵| ≥ 𝑡 0 + 1 are guilty since they did not propagate their
+preparation of 𝑠𝑖 . These commission faults are sufficient to
+reach disagreement. Later, when 𝑖 and 𝑗 detect the disagreement, they are not able to identify the sender 𝜙 of 𝑁𝑉 𝑣𝑧 −1 , s. t.
+the executions 𝑒 1 and 𝑒 2 , with different Byzantine processes,
+will be indistinguishable for 𝑖 and 𝑗 (1).
+The question then becomes whether it is possible for process 𝑗 to suspend its judgment, waiting for additional pieces
+of information to collect before its decision to avoid such
+a situation. The answer is in the negative. We prove it by
+constructing an execution 𝑒 0 where the number of Byzantine processes is lower than 𝑡 0 and process 𝑗 has to make
+
+If a complete jsutification chain is stored in the log of
+each correct process before decision, then we say that 𝐴
+ensures cautiousness and we will show (Theorem F.9) that it
+is enough to ensure accountability.
+
+Definition F.5 (Cautiousness). Let 𝐴 ∈ L0 . The cautiousness property ensures that : ∀𝑒 ∈ 𝑒𝑥𝑒𝑐𝑠(𝐴) ∀𝑣 𝑗 ∈ N ∀𝜎 𝑗 ∈ Σ 𝑗
+s.t. 𝜎 𝑗 .𝑑𝑒𝑐𝑖𝑠𝑖𝑜𝑛 𝑗 = (𝑠 𝑗 , 𝑣 𝑗 , 𝐽 𝑗𝑑 ) then ∀𝜎 𝑗′ following 𝜎 𝑗 in 𝑒,
+𝜎 𝑗′ .𝑙𝑜𝑔 𝑗 contains a complete justification chain for 𝑠 𝑗 of
+depth 𝑣 𝑗 − 1.
+25
+
+Pierre Civit, Seth Gilbert, and Vincent Gramoli
+
+Now, we describe three executions 𝑒 0𝜒 , 𝑒 1𝜒 , 𝑒 2𝜒 that share the
+same common structure 𝑒˜ that we presented just before.
+In 𝑒 0𝜒 , the messages from 𝑊2 ∪ 𝑃 to 𝐾 are slow. Since
+|𝑊2 ∪ 𝑃 | ≤ 𝑡 0 , 𝑗 has to decide without expecting additional
+messages, because 𝑗 cannot distingush 𝑒 0𝜒 with another execution where 𝑊2 ∪ 𝑃 is Byzantine and refuse to communicate
+with 𝐾.
+In 𝑒 1𝜒 , processes in 𝐵 1 = 𝑊1 ∪ 𝑃 ∪ {𝜔 5 } are Byzantine. They
+prepared 𝑠𝑖 from 𝑣𝑖 until 𝑣𝑧1 − 1. At 𝑣𝑖 , they convinced (with
+𝑄𝑖 ) process 𝑖 to decide 𝑠𝑖 . At 𝑣𝑧1 −1, Byzantine processes in 𝐵 1
+pretended they did not prepare 𝑠𝑖 , but only 𝑠 𝑗 and convinced
+(with 𝐾 𝑠 𝑗 ) ℓ𝑣𝑧1 to suggest 𝑠 𝑗 .
+In 𝑒 2𝜒 , 𝐵 2 = 𝑊2 ∪ 𝑊4 ∪ {𝜔 5 } are Byzantine. They prepared
+𝑠𝑖 from 𝑣𝑖 until 𝑣𝑧1 −1. At 𝑣𝑖 , they convinced (with 𝑄𝑖 ) process
+𝑖 to decide 𝑠𝑖 . At 𝑣𝑧1 − 1, Byzantine processes in 𝐵 2 pretended
+they did not prepare 𝑠𝑖 , but only 𝑠 𝑗 and convinced (with 𝐾 𝑠 𝑗 )
+ℓ𝑣𝑧1 to suggest 𝑠 𝑗 .
+(Let us note that we could also construct 𝑒 3𝜒 with 𝐵 3 =
+𝑊1 ∪ 𝑊4 ∪ {𝜔 5 } or 𝑒 4𝜒 with 𝐵 4 = 𝑊2 ∪ 𝑃 ∪ {𝜔 5 }.)
+
+progress without being able to expect additional messages
+since the algorithm has to ensure liveness when 𝑡 < 𝑡 0 (2).
+To do so, we construct a chain 𝜒 where each process 𝑝 that
+is a leader of a view in 𝜒 (we say 𝑝 ∈ 𝑃) seems particularly
+slow to process 𝑗. Since 𝑃 could be Byzantine, process 𝑗, has
+to decide without expecting messages from 𝑃. The set 𝑃 will
+participate to the new preparation of 𝑠 𝑗 , which would be
+impossible if 𝑗 knew that 𝑖 already decided 𝑠𝑖 before its own
+decision. After disagreement, 𝑃 will stay mute and will not
+reveal the crucial information 𝑁𝑉 𝑣𝑧 −1 that would allow 𝑖 and
+𝑗 to determine who are the Byzantine processes.
+□
+Proof. Let assume 𝐴 ∈ L0 and verifies recklessness and
+𝑣 𝑗 > 𝑡0 .
+We fix 𝑘 ∈ [1, 𝑡 0 ]. The reader can fix 𝑘 = 1 for this proof,
+but we will allow greater values of 𝑘 for Theorem F.11).
+We
+decompose
+Ψ
+in
+the
+partition
+{{𝑖, 𝑗 },𝑊1,𝑊2,𝑊3,𝑊4, {𝜔 5 }, 𝑃 } where:
+• |𝑊1 | = |𝑊2 | = 𝑡 0 − (𝑘 + 1),
+• |𝑊3 | = 𝑡 0 ,
+• |𝑊4 | = |𝑃 | = 𝑘,
+• |{𝜔 5 }| = |{𝑖}| = |{ 𝑗 }| = 1,
+• 𝜔 5 is clearly Byzantine,
+• 𝑄𝑖 = Ψ \ 𝑊3 , |𝑄𝑖 | = 𝑛 − 𝑡 0 ,
+• 𝐾 = Ψ \ (𝑊2 ∪ 𝑃 ∪ {𝑖}) = 𝐾 𝑠𝑖 ∪ 𝐾 𝑠 𝑗 , |𝐾 | = 𝑛 − 𝑡 0 and
+• 𝐾 𝑠𝑖 = 𝑊1 ∪ 𝑊4 ∪ { 𝑗 }, 𝐾 𝑠 𝑗 = 𝑊3 ∪ {𝜔 5 }, |𝐾 𝑠𝑖 | = 𝑡 0 ,
+|𝐾 𝑠 𝑗 | = 𝑡 0 + 1.
+We build a first “partial” execution ˜𝑒, as follows:
+We fix 2 ≤ 𝑣𝑖 < 𝑣 𝑗 − 1, so that a process 𝑗 can decide 𝑠 𝑗 at
+view 𝑣 𝑗 without requesting a partial justification for 𝑠 𝑗 with
+depth (𝑣 𝑗 − 𝑣𝑖 ) (there is a hole at view 𝑣𝑖 ).
+At view 𝑣𝑖 − 1, ℓ𝑣𝑖 −1 legitimately suggests 𝑠 and every
+process prepares 𝑠 without deciding it.
+At view 𝑣𝑖 , ℓ𝑣𝑖 legitimately suggests 𝑠𝑖 (compatible with
+𝑠) and every process in 𝐾 𝑠𝑖 prepares 𝑠𝑖 without deciding it,
+while the ones in 𝐾 𝑠 𝑗 do not prepare 𝑠𝑖 .
+At view 𝑣 𝑗 , every process in 𝐾 prepares 𝑠 𝑗 (compatible
+with 𝑠 but not with 𝑠𝑖 ) and decides 𝑠 𝑗 .
+We note 𝑣 𝑦 the first view between 𝑣𝑖 and 𝑣 𝑗 where 𝐾 𝑠𝑖
+prepares 𝑠 𝑗 .
+We build a chain 𝜒 = [𝑣𝑧1 , ..., 𝑣𝑧𝑘 ] between 𝑣𝑖 and 𝑣 𝑦 − 1
+so that (1) ∀ℎ ∈ [1, 𝑘], ℓ𝑣𝑧ℎ suggests 𝑠 𝑗 as ℓ𝑣𝑦 (2) 𝑣𝑧𝑘 = 𝑣 𝑦 − 1
+and (3) ∀ℎ ∈ [1, 𝑘Ð− 1], 𝑣𝑧ℎ+1 = 𝑣𝑧ℎ + 1.
+The set 𝑃 =
+ℓ𝑣𝑧ℎ , while ℓ𝑣𝑖 , ℓ𝑣𝑦 ∈ 𝑊3 .
+
+𝑗
+
+𝑗
+
+We have 𝑒 0𝜒 ∼ 𝑒 1𝜒 ∼ 𝑒 2𝜒 .
+In each execution, because of recklessness, the correct
+processes 𝑖 and 𝑗 never know the new-view messages sent
+𝑖,𝑗
+to ℓ𝑣𝑧1 to justify the suggestion 𝑠 𝑗 at view 𝑣𝑧1 , s. t. 𝑒 1𝜒 ∼ 𝑒 2𝜒
+𝑣
+𝑣
+(as long as the processes in Γ𝑞 𝑧1 = 𝐵𝑞 ∪𝑊3 ∪ 𝑃 (with |Γ𝑞 𝑧1 | >
+𝑛 − 𝑡 0 ), which helped to make prepare 𝑠 𝑗 at view 𝑣𝑧1 stays
+mute, which is a key difference with [33] that assume 𝑡 0 + 1
+processes are correct and will reveal the key information to
+determine the Byzantine processes that did not propagate
+their preparation).
+We note Attack(𝑣𝑖 , 𝑠𝑖 , 𝑣 𝑗 , 𝑠 𝑗 , 𝜒) the triplet (𝑒 0𝜒 , 𝑒 1𝜒 , 𝑒 2𝜒 ).
+The construction stays possible as long as 𝑗 does not store
+a complete justification chain before its decision. Indeed if
+𝑁𝑉 ℎ triggering 𝑆𝑢𝑔𝑔ℎ+1 at view ℎ is missing in 𝑙𝑜𝑔 𝑗 , then we
+chan build Attack(𝑣𝑖 , 𝑠𝑖 , 𝑣 𝑗 , 𝑠 𝑗 , 𝜒) with 𝜒 that starts at 𝑣𝑧1 =
+ℎ + 1.
+To summarize, there exists:
+𝑒 0𝜒 ∈ 𝑒𝑥𝑒𝑐𝑠(𝐴) s. t. |𝑐𝑜𝑟𝑟 (𝑒 0𝜒 , 𝐴)| = 𝑛 − 𝑡 0 where 𝑗 decides 𝑠 𝑗 ;
+𝑒 1𝜒 ∈ 𝑒𝑥𝑒𝑐𝑠(𝐴) s. t. |𝑐𝑜𝑟𝑟 (𝑒 1𝜒 , 𝐴)| < 𝑛 − 𝑡 0 where 𝑗 decides 𝑠 𝑗 ,
+𝑖 decides 𝑠𝑖 conflicting wit 𝑠 𝑗 , 𝑊2 is correct and 𝑊3 is correct
+(but slow);
+𝑒 2𝜒 ∈ 𝑒𝑥𝑒𝑐𝑠(𝐴) s. t. |𝑐𝑜𝑟𝑟 (𝑒 2𝜒 , 𝐴)| < 𝑛 − 𝑡 0 where 𝑗 decides 𝑠 𝑗 ,
+𝑖 decides 𝑠𝑖 conflicting wit 𝑠 𝑗 , 𝑊1 is correct and 𝑊3 is correct
+(but slow);
+𝑗
+𝑗
+𝑖,𝑗
+so that 𝑒 0𝜒 ∼ 𝑒 1𝜒 ∼ 𝑒 2𝜒 with |𝑐𝑜𝑟𝑟 (𝑒 0𝜒 , 𝐴)| = 𝑛−𝑡 0 and 𝑒 1𝜒 ∼ 𝑒 2𝜒
+𝑣𝑧1
+as long as processes in Γ𝑞 = 𝐵𝑞 ∪ 𝑊3 ∪ 𝑃 are mute.
+Thus in both 𝑒 1𝜒 and 𝑒 2𝜒 , there is a disagreement where we
+cannot ensure detection of a process, excepting 𝜔 5 .
+Finally, 𝐴 is not accountable.
+□
+
+ℎ ∈ [1,𝑘 ]
+
+At each view 𝑣𝑧ℎ ∈ 𝜒,𝑊2 ∪𝑃 ∪{𝜔 5 } updates its preparation
+(∀𝑞 ∈ 𝑊2, 𝑝𝑟𝑒𝑝𝑎𝑟𝑎𝑡𝑖𝑜𝑛𝑞 = (𝑠 𝑗 , 𝑣𝑧ℎ , 𝐽 𝑝,𝑣𝑧ℎ )), sends a new-view
+message to ℓ𝑣ℎ+1 and also sends a new-view message to ℓ𝑣𝑦 .
+Thus ∀𝑣 ∈ [𝑣𝑧1 , 𝑣𝑧𝑘 ] ℓ𝑣 received enough new-view messages from 𝐾 𝑠 𝑗 ∪𝑊2 ∪ 𝑃 ∪ {𝜔 5 } to justify its suggestion of 𝑠 𝑗 ,
+which finally justifies the update of preparation of 𝐾 𝑠𝑖 into
+𝑠 𝑗 at view 𝑣 𝑦 .
+26
+
+Polygraph
+
+Theorem F.9. An algorithm in L ′ is accountable.
+
+in views in 𝜒 before decision. This claims stays true for 𝑒¯0𝜒 .
+Thus 𝑗 has to decide after 𝑒¯0𝜒 .
+(2) The difference between 𝑒 1𝜒 and 𝑒 2𝜒 is the set of processes
+𝑊1 or 𝑊2 that did not propagate correctly its preparation
+to the leader ℓ𝑣𝑧1 . Because the depth of the justification is
+¯ 𝑣 𝑗 = (𝑆𝑢𝑔𝑔𝑣 𝑗 , 𝑗𝑐) holds a justifibounded, the suggestion 𝑆𝑢𝑔𝑔
+cation chain that can end at view 𝑣𝑧1 , but no more. Thus 𝐴¯
+verifies recklessness too.
+Theorem F.8 applies here: because 𝑖 and 𝑗 do not know
+the new-view messages that motivated the suggestion 𝑠 𝑗
+of leader ℓ𝑣𝑧1 , 𝑖 and 𝑗 cannot distinguish 𝑒 1𝜒 and 𝑒 2𝜒 after
+disagreement. Thus 𝐴¯ is not accountable.
+Let’s note that after disagreement the set Γ of other processes that could be able to distinguish 𝑒 1𝜒 and 𝑒 2𝜒 crash. Then
+process 𝑖 and 𝑗 cannot say if Γ is slow or crashed.
+□
+
+Proof. Before deciding 𝑠𝑖 at view 𝑣𝑖 process 𝑖 received
+𝐽 𝑑,𝑣𝑖 at view 𝑣𝑖 . Because of Property (5) of L0 , 𝑄𝑖 prepared 𝑠𝑖
+at view 𝑣𝑖 . Let 𝑣𝑧 be the first view greater than 𝑣𝑖 where a process 𝑞 prepared 𝑠𝑞 conflicting with 𝑠𝑖 . Because of Properties
+(6), (7) and (8) of L0 , 𝑠𝑞 is justified with 𝑁𝑉 𝑣𝑧 −1 that contains
+𝑛 − 𝑡 0 new-view messages from 𝜙 𝑣𝑧 −1 , which propagated
+𝑠𝑞 . All processes in 𝑄𝑖 ∩ 𝜙 𝑣𝑧 −1 are guilty since they did not
+propagate a correct value. Finally this culpability is proved
+thanks to the justification chain that allows to determine 𝑣𝑧
+and 𝜙 𝑣𝑧 −1 .
+□
+Extension. In this paragraph, we propose an “intuitive”
+extension 𝐴¯ of 𝐴 ∈ L. We aim to show that it is not enough
+to trivially add some justifications in a message to ensure
+accountability. Hower, this does not mean that no cheaper
+transformation exists to ensure accountability.
+
+Theorem F.12 (Theorem 4.3). HotStuff, PBFT and
+Tendermint as well as all their 𝑡 0 -bounded extensions are not
+accountable.
+
+Definition F.10 (𝑡 0 -bounded extension). Let 𝑑 ∈ [1, 𝑡 0 − 1].
+We define 𝜏𝑑 the function that maps each algorithm 𝐴 ∈ L0
+¯ s. t.
+into an algorithm 𝐴,
+¯ 𝑣 = (𝑆𝑢𝑔𝑔𝑣 , 𝑗𝑐)
+• each suggestion 𝑆𝑢𝑔𝑔𝑣 becomes 𝑆𝑢𝑔𝑔
+where 𝑗𝑐 is a justification chain for 𝑆𝑢𝑔𝑔𝑣 suggested at
+view 𝑣 with depth 𝑚𝑎𝑥(𝑑, 𝑣).
+𝑝 𝑝 𝑝
+• each new-view message 𝑛𝑣𝑖𝑣 = (𝑁𝑉 , 𝑖, 𝑣, 𝑠𝑖 , 𝑣𝑖 , 𝐽𝑖 ) be𝑣
+𝑣
+¯ 𝑖 = (𝑛𝑣𝑖 , 𝑗𝑐) where 𝑗𝑐 is a justification chain
+comes 𝑛𝑣
+𝑝
+𝑝
+𝑝
+for 𝑠𝑖 suggested at view 𝑣𝑖 with depth 𝑚𝑎𝑥(𝑑, 𝑣𝑖 ).
+
+Proof. Let 𝐴 be an algorithm among HotStuff, PBFT and
+Tendermint. At first, Lemma F.2 claims this algorithm is in L0 .
+Then recklessness is verified for all of these algorithms since
+a justification for a preparation or suggestion never reaches
+a depth of 𝑡 0 , so 𝐴 ∈ L. Let 𝐴¯ be an extension of 𝐴 with
+justification depth bounded by 𝑡 0 . Because of Theorem F.11,
+recklessness continues to be verified s. t. 𝐴¯ ∈ L.
+Finally, because of Theorem F.8, 𝐴¯ is not accountable,
+which finishes the proof.
+□
+Remark 1. We stress that this theorem does not claim that
+there is no cheap operation to transform an algorithm in L
+(like HotStuff, PBFT or Tendermint) into one in L ′ where
+accountability would be ensured. This theorem only shows
+why a naive approach would fail. Also, if a little change
+in these algorithms makes the previous attack not relevant
+anymore, that does not mean there is not another attack that
+could succeed.
+
+In the remainder, we simply refer to 𝑡 0 -bounded extension
+as extension when it is clear from the context.
+Theorem F.11 (Escape from L). Let 𝐴 ∈ L and
+𝑑 ∈ [1, 𝑡 0 − 1]. Let 𝐴¯ = 𝜏𝑑 (𝐴) be an extension of 𝐴 with depth
+of justification 𝑑 bounded by 𝑡 0 − 1. 𝐴¯ ∈ L, which means 𝐴¯ is
+not accountable.
+
+Proof. The proof is the same as the one for Theorem F.8
+and we chose 𝑘 ≥ 𝑑. We fix 𝑣 𝑦 > 𝑡 0, 𝑣 𝑗 > 𝑣 𝑦 , 𝑣𝑖 = 2, 𝑣𝑧1 =
+𝑣 𝑦 − 𝑘. We fix 𝜒 = [𝑣𝑧1 , 𝑣 𝑦 − 1]. We fix 𝑠, 𝑠𝑖 , 𝑠 𝑗 ∈ Val so that
+𝑠𝑖 and 𝑠 𝑗 are not compatible while they are both compatible
+with 𝑠. We note (𝑒 0𝜒 , 𝑒 1𝜒 , 𝑒 2𝜒 ) = Attack(𝑣𝑖 , 𝑠𝑖 , 𝑣 𝑗 , 𝑠 𝑗 , 𝜒). We note
+¯ We
+(¯
+𝑒 0𝜒 , 𝑒¯1𝜒 , 𝑒¯2𝜒 ) the corresponding extended executions of 𝐴.
+𝑗
+
+Remark 2. This attack allows to understand why we have
+chosen to extend a “leaderless” algorithm like 𝐷𝐵𝐹𝑇 . Unlike
+a leader-based algorithm, such a kind of algorithm has the
+property 𝑃 that if 𝑡 ≤ 𝑡 0 and a correct process 𝑖 decides at round
+𝑟𝑖 , then every other correct process 𝑗 eventually decides in a
+round 𝑟 𝑗 ≤ 𝑟𝑖 + 2. The idea is that we need a justification depth
+of only 2 to reveal why 𝑃 did not hold in case of disagreement.
+
+𝑗
+
+want to show that 1) 𝑒¯0𝜒 ∼ 𝑒¯1𝜒 ∼ 𝑒¯2𝜒 to enforce the decision
+𝑖,𝑗
+
+and 2) 𝑒¯1𝜒 ∼ 𝑒¯2𝜒 to avoid accountability.
+(1) With asynchrony, there is no way to distinguish 𝑒 0𝜒
+where 𝑊2 ∪ 𝑃 ∪ {𝑖} are very slow from another execution
+where 𝑊2 ∪ 𝑃 {𝑖} are Byzantine and refuse to communicate.
+Thus is possible that no process in 𝐾 receive any message
+27
+
+

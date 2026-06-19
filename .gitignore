@@ -1,2 +1,4 @@
 .venv
 reaper-workspace/*
+!reaper-workspace/papers/
+!reaper-workspace/papers/**

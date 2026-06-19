@@ -1,0 +1,828 @@
+
+--- PAGE 1 ---
+Kudzu: Fast and Simple High-Throughput BFT
+VICTOR SHOUP,Offchain Labs
+JAKUB SLIWINSKI,Anza
+YANN VONLANTHEN,ETH Zurich
+We presentKudzu, a high-throughput atomic broadcast protocol with an integrated fast path. Our contribution
+is based on the combination of two lines of work. Firstly, our protocol achieves finality in just two rounds
+of communication if all but 𝑝 out of 𝑛= 3𝑓+ 2𝑝+ 1participating replicas behave correctly, where 𝑓 is the
+number of Byzantine faults that are tolerated. Due to the seamless integration of the fast path, even in the
+presence of more than 𝑝 faults, our protocol maintains state-of-the-art characteristics. Secondly, our protocol
+utilizes the bandwidth of participating replicas in a balanced way, alleviating the bottleneck at the leader,
+and thus enabling high throughput. This is achieved by disseminating blocks using erasure codes. Despite
+combining a novel set of advantages,Kudzuis remarkably simple: intricacies such as “progress certificates”,
+complex view changes, and speculative execution are avoided.
+1 Introduction
+Recent years have seen a remarkable surge in popularity and development of resilient distributed
+systems. The area of blockchain has become a hotbed of research, where systems akin to decentral-
+ized world-computers [5, 11, 38] compete to introduce ever-improving protocols. At the heart of
+any such system is aatomic broadcastprotocol [ 12], which allows all replicas in the network to
+agree on a stream of transactions.
+The crucial requirement that these protocols must satisfy isByzantine fault tolerance (BFT)[ 29],
+which is the ability of a system composed of𝑛 different replicas to continue to function even if some
+of the replicas fail in arbitrary (potentially adversarial) ways. Moreover, the network connecting the
+replicas can be unreliable, or even controlled by an attacker. These harsh conditions meant that early
+global decentralized systems suffered severe disadvantages compared to centralized counterparts,
+hindering adoption. Despite the challenging setting, research has continued to improve once
+infamously slow decentralized protocols, and decentralized systems are closing the performance
+gap.
+One key dimension of atomic broadcast performance is thefinalization latencyof new transactions.
+Historically, the protocols with the best finalization latency are protocols, such as PBFT [14], where
+a designated leader proposes a block of transactions, and which work in the partially synchronous
+communication model [19]. In this model liveness is only guaranteed during periods of time where
+the network is well behaved, but correctness (i.e., safety) is guaranteed unconditionally. For such
+protocols, it is natural to measure finalization latency as the amount of time that may elapse
+between when the leader proposes a block and when all other replicas finalize that block. In
+measuring finalization latency, we assume the leader is honest and the network is well behaved.
+Such protocols assume 𝑛≥ 3𝑓+ 1, where 𝑓 is a bound on the number of corrupt replicas, and
+achieve finalization latency as low as3 𝛿, where 𝛿 is the longest actual message latency between
+the replicas of the system. However, even2 𝛿 finalization latency is possible in situations where
+no more than 𝑝 replicas fail and 𝑛≥ 3𝑓+ 2𝑝+ 1for 𝑝≥ 0(or even 𝑛≥ 3𝑓+ 2𝑝− 1for 𝑝≥ 1).
+Protocols achieving2 𝛿 finalization latency in these circumstances employ a specialfast path. This
+type of protocol was first explored in [32]. Ideally, such protocols would still maintain a finalization
+latency of3 𝛿, even if more than 𝑝 replicas fail, by running a traditional3 𝛿 slow path alongside
+the fast path. However, not all fast path protocols enjoy this property (in particular, the protocol
+Authors’ Contact Information: Victor Shoup, victor@shoup.net, Offchain Labs; Jakub Sliwinski, kobi@anza.xyz, Anza; Yann
+Vonlanthen, yvonlanthen@ethz.ch, ETH Zurich.
+arXiv:2505.08771v2  [cs.DC]  29 Sep 2025
+
+--- PAGE 2 ---
+2 Victor Shoup, Jakub Sliwinski, and Yann Vonlanthen
+in [32] does not). Moreover, fast path protocols typically suffer from added complexity, such as
+complex view-change logic, “progress certificate” messages, or speculative execution logic. This
+added complexity has led to a history of errors (indeed, as pointed out in [1], the protocol in [32]
+has a liveness bug).
+Another crucial dimension of atomic broadcast performance is itsthroughput, that is, the number
+of transactions that the protocol can process over time given the fixed bandwidth available at
+every replica. Unfortunatlely, as has been observed and reported in several works [ 16, 33, 36],
+leader-based protocols often suffer from a severe “bandwidth bottleneck” at the leader. However,
+this leader bottleneck can be easily eliminated while still maintaining the leader-based structure
+and all of its practical advantages [34]. This is done by using erasure codes to ensure that the leader
+can disseminate large blocks withlowandwell-balancedcommunication complexity.
+Another desirable feature of leader-based protocols is lightweight view-change logic that supp-
+ports frequent leader rotation. In older protocols, such as PBFT, a leader is generally kept in place
+for an extended period of time, and a complex and somewhat inefficient view-change subprotocol
+is used to switch to a new leader if the current leader is suspected of being faulty by other replicas.
+A newer breed of protocols, typified by HotStuff [40], employ extremely lightweight view-change
+logic that supports frequent leader rotation. Frequently rotating leaders can be beneficial for mul-
+tiple reasons, for instance, to increase fairness when block production comes with rewards (e.g.,
+maximal extractable value), or to increase censorship resistance.
+In this work, our aim is to unite and improve the state-of-the-art in these key dimensions, and to
+do so while keeping the protocol as simple as possible.
+Our contribution.We presentKudzu 1: a fast and high-throughput atomic broadcast protocol
+that is remarkably simple compared to its predecessors.Kudzuis the first BFT protocol that
+combines an optimistic2 𝛿 latency fast path integrated into a3 𝛿 latency slow path, with high-
+throughput data dispersal, as well as lightweight view change logic that supports frequent leader
+rotation. We provide a detailed description of the protocol and rigorously prove its security.
+(1) Fast path.In a network of 𝑛= 3𝑓+ 2𝑝+ 1replicas,Kudzuachieves finalization latency of
+2𝛿if at most𝑝replicas are corrupt.
+(2) Simultaneous slow path.If more than 𝑝 replicas fail,Kudzumaintains the best possible
+finalization latency of3𝛿by running a slow path alongside the fast path.
+(3)High throughput.High throughput is achieved byKudzuusing erasure codes to ensure
+that the leader can disseminate large blocks with low and well-balanced communication
+complexity.
+(4) Lightweight view change.Kudzuemploys an extremely simple and efficient view change
+logic that allows for frequent leader rotation.
+Kudzuis the first atomic broadcast protocol to satisfy all of these properties simultaneously. It also
+enjoys other properties, such as optimistic responsiveness (the protocol proceeds as fast as the
+network will allow, with no artificially introduced delays), and a block time (the delay between
+successive honest leaders proposing a block) of just2𝛿.
+Technical Intuition.Inspired by DispersedSimplex [34],Kudzuintroduces the minimal changes
+to that protocol required to incorporate a fast path. A designated leader inKudzudistributes the
+block data by sending erasure coded fragments to all other replicas. In turn, these replicas then
+broadcast the fragments themselves, together with a first-round vote on the cryptographic hash
+identifying the block. The voting logic carefully incorporates a rule that makes sure that a block can
+already be finalized given 𝑛−𝑝 first-round votes. As a result, replicas can already reassemble the
+block and finalize it in2 𝛿 latency in the good case where the network is well behaved, the leader is
+1Kudzu is an insidious, fast-growing vine, also known as Mile-a-Minute.
+
+--- PAGE 3 ---
+Kudzu: Fast and Simple High-Throughput BFT 3
+honest, and at most 𝑝 replicas are corrupt. Another vote-counting rule is used to finalize the block
+on a slower,3 𝛿-latency path, if more than 𝑝 replicas are corrupt. To avoid getting stuck altogether,
+a replica may also vote for a couple of other blocks than the one it initially received from the leader,
+including a special “timeout” block. The main innovation of our paper is the logic for determining
+when these “extra” votes are cast — this logic is deceptively simple, but carefully maintains a very
+delicate balance between liveness and safety. With this innovation, we avoid intricacies such as
+“progress certificates”, complex view changes, and speculative execution as found in other protocols
+(such as Banyan [37], SBFT [22], Kuznetsov et al. [28], and HotStuff-1 [23]).
+2 Related Work
+2.1 Fast Path Protocols
+A long line of work proposes consensus protocols with a fast path, typically called “fast”, “early-
+stopping” or “one-step” consensus [9, 18, 21, 27, 32, 35]. FaB Paxos [32] introduces a parametrized
+model with3 𝑓+ 2𝑝+ 1replicas, where 𝑝≥ 0. The parameter 𝑝 describes the number of replicas
+that are not needed for the fast path. These protocols can terminate optimally fast in theory (2𝛿,
+or 2 network delays) under optimistic conditions. The papers [2, 18, 28] point out that the lower
+bound of3 𝑓+ 2𝑝+ 1actually only applies to a restricted type of protocol. The papers present
+single-shot consensus protocols that use only3 𝑓+ 2𝑝∗ − 1replicas, with 𝑝∗ ≥ 1, and prove the
+corresponding lower bound.
+2.2 Simultaneous Slow Path Protocols
+Interestingly, in practice, these fast path protocols mightincreasethe finalization latency, as the
+fast path requires a round of voting between 𝑛−𝑝 replicas, which could be slower than two rounds
+of voting between 𝑛−𝑓−𝑝 replicas that are concentrated in a geographic area. Banyan [ 37]
+performs the fast path in parallel with the3 𝛿 mechanism, which is optimally fast if more than
+𝑝 replicas are faulty or exhibit higher network latency. However, Banyan can exhibitunbounded
+message complexity when there is a corrupt leader.Kudzuaddresses this drawback, shares the
+same optimistic latency properties, improves throughput through balanced dispersal, benefits from
+a simpler design, and better properties during leader rotation (see section 2.4).
+2.3 High-Throughput Protocols
+Leader-based protocols such as PBFT [14], HotStuff [40] and Tendermint [10] suffer from a band-
+width bottleneck, as in these protocols the leader is responsible for disseminating transactions to
+all replicas. As mentioned above, this bottleneck has been well known for quite a while [16, 33, 36].
+One way to alleviate this bottleneck is to move away from leader-based protocols to a more sym-
+metric, leaderless protocol design where all replicas disseminate transactions. Such an approach
+was already taken in [16, 24, 33, 36]. These protocols typically have worse latency than leader-based
+protocols, and moreover, since many replicas may end up broadcasting the same transactions, the
+supposed improvement in throughput can end up being illusory (note that [36] actually tackles
+this duplication problem head on).
+Kudzufollows a different approach to address the leader bottleneck, which makes use of erasure
+coding [20, 38]. By splitting blocks into smaller, erasure-coded shares, the leader can transmit less
+data, leading to a balanced utilization of resources.
+This line of work shines by providing high throughput and low latency [30, 34]. Alpenglow [25]
+is a recent proof-of-stake protocol being deployed for the Solana blockchain that showcases the
+appeal of this line of work in practice. Alpenglow andKudzuare intimately related in their voting
+logic.
+
+--- PAGE 4 ---
+4 Victor Shoup, Jakub Sliwinski, and Yann Vonlanthen
+2.4 View Changes
+Some atomic broadcast protocols are notorious for having complex view changes, especially in the
+presence of a fast path [4]. In the case of Zzyzzva [26] and UpRight [15], safety errors were later
+pointed out [1]. Arguably SBFT [22] was the first to correct these mistakes. SBFT [22] avoids the
+all-to-all broadcast that occurs inKudzu, but this results in higher finalization latency. Moreover,
+SBFT does not address the above-mentioned leader bottleneck.
+3 Model and Preliminaries
+We consider a network of𝑛 replicas 𝑃1, . . . , 𝑃𝑛 called replicas. Up to 𝑓 replicas can be Byzantine, i.e.,
+deviate from the protocol in arbitrary ways, such as collude to attack the protocol. The remaining
+replicas follow the protocol and are referred to as honest. We aim to provide better latency if only
+up to 𝑝 replicas do not cooperate. In other words, 𝑛−𝑝 honest replicas including the leader are
+enough for the fast path to be effective.
+To prove the security ofKudzuwe assume
+𝑛≥3𝑓+2𝑝+1,(1)
+where 𝑓≥ 1and 𝑝≥ 0. Moreover, to prove concrete bounds on message, communication, and
+storage complexity, we assume
+𝑛<3(𝑓+𝑝+1).(2)
+Assumption (2) is not a real restriction. Indeed, if 𝑛≥ 3(𝑓+𝑝+ 1)= 3𝑓+ 3𝑝+ 3, then we can
+alwaysincrease 𝑝 appropriately, leaving 𝑛 and 𝑓 alone, so that both (1) and (2) are satisfied. This
+only increases the overall performance of the protocol.
+3.1 Network Assumptions
+We will not generally assume network synchrony. However, we say the network is𝛿-synchronous
+at time 𝑇 if every message sent from an honest replica 𝑃 at or before time 𝑇 to an honest replica
+𝑄 is received by 𝑄 before time 𝑇+𝛿 . We also say the the network is 𝛿-synchronous over an
+interval[𝑎, 𝑏+𝛿]if it is𝛿-synchronous at time𝑇for all𝑇∈ [𝑎, 𝑏].
+While our protocols always guaranteesafety, even in periods of asynchrony,livenesswill only
+be guaranteed in periods of 𝛿-synchrony, for appropriately bounded 𝛿 (and this synchrony bound
+may be explicitly used by the protocol). Thus, we are essentially working in thepartial synchrony
+model of [19]. However, instead of assuming a single point in time (GST) after which the network is
+assumed to be synchronous, we take a somewhat more general point of view that models a network
+that may alternate between periods of asychrony and synchrony.
+Replicas have local clocks that can measure the passage of local time. We do not assume that
+clocks are synchronized in any way. However, we do assume that there is noclock skew, that is, all
+clocks tick at the same rate (but we could also just assume the skew is bounded and incorporate
+that bound into the protocol’s synchrony bound).
+3.2 Problem Statement
+The purpose of state machine replication is to totally order blocks containing transactions, so that
+all replicas output transactions in the same order. Our protocol orders blocks by associating them
+with natural numbered slots. Some leader replica is assigned to every slot. For every slot, either
+some block produced by the leader might be finalized, or the protocol can yield an empty block.
+The guarantees of our protocol can be stated as follows:
+• Safety: If some honest replica finalizes block𝐵 in slot 𝑣, and another honest replica finalizes
+block𝐵 ′ in slot𝑣, then𝐵=𝐵 ′.
+
+--- PAGE 5 ---
+Kudzu: Fast and Simple High-Throughput BFT 5
+• Liveness: If the network is in a period of synchrony, each honest replica continues to
+finalize blocks for slots𝑣=1,2, . . .
+In addition to liveness and safety, we support a fast path:
+• Fast Termination: If the network is in a period of synchrony, 𝑛−𝑝 replicas behave
+momentarily honestly, and an honest leader proposes a block 𝐵 at time 𝑡, then every honest
+replica finalizes𝐵at time𝑡+2𝛿.
+3.3 Cryptographic Assumptions
+3.3.1 Signatures and certificates.We make standard cryptographic assumptions of secure digital
+signatures and collision-resistant hash functions. We assume all replicas know the public keys of
+other replicas.
+We use a 𝑘-out-of-𝑛 threshold signature scheme. We refer to asignature shareand asignature
+certificate: signature shares from 𝑘 replicas on a given message may be combined to form a sig-
+nature certificate on that message. This can be implemented in various ways, e.g., based on BLS
+signatures [6–8]. The security property for such a threshold signature scheme may be stated as
+follows.
+Quorum Size Property: It is infeasible to produce a signature certificate on a message 𝑚,
+unless 𝑘−𝑓 ′ honest replicas have issued signature shares on𝑚, where 𝑓 ′ ≤𝑓 is the number
+of corrupt replicas.
+For ease of exposition and analysis, we assumestatic corruptions, so the adversary must choose
+some number 𝑓 ′ ≤𝑓 replicas to corrupt at the very beginning of the protocol execution, and then
+does not corrupt any replicas thereafter. That said, we believe all of our the protocols are secure
+againstadaptive corrupts, provided the threshold signature scheme is as well.
+As we will see, we will need a one 𝑘-out-of-𝑛 threshold signature scheme with 𝑘=𝑛−𝑓−𝑝 ,
+and another with𝑘=𝑛−𝑝.
+3.3.2 Information Dispersal.We make use of well-known techniques forasynchronous verifiable
+information dispersal (A VID)involving erasure codes and Merkle trees [13].
+Erasure codes.For integer parameters 𝑘≥𝑑≥ 1, a (𝑘, 𝑑)-erasure codeencodes a bit string 𝑀 as a
+vector of 𝑘 fragments, 𝑓1, . . . , 𝑓𝑘, in such a way that any 𝑑 such fragments may be used to efficiently
+reconstruct 𝑀. Note that for variable-length 𝑀, the reconstruction algorithm also takes as input the
+length 𝛽 of 𝑀. The reconstruction algorithm may fail (for example, a formatting error)—if it fails it
+returns ⊥, while if it succeeds it returns a message that when re-encoded will yield 𝑘 fragments
+that agree with the original subset of 𝑑 fragments. We assume that all fragments have the same
+size, which is determined as a function of𝑘,𝑑, and𝛽.
+Using a Reed-Solomon code, which is based on polynomial interpolation, we can realize a
+(𝑘, 𝑑)-erasure code so that if|𝑀|=𝛽, then each fragment has size≈𝛽/𝑑.
+In our protocol, the payload of a block will be encoded using an (𝑛, 𝑓+𝑝+ 1)-erasure code. Such
+an erasure code encodes a payload 𝑀 as a vector of fragments 𝑓1, . . . , 𝑓𝑛, any 𝑓+𝑝+ 1of which
+can be used to reconstruct 𝑀. This leads to a data expansion rate of at most roughly3; that is,Í
+𝑖 |𝑓𝑖 | ≈𝑛/(𝑓+𝑝+1) · |𝑀|<3|𝑀|, where last inequality follows from assumption (2).
+Merkle trees.Recall that a Merkle tree allows one replica 𝑃 to commit to a vector of values
+(𝑣 1, . . . , 𝑣𝑘 ) using a collision-resistant hash function by building a (full) binary tree whose leaves
+are the hashes of 𝑣1, . . . , 𝑣𝑘, and where each internal node of the tree is the hash of its two children.
+The root 𝑟 of the tree is the commitment. Replica 𝑃 may “open” the commitment at a position
+𝑖∈ [𝑘] by revealing 𝑣𝑖 along with a “validation path”𝜋𝑖, which consists of the siblings of all nodes
+
+--- PAGE 6 ---
+6 Victor Shoup, Jakub Sliwinski, and Yann Vonlanthen
+along the path in the tree from the hash of 𝑣𝑖 to the root 𝑟. We call 𝜋𝑖 avalidation path from the root
+under 𝑟 to the value 𝑣𝑖 at position 𝑖. Such a validation path is checked by recomputing the nodes
+along the corresponding path in the tree, and verifying that the recomputed root is equal to the
+given commitment 𝑟. The collision resistance of the hash function ensures that 𝑃 cannot open the
+commitment to two different values at a given position.
+Encoding and decoding.For a given payload 𝑀 of length 𝛽, we will encode 𝑀 as a vector of
+fragments (𝑓 1, . . . , 𝑓𝑛) using an (𝑛, 𝑓+𝑝+ 1)-erasure code, and then form a Merkle tree with root 𝑟
+whose leaves are the hashes of𝑓 1, . . . , 𝑓𝑛. We define thetag𝜏 :=(𝛽, 𝑟).
+For a tag𝜏=(𝛽, 𝑟), we shall call(𝑓 𝑖, 𝜋𝑖 )acertified fragment for𝜏at position𝑖if
+•𝑓 𝑖 has the correct length of a fragment for a message of length𝛽, and
+•𝜋 𝑖 is a correct validation path from the root under𝑟to the fragment𝑓 𝑖 at position𝑖.
+The function Encode takes as input a payload 𝑀. It builds a Merkle tree for 𝑀 as above with root
+𝑟 (encoding 𝑀 as a vector of fragments, and then building the Merkle tree whose leaves are the
+hashes of all of these fragments). It returns
+  𝜏,{(𝑓 𝑖, 𝜋𝑖 )}𝑖∈ [𝑛]
+,
+where 𝜏 is the tag (𝛽, 𝑟) , 𝛽 is the length of𝑀, and each (𝑓𝑖, 𝜋𝑖 ) is a certified fragment for𝜏 at position
+𝑖.
+The functionDecodetakes as input
+  𝜏,{(𝑓 𝑖, 𝜋𝑖 )}𝑖∈ I
+,
+where 𝜏=(𝛽, 𝑟) is a tag, I is a subset of [𝑛] of size 𝑓+𝑝+ 1, and each (𝑓𝑖, 𝜋𝑖 ) is a certified fragment
+for 𝜏 at position 𝑖. It first reconstructs a message 𝑀 ′ from the fragments {𝑓𝑖 }𝑖∈ I , using the size
+parameter 𝛽. If 𝑀 ′ =⊥ , it returns ⊥. Otherwise, it encodes 𝑀 ′ as a vector of fragments (𝑓 ′
+1 , . . . , 𝑓 ′
+𝑛 )
+and Merkle tree with root𝑟 ′ from(𝑓 ′
+1 , . . . , 𝑓 ′
+𝑛 ). If𝑟 ′ ≠𝑟, it returns⊥. Otherwise, it returns𝑀 ′.
+Under collision resistance for the hash function used for the Merkle trees, any 𝑓+𝑝+ 1certified
+fragments for given tag 𝜏 will decode to the same payload — moreover, if 𝜏 is the output of the
+encoding function, these fragments will decode to 𝑀 (and therefore, if the decoding function
+outputs ⊥, we can be sure that 𝜏 was maliciously constructed). This observation is the basis for
+the protocols in [17, 31, 39]. Moreover, with this approach, we do not need to use anything like
+an “erasure code proof system” (as in [3]), which would add significant computational complexity
+(and in particular, the erasure coding would have to be done using parameters compatible with the
+proof system, which would likely lead to much less efficient encoding and decoding algorithms).
+4KudzuProtocol
+Kudzuiterates through slots, where in each slot there is a designated leader who proposes a
+new block, which is chained to a parent block. Leaders may be rotated in each slot, either in a
+round-robin fashion or using some pseudo-random sequence. The slot leader disseminates large
+blocks in a way that keeps the overall communication complexity low and avoids a bandwidth
+bottleneck at the leader. The communication is balanced, meaning that each replica, including the
+leader, transmits roughly the same amount of data over the network.
+We describe our protocol as a few simple subprotocols that run concurrently with each other:
+•Vote and Certificate Pool: data structure managing the votes and certificates;
+•Complete Block Tree: data structure storing the reconstructed blocks;
+• Main Loop: loop issuing votes that makes sure some blocks becomenotarizedandfinalized.
+Notarized blocks can be reconstructed by all replicas and are added to the Complete Block
+Tree. Finalized blocks are ordered and output by the protocol.
+
+--- PAGE 7 ---
+Kudzu: Fast and Simple High-Throughput BFT 7
+4.1 Protocol Data Objects
+Definition 4.1 (block).Ablock𝐵is of the formBlock(𝑣, 𝜏, ℎ 𝑝 ), where
+(1)𝑣∈ { 1, 2, . . .} is the slot number associated with the block (and we say 𝐵 is a block for slot 𝑣),
+(2)𝜏is the tag obtained by encoding𝐵’s payload𝑀,
+(3)ℎ 𝑝 is the hash of 𝐵’s parent block (or ℎ𝑝 =⊥ by convention if 𝐵’s parent is a notional
+“genesis” block).
+We also call a certified fragment for the tag 𝜏 acertified fragment for 𝐵. The block 𝐵timeout
+𝑣 =
+Block(𝑣,⊥,⊥)is a specialtimeout block.
+Definition 4.2 (votes and certificates).Anotarization vote from 𝑃𝑖 for block 𝐵 is an object of
+the form NotarVote(𝐵, 𝜎𝑖, 𝑓𝑖, 𝜋𝑖 ), where 𝜎𝑖 is a valid signature share from 𝑃𝑖 on the object Notar(𝐵) ,
+and(𝑓 𝑖, 𝜋𝑖 )is either a certified fragment for𝐵at position𝑖, or(𝑓 𝑖, 𝜋𝑖 )=(⊥,⊥)if𝐵=𝐵 timeout
+𝑣 .
+Anotarization certificate for 𝐵 is an object of the form NotarCert(𝐵, 𝜎) , where 𝜎 is a valid
+(𝑛−𝑓−𝑝) -out-of-𝑛 signature certificate on the object Notar(𝐵) . The notarization vote on the
+timeout block is also called the timeout vote, and the notarization certificate for the timeout block
+is called the timeout certificate.
+Afirst vote from 𝑃𝑖 on block 𝐵 is an object of the form FirstVote(𝜎′
+𝑖 ,NotarVote(𝐵, 𝜎 𝑖, 𝑓𝑖, 𝜋𝑖 )),
+where 𝜎 ′
+𝑖 is a valid signature share from 𝑃𝑖 on the object First(𝐵) , and NotarVote(𝐵, 𝜎𝑖, 𝑓𝑖, 𝜋𝑖 ) is a
+notarization vote from𝑃 𝑖 on block𝐵.
+Afast finalization certificate for 𝐵≠𝐵 timeout
+𝑣 is an object of the form FirstCert(𝐵, 𝜎) , where
+𝜎is a valid(𝑛−𝑝)-out-of-𝑛signature certificate on the objectFirst(𝐵).
+Afinalization vote from 𝑃𝑖 on block 𝐵 is an object of the form FinalVote(𝐵, 𝜎𝑖 ), where 𝜎𝑖 is a
+valid signature share from𝑃 𝑖 on the objectFinal(𝐵).
+Afinalization certificate for 𝐵 is an object of the form FinalCert(𝐵, 𝜎) , where 𝜎 is a valid
+(𝑛−𝑓−𝑝)-out-of-𝑛signature certificate on the objectFinal(𝐵).
+4.2 Vote and Certificate Pool
+Each replica maintains apoolwith votes and certificates. For every slot, the pool stores votes and
+certificates associated with the slot.
+As we will see, by design, for any one slot, a honest replica can send only 1 first vote, 1 timeout
+vote, and 1 finalization vote. As we will also see later (in Section 5.3), for one slot a honest replica
+can only send at most 3 (non-timeout) notarization votes. Any votes exceeding this bound can only
+result from misbehavior and are not added to the pool. For example, if a replica receives more than
+three notarization votes for a given slot from some replica 𝑃, the replica can ignore these votes
+and conclude that 𝑃 is corrupt. In particular, only one first vote per replica can be observed by the
+protocol loop in Protocol 1. When a first vote is added to the pool, also the contained notarization
+vote is added to the pool.
+Whenever a replica receives enough votes, and it does not already have a corresponding certificate,
+it will generate the certificate, add it to the pool, and broadcast the certificate to all replicas. Similarly,
+whenever a replica receives a certificate, and it does not already have a corresponding certificate, it
+will add it to the pool, and broadcast the certificate to all replicas. For one slot it is impossible that
+the pool would receive or create more than: 1 timeout certificate, 1 fast finalization certificate, 1
+finalization certificate, and 5 notarization certificates. The first bound is immediate, since there
+can be only one timeout certificate per slot. The second and third bounds follow from the safety
+analysis below. The fourth bound follows from the analysis in Section 5.3.
+
+--- PAGE 8 ---
+8 Victor Shoup, Jakub Sliwinski, and Yann Vonlanthen
+4.3 Complete Block Tree
+Each replica also maintains acomplete block tree, which is a tree of blocks rooted at a notional
+genesis block at slot 0. We will show that the number of blocks for a given slot is bounded by 5. A
+block𝐵=Block(𝑣, 𝜏, ℎ 𝑝 )is added to the tree if each of the following holds:
+•the certificate pool contains a notarization certificate for𝐵and𝐵≠𝐵 timeout
+𝑣 ;
+•ℎ 𝑝 =⊥or the complete block tree contains a parent block with the hashℎ 𝑝;
+• the replica has received enough (i.e. 𝑓+𝑝+ 1) notarization votes to reconstruct the effective
+payload𝑀of𝐵as
+𝑀←Decode(𝜏,{(𝑓 𝑖, 𝜋𝑖 )}𝑖∈ I ),
+where{(𝑓 𝑖, 𝜋𝑖 )}𝑖∈ I is the corresponding collection of certified fragments for𝜏;
+•𝑀≠⊥ and satisfies some correctness predicate that may depend on the path of blocks (and
+their payloads) from genesis to block𝐵.
+A replica does not broadcast anything in addition to adding a block to the block tree.
+4.4 Finalization
+We say that a block 𝐵 for slot 𝑣 isexplicitly finalized by replica 𝑃 if the complete block tree of
+𝑃 contains 𝐵 and the certificate pool of 𝑃 contains either a fast finalization certificate for 𝐵 or
+finalization certificate for 𝐵. In this case, we say that all of the predecessors of block 𝐵 in the
+complete block tree areimplicitly finalized by 𝑃. The payloads of finalized blocks may be then
+transmitted in order to the execution layer of the protocol stack of a replicated state machine.
+4.5 Generating Block Proposals
+The logic for generating block proposal material 𝐵, (𝑓 1, 𝜋1), . . . ,(𝑓 𝑛, 𝜋𝑛) in slot 𝑣 in line 16 of
+Protocol 1 is as follows:
+• build a payload 𝑀 that validly extends the path in the complete block tree ending at a block
+𝐵p with hashℎ 𝑝;
+•compute
+(𝜏,{(𝑓 𝑖, 𝜋𝑖 )}𝑖∈ [𝑛] ) ←Encode(𝑀);
+•set𝐵 :=Block(𝑣, 𝜏, ℎ 𝑝 ).
+4.6 Validating Block Proposals
+To check if BlockProp(𝐵, 𝑓 𝑗, 𝜋𝑗 ) is a valid block proposal in slot 𝑣 in line 18 of Protocol 1, replica 𝑃 𝑗
+checks that the following conditions holds:
+•the proposal is signed or otherwise authenticated by the leader,
+•𝐵is of the formBlock(𝑣, 𝜏, ℎ 𝑝 ),
+• (𝑓 𝑗, 𝜋𝑗 )is a certified fragment for𝜏at position𝑗,
+•the complete block tree contains a block with the hashℎ 𝑝 in a slot𝑣 ′ <𝑣;
+•the pool contains timeout certificates for slots𝑣 ′ +1, . . . , 𝑣−1;
+These last two conditions might not hold at a given point in time, but may hold at a later point
+in time, and so might need to be checked again when blocks or certificates are added.
+4.7 Main Loop
+The main protocol for 𝑃 𝑗 is described in Protocol 1. In the description, leader(𝑣) denotes the leader
+for slot 𝑣 — as mentioned, leaders may be rotated in each slot, either in a round-robin fashion or
+using some pseudo-random sequence.
+
+--- PAGE 9 ---
+Kudzu: Fast and Simple High-Throughput BFT 9
+As mentioned in Section 4.2, each replica only considers only one first vote that it receives from
+any other replica. To make this explicit in the protocol, we use a map firstVote from replicas to
+blocks to record these votes for the current slot. The protocol also uses simple helper functions on
+this map.
+•allVotes(firstVote): the total number of first votes for slot𝑣contained in the pool,
+•maxVotes(firstVote) : the maximal number of first votes on some non-timeout block 𝐵 for
+slot𝑣contained in the pool,
+•manyVotes(firstVote) : returns the set of non-timeout blocks in slot 𝑣 on which the pool
+contains at least𝑓+𝑝+1first votes.
+For example, if the pool contains 1, 2, 3, 4 first votes on blocks 𝐵1, 𝐵2, 𝐵3, 𝐵timeout
+𝑣 respectively (and
+𝑓+𝑝+1=2), thenallVotes=10,maxVotes=3, andmanyVotes={𝐵 2, 𝐵3}.
+The protocol also uses a subprotocolReconstructAndNotarize(𝑣, 𝐵), defined in Protocol 2.
+Each replica 𝑃 𝑗 moves through slots 𝑣= 1, 2, . . . . In each slot, it will enter a loop in which it
+waits for one of several conditions to trigger an action. These conditions are based on the objects
+in its pool and its complete block tree, as well as local variables.
+• Lines 9–11 present the logic for the replica successfully exiting the slot by finding a block
+𝐵 for that slot in its complete block tree. In addition, if the replica did not broadcast a
+notarization vote for any other block (including the timeout block) for that slot, it will also
+broadcast a finalization block for𝐵.
+•Lines 12–13 present the logic for the replica unsuccessfully exiting the slot by obtaining a
+timeout certificate for that slot.
+• Lines 14–17 present the logic for the replica proposing a block for that slot if it is the leader
+for that slot. It generates the block proposal as in Section 4.5, extending the path in the
+complete block tree ending at 𝐵p. Here, 𝐵p is either the genesis block or the block that it
+found in its complete block tree the last time it successfully exited a slot (other choices of
+𝐵p are possible).
+• Lines 18–21 present the logic for the replica broadcasting a first vote for a non-timeout
+block 𝐵. It will do so only if 𝐵 is a valid block proposed by the leader (as in Section 4.6) and
+has not already first voted. Recall that a first vote for 𝐵 also includes a notarization vote for
+𝐵.
+• Lines 22–25 present the logic for the replica broadcasting a first vote for the timeout block
+for this slot. It will do so only if a sufficient amount of time has passed since it entered the
+slot and has not already first voted.
+•Lines 26–27 present the logic for updating the mapfirstVotes. No other actions are taken.
+• Lines 28–31 present the logic for the replica taking a “second look” at a block𝐵, if it has
+received sufficiently many first votes for 𝐵. It will do so only if it has already first voted
+(and has not already taken a second look at 𝐵). If it can reconstruct a valid payload for 𝐵,
+it will broadcast a notarization vote for 𝐵 (if it has not already done so); otherwise, it will
+broadcast a notarization vote for the timeout block.
+• Lines 32–35 present the logic for the replica broadcasting a timeout vote under special
+circumstances. It will do so only if it has already first voted and
+allVotes(firstVote) −maxVotes(firstVote) ≥𝑓+𝑝+1.
+We note that the quantity
+allVotes(firstVote) −maxVotes(firstVote)
+cannot decrease as we add entries to firstVote. That is because, when we add an entry, the
+first term increases by 1 and the second either decreases by 1 or remains unchanged.
+
+--- PAGE 10 ---
+10 Victor Shoup, Jakub Sliwinski, and Yann Vonlanthen
+Protocol 1Kudzumain loop for replica𝑃 𝑗
+1:𝐵 p ←genesis⊲parent of the next block
+2: for𝑣=1,2, . . .do
+3: 𝑇start ←clock()⊲slot-local initialisation
+4: done,proposed,firstVoted←false
+5: notarized← {}⊲blocks already notarized
+6: secondLook← {}⊲blocks already reconsidered
+7: firstVote← {}⊲map𝑃 𝑖 ↦→𝐵for their first vote
+8: while¬donewait until either
+9: there exists a block𝐵for slot𝑣in the complete block tree⇒
+10: 𝐵p ←𝐵;done←true
+11: ifnotarized⊆ {𝐵}thenbroadcastFinalVote(𝐵, 𝜎 𝑗 )
+12: the pool contains a timeout certificate for𝑣⇒
+13: done←true
+14: ¬proposed∧leader(𝑣)=𝑃 𝑗 ⇒
+15: proposed←true
+16: generate block proposal material𝐵,(𝑓 1, 𝜋1), . . . ,(𝑓 𝑛, 𝜋𝑛)extending block𝐵 p
+17: forall𝑖∈ [𝑛]:sendBlockProp(𝐵, 𝑓 𝑖, 𝜋𝑖 )to𝑃 𝑖
+18: ¬firstVoted∧received validBlockProp(𝐵, 𝑓 𝑗, 𝜋𝑗 )fromleader(𝑣) ⇒
+19: firstVoted←true
+20: broadcastFirstVote(𝜎 ′
+𝑗,NotarVote(𝐵, 𝜎 𝑗, 𝑓 𝑗, 𝜋𝑗 ))
+21: notarized←notarized∪ {𝐵}
+22: ¬firstVoted∧clock()>𝑇 start +Δ timeout ⇒
+23: firstVoted←true
+24: broadcastFirstVote(𝜎 ′
+𝑗,NotarVote(𝐵 timeout
+𝑣 , 𝜎𝑗,⊥,⊥))
+25: notarized←notarized∪ {𝐵 timeout
+𝑣 }
+26: received validFirstVote(_,NotarVote(𝐵,_))from𝑃 𝑖 andfirstVote[𝑃 𝑖 ]=⊥ ⇒
+27: firstVote[𝑃𝑖 ] ←𝐵
+28: firstVoted∧ ∃𝐵∈manyVotes(firstVote) \secondLook
+29: and𝐵’s parent is in the complete block tree⇒
+30: secondLook←secondLook∪ {𝐵}
+31: ReconstructAndNotarize(𝑣, 𝐵)
+32: firstVoted∧ (allVotes(firstVote) −maxVotes(firstVote) ≥𝑓+𝑝+1)
+33: and𝐵 timeout
+𝑣 ∉notarized⇒
+34: broadcastNotarVote(𝐵 timeout
+𝑣 , 𝜎𝑗,⊥,⊥)
+35: notarized←notarized∪ {𝐵 timeout
+𝑣 }
+
+--- PAGE 11 ---
+Kudzu: Fast and Simple High-Throughput BFT 11
+Protocol 2ReconstructAndNotarize(𝑣, 𝐵)
+1:reconstruct payload for𝐵
+2: ifreconstruction succeeds∧payload validthen
+3: if𝐵∉notarizedthen
+4: broadcastNotarVote(𝐵, 𝜎 𝑗, 𝑓 𝑗, 𝜋𝑗 )
+5: notarized←notarized∪ {𝐵}
+6: else
+7: if𝐵 timeout
+𝑣 ∉notarizedthen
+8: broadcastNotarVote(𝐵 timeout
+𝑣 , 𝜎𝑗,⊥,⊥)
+9: notarized←notarized∪ {𝐵 timeout
+𝑣 }
+5 Protocol Analysis
+We start by proving some helpful properties.
+Lemma 5.1 (V alidity Property).Suppose that a block 𝐵 for some slot 𝑣 is added to the complete
+block tree of some replica. If the leader for slot𝑣is honest,𝐵must have been proposed by that leader.
+Proof. By the Quorum Size Property (see Section 3.3.1) for notarization certificates, at least
+𝑛− 2𝑓−𝑝 honest replicas must have broadcast notarization shares for 𝐵. Since we are assuming
+𝑛≥ 3𝑓+ 2𝑝+ 1, it follows that 𝑛− 2𝑓−𝑝> 0, so some honest replica 𝑃 must have broadcast a
+notarization share for 𝐵. This could happen either at line 20 or at line 31. In the first case, 𝐵 must
+be the block that 𝑃 received as a proposal from the leader. In the second case, since 𝑃 received
+𝑓+𝑝+1first votes for𝐵, one of these must be a first vote for𝐵from some honest replica𝑄, and
+so𝐵must be the block that𝑄received as a proposal from the leader.□
+Lemma 5.2 (Completeness Property for Certificates).If a certificate 𝑋 appears in the vote
+and certificate pool (so 𝑋 is a notarization, finalization, or timeout certificate) then 𝑋 (or its equivalent)
+will eventually appear in the corresponding pool of every other replica. Moreover, if 𝑋 appears in a
+replica’s pool at a time 𝑇 at which the network is 𝛿-synchronous, it will appear in every replica’s pool
+before time𝑇+𝛿.
+Proof. This is clear, since a certificate appearing in the vote and certificate pool is broadcast
+immediately. □
+Lemma 5.3 (Completeness Property for Blocks).If a block 𝐵 appears in the complete block tree,
+then 𝐵 will eventually appear in the corresponding tree of every other replica. Moreover, if 𝐵 appears
+in a replica’s tree at a time 𝑇 at which the network is 𝛿-synchronous, it will appear in every replica’s
+tree before time𝑇+𝛿.
+Proof. We are relying on the Quorum Size Property (see Section 3.3.1) for notarization certifi-
+cates: when a notarization certificate for a block𝐵 is added to the certificate pool, at least𝑛− 2𝑓−𝑝
+honest replicas must have already broadcast notarization votes for 𝐵, which contain 𝐵 as well as
+fragments sufficient to reconstruct𝐵’s payload, since𝑛−2𝑓−𝑝≥𝑓+𝑝+1.□
+5.1 Safety
+Lemma 5.4 (Fast Finalization Implication).Suppose a block 𝐵 is fast finalized by some honest
+replica, then the number of honest replicas that first vote for anything other than𝐵is at most𝑝.
+Proof. Let 𝑓 ′ ≤𝑓 be the actual number of corrupt replicas. If some honest replica fast finalizes
+𝐵, then — by the Quorum Size Property (see Section 3.3.1) for fast finalization certificates — at least
+
+--- PAGE 12 ---
+12 Victor Shoup, Jakub Sliwinski, and Yann Vonlanthen
+𝑛−𝑝−𝑓 ′ honest replicas first voted for 𝐵. So the number of honest replicas that first vote for
+anything other than𝐵is at most(𝑛−𝑓 ′) − (𝑛−𝑝−𝑓 ′)=𝑝.□
+Lemma 5.5 (Uniqeness of Fast Finalization Property).If an honest replica receives 𝑓+𝑝+ 1
+first votes for a block 𝐵 in slot 𝑣, then no block different from 𝐵 can be fast finalized in slot 𝑣 by any
+honest replica.
+Proof. Suppose towards contradiction that and some replica 𝑃 receives 𝑓+𝑝+ 1first votes for
+a block 𝐵 but a block 𝐶≠𝐵 is fast finalized by some honest replica 𝑄. By the previous lemma, at
+most 𝑝 honest replicas could first vote for anything other than 𝐶. Therefore, 𝑃 can receive at most
+𝑓+𝑝first votes for𝐵, a contradiction.□
+Lemma 5.6 (Absence of Fast Finalization Property).If the inequality allVotes(firstVote) −
+maxVotes(firstVote) ≥𝑓+𝑝+ 1holds for a replica in slot 𝑣, then no block can be fast finalized in slot
+𝑣by any replica.
+Proof. Suppose towards contradiction that a replica 𝑃 fast finalized block 𝐵 while for replica 𝑄
+the inequality holds. By Theorem 5.4, at most 𝑝 honest replicas fast vote for anything other than 𝐵.
+Therefore, 𝑄 can receive at most 𝑓+𝑝 fast votes for anything other than 𝐵. Let count𝐵 denote the
+number of first votes for𝐵 received by 𝑄. It follows that, at any point in time, for replica𝑄, we have
+allVotes(firstVote) −maxVotes(firstVote) ≤allVotes(firstVote) −count 𝐵 ≤𝑓+𝑝,
+a contradiction.□
+Lemma 5.7 (Incompatibility of Notarization and (Fast) Finalization Property).Suppose
+that a valid block 𝐵 for some slot 𝑣 is (fast) finalized by some replica. If any replica obtains a notarization
+certificate for a block 𝐶 in slot 𝑣, then 𝐶=𝐵 . (In particular, no other block for slot 𝑣 can be added to
+the complete block tree of any replica and no timeout certificate can be obtained for slot𝑣.)
+Proof. We first prove the Incompatibility of Notarization andFastFinalization. Suppose towards
+contradiction that for slot 𝑣 a fast finalization certificate exists for block 𝐵 and a notarization
+certificate exists for block 𝐶, with 𝐶≠𝐵 . By Theorem 5.4 at most 𝑝 honest replicas first vote for
+anything other than𝐵. By the Quorum Size Property (see Section 3.3.1) at least(𝑛−𝑓−𝑝) −𝑓≥
+𝑓+𝑝+ 1honest replicas must send a notarization vote for 𝐶. Thus, at least 𝑓+ 1honest replicas
+must send a notarization vote for𝐶afterhaving sent a first vote.
+• On the one hand, suppose that a notarization vote for 𝐶 was sent by the protocol on line 31.
+Due to the condition on line 28, this means that𝑓+𝑝+ 1first votes were received for a block
+𝐷. Note that 𝐷 is a non-timeout block. Moreover, by the logic of ReconstructAndNotarize,
+either 𝐶 is a timeout block or 𝐷=𝐶 . By the Uniqueness of Fast Finalization Property
+(Theorem 5.5) we know that 𝐷=𝐵 . Since 𝐵 is assumed to be valid, 𝐶 cannot be a timeout
+block, so we also have𝐵=𝐷=𝐶, a contradiction.
+• On the other hand, suppose that a notarization vote for𝐶 was sent on line 34. By the Absence
+of Fast Finalization Property (Theorem 5.6), this implies that no block is fast finalized, again
+a contradiction.
+The Incompatibility of Notarization and Finalization Property follows from a standard quorum
+intersection argument, based on the fact that in each slot an honest replica issues a finalization
+vote only for a block only if it did not send a notarization vote for a different block in that slot (see
+line 11). Suppose towards contradiction that for slot 𝑣 a finalization certificate exists for block 𝐵
+and a notarization certificate exists for block 𝐶, with 𝐶≠𝐵 . By the Quorum Size property (see
+Section 3.3.1) for finalization and notarization certificates, if𝑓 ′ ≤𝑓 is the number of corrupt replicas,
+then at least 𝑛−𝑓−𝑝−𝑓 ′ honest replicas broadcast finalization votes for 𝐵, and a disjoint set of
+
+--- PAGE 13 ---
+Kudzu: Fast and Simple High-Throughput BFT 13
+at least the same number of honest replicas broadcast notarization votes for 𝐶. This implies that
+there are at least2 (𝑛−𝑓−𝑝−𝑓 ′) distinct honest replicas. However, under the assumption that
+𝑛≥3𝑓+2𝑝+1, we have2(𝑛−𝑓−𝑝−𝑓 ′) ≥𝑛−𝑓 ′ +1, a contradiction.□
+We can now easily state and prove our main safety lemma:
+Lemma 5.8 (Safety).Suppose a replica 𝑃 explicitly finalizes a block 𝐵 for slot 𝑣, and a block 𝐶 for
+slot 𝑤≥𝑣 is in the complete block tree of some replica 𝑄. Then 𝐵 is an ancestor of 𝐶 in 𝑄’s complete
+block tree.
+Proof. By the Incompatibility of Notarization and (Fast) Finalization Property (Theorem 5.7),
+no timeout certificate for slot 𝑣 can be produced. Let 𝐶 ′ be the parent of 𝐶 and suppose 𝑤 ′ is the
+slot number of 𝐶 ′. Since 𝐶 ′ is in 𝑄’s complete block tree, a notarization certificate for 𝐶 ′ must
+have been produced, which means at least one honest replica must have issued a notarization vote
+for 𝐶 ′, which means 𝑣≤𝑤 ′ <𝑤 . The inequality 𝑣≤𝑤 ′ follows from the fact that there is no
+timeout certificate for slot 𝑣, and an honest replica will issue a notarization share for 𝐶 only if it
+has timeout certificates for slots 𝑤 ′ + 1,· · ·, 𝑤− 1. If 𝑣=𝑤 ′, we are done by the Incompatibility
+of Notarization and (Fast) Finalization Property (Theorem 5.7), and if 𝑣<𝑤 ′, we can repeat the
+argument inductively with𝐶 ′ in place of𝐶.□
+5.2 Liveness
+Liveness follows from the following lemmas. The first lemma analyzes the optimistic case where
+the network is synchronous and the leader of a given slot is honest, showing that the leader’s block
+will be committed.
+Lemma 5.9 (Liveness I).Consider a slot 𝑣≥ 1and suppose the leader for slot 𝑣 is an honest replica
+𝑄. Suppose that the first honest replica 𝑃 to enter the loop iteration for slot 𝑣 does so at time 𝑇0. Suppose
+that the network is 𝛿-synchronous over the interval [𝑇0, 𝑇0 + 4𝛿] for some 𝛿 with Δtimeout ≥ 2𝛿. Then,
+𝑄 will propose a block for slot 𝑣 by time 𝑇≤𝑇 0 +𝛿 . Each honest replica will finish the loop iteration
+before time 𝑇+ 2𝛿 by adding 𝑄’s proposed block𝐵 to its complete block tree. Moreover, if 𝑛−𝑝 replicas
+are honest, each honest replica will finalize 𝐵 by time 𝑇+ 2𝛿. If more than 𝑝 replicas are corrupt, each
+honest replica will finalize𝐵by time𝑇+3𝛿.
+Proof. By the Completeness Properties (Theorem 5.2 and Theorem 5.3), before time𝑇0 +𝛿 , each
+honest replica will enter slot 𝑣 by time 𝑇0 +𝛿 , having either a timeout certificate for slot 𝑣− 1or a
+block for slot 𝑣− 1in its complete block tree. Before time 𝑇≤𝑇 0 +𝛿 , the leader 𝑄 will propose
+a block 𝐵 that extends a block 𝐵′ with slot number 𝑣 ′ <𝑣 . By the logic of the protocol, we know
+that 𝑄 must have timeout certificates for slots 𝑣 ′ + 1, . . . , 𝑣− 1at the time it makes its proposal, as
+well as a notarization certificate for 𝐵′. Again by the Completeness Properties, before time 𝑇+𝛿 ,
+each honest replica will have 𝐵′ in its complete block tree and all of these timeout certificates in
+its certificate pool. Each honest replica will receive 𝐵 before this time, and because Δtimeout ≥ 2𝛿,
+will broadcast a first vote for 𝐵 by this time. Because all honest replicas broadcast a first vote for 𝐵,
+each such replica will only see ever see at most 𝑓 first votes for any other block. It follows that
+each honest replica will only ever see
+•manyVotes(firstVote) ⊆ {𝐵}, and
+•allVotes(firstVote) −maxVotes(firstVote) ≤allVotes(firstVote) −count 𝐵 ≤𝑓 , where count𝐵
+is the number of of first votes for𝐵that it sees.
+Therefore, honest replicas will not broadcast a notarization votes in slot 𝑣 for anything other
+than 𝐵. Before time 𝑇+ 2𝛿, each honest replica will have added 𝐵 to its complete block tree and
+broadcast a finalization vote on 𝐵. If 𝑛−𝑝 replicas are honest, each honest replica will have added
+
+--- PAGE 14 ---
+14 Victor Shoup, Jakub Sliwinski, and Yann Vonlanthen
+a fast finalization certificate to its pool by time 𝑇+ 2𝛿 as well. Otherwise, if more than 𝑝 replicas
+are corrupt, each honest replica will finalize 𝐵 before time 𝑇+ 3𝛿, when adding the finalization
+certificate for slot𝑣to its pool.□
+The second lemma analyzes the pessimistic case, when the network is asynchronous or the
+leader of a given slot is corrupt. It says that eventually, all honest replicas will move on to the next
+slot.
+Lemma 5.10 (Liveness II).Suppose that the network is 𝛿-synchronous over an interval [𝑇 , 𝑇+
+Δtimeout + 3𝛿] , for an arbitrary value of 𝛿, and that at time 𝑇 , some honest replica is in the loop iteration
+for slot 𝑣 and all other honest replicas are in a loop iteration for 𝑣 or a previous slot. Then, before time
+𝑇+Δ timeout +3𝛿, all honest replicas exit slot𝑣.
+Proof. By the Completeness Properties (Theorem 5.2 and Theorem 5.3), every honest replica
+will enter the slot 𝑣 before time 𝑇+𝛿 . By time 𝑇+𝛿+Δ timeout, every honest replica will broadcast
+a first vote either for a block proposal, or for𝐵 timeout
+𝑣 .
+Consider two cases:
+(a) At least𝑓+𝑝+1honest replicas broadcast a first vote for the same non-timeout block𝐵.
+(b) No set of𝑓+𝑝+1honest replicas broadcast a first vote for the same non-timeout block𝐵.
+Case (a).Since 𝑓+𝑝+ 1replicas cast notarization votes for 𝐵, some honest replica did so. Since this
+replica had to have 𝐵’s parent in its complete block tree, by Completeness Properties (Theorem 5.3)
+each honest replica will have 𝐵’s parent in its complete block tree by time𝑇+Δ timeout + 2𝛿. All
+honest replicas observe all first votes from other honest replicas before time 𝑇+Δ timeout + 2𝛿,
+and so each honest replica will call ReconstructAndNotarize(𝑣, 𝐵) before that time, unless it has
+already exited slot 𝑣. If some honest replica has exited slot 𝑣 before that time, the by Completeness
+Properties (Theorem 5.2 and Theorem 5.3), all honest replicas will exit the slot before time 𝑇+
+Δtimeout +3𝛿. Otherwise, assume no honest replica has exited before time𝑇+Δ timeout +2𝛿. Whenever
+ReconstructAndNotarize(𝑣, 𝐵) is called by some honest replica, it has received at least 𝑓+𝑝+ 1
+first votes for 𝐵, and so can attempt to reconstruct 𝐵. If it fails to reconstruct 𝐵’s payload or finds
+that it is invalid, then it and all honest replicas will do so and issue a timeout vote (this follows
+from collision resistance of the hash function and the fragment decoding logic). Otherwise, each
+honest replica will issue a notarization vote for 𝐵. Therefore, before time 𝑇+Δ timeout + 3𝛿, each
+honest replica will either add 𝐵 to its complete block tree or the timeout certificate to its pool, and
+proceed exit the slot.
+Case (b).Consider some honest replica 𝑃. By time 𝑇+Δ timeout + 2𝛿, 𝑃 will have observed all votes
+of other honest replicas. If the only entries in firstVote are those from honest replicas, then the
+inequality allVotes(firstVote) −maxVotes(firstVote) ≥𝑓+𝑝+ 1must hold. To see this, if 𝑓 ′ ≤𝑓 is
+the number of corrupt replicas, then
+allVotes(firstVote) −maxVotes(firstVote) ≥ (𝑛−𝑓 ′) − (𝑓+𝑝)
+≥𝑛−2𝑓−𝑝
+≥𝑓+𝑝+1(since𝑛≥3𝑓+2𝑝+1).
+As we have already observed, the quantityallVotes(firstVote) −maxVotes(firstVote)cannot decrease
+as we add entries to firstVote. Therefore if 𝑃 has not cast a timeout vote in slot 𝑣 yet, it will do so
+by time 𝑇+Δ timeout + 2𝛿, unless it has already exited slot 𝑣 by that time. In either case, all honest
+replicas will exit slot𝑣by time𝑇+Δ timeout +3𝛿.□
+
+--- PAGE 15 ---
+Kudzu: Fast and Simple High-Throughput BFT 15
+5.3 Boundedness
+We prove some simple results that allow us to bound message and storage complexity. Here, we
+are assuming both (1) and (2).
+Let us consider notarization votes on non-timeout blocks. An honest replica sends a first vote for
+at most one such block. Any notarization vote for some other non-timeout block 𝐵 requires that
+the replica found 𝐵∈manyVotes(firstVotes) . In other words, the replica has seen at least 𝑓+𝑝+ 1
+other replica’s first votes for𝐵. At most one first vote per replica is considered when computing
+manyVotes(firstVotes). Therefore, an honest replica can cast at most ⌊𝑛/(𝑓+𝑝+ 1)⌋ notarization
+votes beyond the first vote, and by (2), ⌊𝑛/(𝑓+𝑝+ 1)⌋ ≤ 2, for a total of 3 notarization votes for
+non-timeout blocks.
+Suppose there are 𝑓 ′ ≤𝑓 corrupt replicas, and so 𝑛−𝑓 ′ honest replicas. The honest replicas
+therefore issue at most3(𝑛−𝑓 ′)notarization votes for non-timeout blocks per slot.
+Now, to construct a notarization certificate for a non-timeout block 𝐵, we require that (𝑛−
+𝑓−𝑝−𝑓 ′) honest replicas cast a notarization vote for 𝐵. Therefore, by the result in the previous
+paragraph, there can be at most
+𝑁 :=⌊(3(𝑛−𝑓 ′))/(𝑛−𝑓−𝑝−𝑓 ′)⌋(3)
+distinct blocks for which a notarization certificate can be constructed.
+We claim that 𝑁≤ 5. To see this, first note that the derivative of (3(𝑛−𝑓 ′))/(𝑛−𝑓−𝑝−𝑓 ′)
+with respect to 𝑓 ′ is positive, and therefore the right-hand side of (3) is maximized when 𝑓=𝑓 ′,
+and so
+𝑁≤ ⌊(3(𝑛−𝑓))/(𝑛−2𝑓−𝑝)⌋.
+So it suffices to show that (3(𝑛−𝑓))/(𝑛− 2𝑓−𝑝)< 6. This is easily seen to follow by a simple
+calculation using (1).
+So to summarize, we have shown that in any slot,
+(1) each replica casts a notarization vote for at most2non-timeout blocks besides its first vote,
+and
+(2) there are at most5distinct blocks for which a notarization certificate can be constructed.
+This immediately gives us bounds on the message and storage complexity of the protocol per slot.
+5.4 Complexity
+Based on the concrete bounds in Section 5.3 (and the preliminary discussion in Section 4.2), it
+is easily seen that the message complexity per slot is 𝑂(𝑛 2). Based on the properties of erasure
+codes and Merkle trees discussed in Section 3.3.2, the communication complexity per slot is
+𝑂(𝛽𝑛+𝑛 2 log(𝑛)𝜅+𝑛 2𝜆), where 𝛽 is a bound on the payload size, 𝜅 is the output length of
+the collision-resistant hash, and 𝜆 is a bound on the length of any signature share or certificate.
+Moreover, the communication isbalanced, in that every replica,including the leader, transmits the
+same amount of data, up to a constant factor. It is also easily seen that each replica needs to store
+𝑂(𝛽+𝑛log(𝑛)𝜅+𝑛𝜆)bits of data.
+6 Protocol Variations
+Our protocol can be adapted to the setting of𝑛≥3𝑓+2𝑝 ∗ −1, where𝑝 ∗ ≥1[2], with the insight
+that if honest replicas vote for different blocks in the same slot, the leader has to be corrupt. The
+liveness analysis can leverage the fact that, in this case, honest replicas will observe at least 𝑛−𝑓
+votes from non-leader replicas, as is done in [37]. We plan to analyze a variation ofKudzuwith
+this adaptation in follow-up work.
+
+--- PAGE 16 ---
+16 Victor Shoup, Jakub Sliwinski, and Yann Vonlanthen
+A variation of DispersedSimplex [34] features segments of consecutive slots with the same leader.
+Such stable leader assignment is beneficial for the throughput of the protocol. The same technique
+can be applied to our protocol, and we plan to analyze a variation ofKudzufeaturing stable leaders
+in follow-up work.
+References
+[1] Abraham, I., Gueta, G., Malkhi, D., Alvisi, L., Kotla, R., Martin, J.P.: Revisiting fast practical byzantine fault tolerance.
+arXiv preprint arXiv:1712.01367 (2017)
+[2] Abraham, I., Nayak, K., Ren, L., Xiang, Z.: Good-case latency of byzantine broadcast: A complete categorization. In:
+Proceedings of the 2021 ACM Symposium on Principles of Distributed Computing. pp. 331–341 (2021)
+[3] Alhaddad, N., Duan, S., Varia, M., Zhang, H.: Succinct erasure coding proof systems. Cryptology ePrint Archive, Paper
+2021/1500 (2021), https://eprint.iacr.org/2021/1500
+[4] Aublin, P.L., Guerraoui, R., Knežević, N., Quéma, V., Vukolić, M.: The next 700 bft protocols. ACM Transactions on
+Computer Systems (TOCS)32(4), 1–45 (2015)
+[5] Blackshear, S., Chursin, A., Danezis, G., Kichidis, A., Kokoris-Kogias, L., Li, X., Logan, M., Menon, A., Nowacki, T.,
+Sonnino, A., et al.: Sui lutris: A blockchain combining broadcast and consensus. Tech. rep., Technical Report. Mysten
+Labs. https://sonnino. com/papers/sui-lutris. pdf (2023)
+[6] Boldyreva, A.: Threshold signatures, multisignatures and blind signatures based on the gap-Diffie-Hellman-group
+signature scheme. In: Desmedt, Y. (ed.) Public Key Cryptography - PKC 2003, 6th International Workshop on Theory
+and Practice in Public Key Cryptography, Miami, FL, USA, January 6-8, 2003, Proceedings. Lecture Notes in Computer
+Science, vol. 2567, pp. 31–46. Springer (2003). https://doi.org/10.1007/3-540-36288-6_3, https://doi.org/10.1007/3-540-
+36288-6_3
+[7] Boneh, D., Drijvers, M., Neven, G.: Compact multi-signatures for smaller blockchains. Cryptology ePrint Archive,
+Paper 2018/483 (2018), https://eprint.iacr.org/2018/483
+[8] Boneh, D., Lynn, B., Shacham, H.: Short signatures from the Weil pairing. In: Boyd, C. (ed.) Advances in Cryptology
+- ASIACRYPT 2001, 7th International Conference on the Theory and Application of Cryptology and Information
+Security, Gold Coast, Australia, December 9-13, 2001, Proceedings. Lecture Notes in Computer Science, vol. 2248, pp.
+514–532. Springer (2001). https://doi.org/10.1007/3-540-45682-1_30, https://doi.org/10.1007/3-540-45682-1_30
+[9] Brasileiro, F., Greve, F., Mostéfaoui, A., Raynal, M.: Consensus in one communication step. In: Parallel Computing
+Technologies: 6th International Conference, PaCT 2001 Novosibirsk, Russia, September 3–7, 2001 Proceedings 6. pp.
+42–50. Springer (2001)
+[10] Buchman, E., Kwon, J., Milosevic, Z.: The latest gossip on BFT consensus (2018), arXiv:1807.04938, http://arxiv.org/abs/
+1807.04938
+[11] Buterin, V.: Ethereum: A next-generation smart contract and decentralized application platform. https://github.com/
+ethereum/wiki/wiki/White-Paper (2013)
+[12] Cachin, C., Kursawe, K., Petzold, F., Shoup, V.: Secure and efficient asynchronous broadcast protocols. In: Annual
+International Cryptology Conference. pp. 524–541. Springer (2001)
+[13] Cachin, C., Tessaro, S.: Asynchronous verifiable information dispersal. In: 24th IEEE Symposium on Reliable Distributed
+Systems (SRDS’05). pp. 191–201. IEEE (2005)
+[14] Castro, M., Liskov, B.: Practical byzantine fault tolerance. In: Seltzer, M.I., Leach, P.J. (eds.) Proceedings of the Third
+USENIX Symposium on Operating Systems Design and Implementation (OSDI), New Orleans, Louisiana, USA, February
+22-25, 1999. pp. 173–186. USENIX Association (1999), https://dl.acm.org/citation.cfm?id=296824
+[15] Clement, A., Kapritsos, M., Lee, S., Wang, Y., Alvisi, L., Dahlin, M., Riche, T.: Upright cluster services. In: Proceedings
+of the ACM SIGOPS 22nd symposium on Operating systems principles. pp. 277–290 (2009)
+[16] Danezis, G., Kokoris-Kogias, L., Sonnino, A., Spiegelman, A.: Narwhal and Tusk: a DAG-based mempool and efficient
+BFT consensus. In: Bromberg, Y., Kermarrec, A., Kozyrakis, C. (eds.) EuroSys ’22: Seventeenth European Conference on
+Computer Systems, Rennes, France, April 5 - 8, 2022. pp. 34–50. ACM (2022). https://doi.org/10.1145/3492321.3519594,
+https://doi.org/10.1145/3492321.3519594, also at arXiv:2105.11827, http://arxiv.org/abs/2105.11827
+[17] Dolev, S., Wang, Z.: SodsBC: Stream of distributed secrets for quantum-safe blockchain. In: 2020 IEEE International
+Conference on Blockchain (Blockchain). pp. 247–256. IEEE Computer Society, Los Alamitos, CA, USA (2020)
+[18] Dutta, P., Guerraoui, R., Vukolic, M.: The complexity of asynchronous byzantine consensus. Tech. rep., IC Technical
+Report 200499, École Polytechnique Fédérale de Lausanne (2004)
+[19] Dwork, C., Lynch, N.A., Stockmeyer, L.J.: Consensus in the presence of partial synchrony. J. ACM35(2), 288–323
+(1988). https://doi.org/10.1145/42282.42283, http://doi.acm.org/10.1145/42282.42283
+[20] Foundation, S.: Turbine–solana’s block propagation protocol solves the scalability trilemma. https://solana.com/news/
+turbine---solana-s-block-propagation-protocol-solves-the-scalability-trilemma (2019)
+
+--- PAGE 17 ---
+Kudzu: Fast and Simple High-Throughput BFT 17
+[21] Guerraoui, R., Vukolić, M.: Refined quorum systems. In: Proceedings of the twenty-sixth annual ACM symposium on
+Principles of distributed computing. pp. 119–128 (2007)
+[22] Gueta, G.G., Abraham, I., Grossman, S., Malkhi, D., Pinkas, B., Reiter, M., Seredinschi, D.A., Tamir, O., Tomescu, A.:
+Sbft: A scalable and decentralized trust infrastructure. In: 2019 49th Annual IEEE/IFIP international conference on
+dependable systems and networks (DSN). pp. 568–580. IEEE (2019)
+[23] Kang, D., Gupta, S., Malkhi, D., Sadoghi, M.: Hotstuff-1: Linear consensus with one-phase speculation. arXiv preprint
+arXiv:2408.04728 (2024)
+[24] Keidar, I., Kokoris-Kogias, E., Naor, O., Spiegelman, A.: All you need is DAG. In: Miller, A., Censor-Hillel, K., Korhonen,
+J.H. (eds.) PODC ’21: ACM Symposium on Principles of Distributed Computing, Virtual Event, Italy, July 26-30, 2021.
+pp. 165–175. ACM (2021). https://doi.org/10.1145/3465084.3467905, https://doi.org/10.1145/3465084.3467905, also at
+arXiv:2102.08325, http://arxiv.org/abs/2102.08325
+[25] Kniep, Q., Sliwinski, J., Wattenhofer, R.: Solana alpenglow consensus. https://www.anza.xyz/alpenglow-1-1 (2025)
+[26] Kotla, R., Alvisi, L., Dahlin, M., Clement, A., Wong, E.: Zyzzyva: speculative byzantine fault tolerance. In: Proceedings
+of twenty-first ACM SIGOPS symposium on Operating systems principles. pp. 45–58 (2007)
+[27] Kursawe, K.: Optimistic byzantine agreement. In: 21st IEEE Symposium on Reliable Distributed Systems, 2002.
+Proceedings. pp. 262–267. IEEE (2002)
+[28] Kuznetsov, P., Tonkikh, A., Zhang, Y.X.: Revisiting optimal resilience of fast byzantine consensus. In: Proceedings of
+the 2021 ACM Symposium on Principles of Distributed Computing. p. 343–353. PODC’21, Association for Computing
+Machinery, New York, NY, USA (2021). https://doi.org/10.1145/3465084.3467924, https://doi.org/10.1145/3465084.
+3467924
+[29] Lamport, L., Shostak, R., Pease, M.: The byzantine generals problem. ACM Transactions on Programming Languages
+and Systems4(3), 382–401 (1982)
+[30] Lewis-Pye, A., Nayak, K., Shrestha, N.: The pipes model for latency and throughput analysis. Cryptology ePrint
+Archive, Paper 2025/1116 (2025), https://eprint.iacr.org/2025/1116
+[31] Lu, Y., Lu, Z., Tang, Q., Wang, G.: Dumbo-MVBA: Optimal multi-valued validated asynchronous byzantine agreement,
+revisited. In: Emek, Y., Cachin, C. (eds.) PODC ’20: ACM Symposium on Principles of Distributed Computing, Virtual
+Event, Italy, August 3-7, 2020. pp. 129–138. ACM (2020). https://doi.org/10.1145/3382734.3405707, https://doi.org/10.
+1145/3382734.3405707
+[32] Martin, J.P., Alvisi, L.: Fast byzantine consensus. IEEE Transactions on Dependable and Secure Computing3(3),
+202–215 (2006)
+[33] Miller, A., Xia, Y., Croman, K., Shi, E., Song, D.: The honey badger of BFT protocols. In: Weippl, E.R., Katzenbeisser, S.,
+Kruegel, C., Myers, A.C., Halevi, S. (eds.) Proceedings of the 2016 ACM SIGSAC Conference on Computer and Communi-
+cations Security, Vienna, Austria, October 24-28, 2016. pp. 31–42. ACM (2016). https://doi.org/10.1145/2976749.2978399,
+also at https://eprint.iacr.org/2016/199
+[34] Shoup, V.: Sing a Song of Simplex. In: Alistarh, D. (ed.) 38th International Symposium on Distributed Computing
+(DISC 2024). Leibniz International Proceedings in Informatics (LIPIcs), vol. 319, pp. 37:1–37:22. Schloss Dagstuhl
+– Leibniz-Zentrum für Informatik, Dagstuhl, Germany (2024). https://doi.org/10.4230/LIPIcs.DISC.2024.37, https:
+//drops.dagstuhl.de/entities/document/10.4230/LIPIcs.DISC.2024.37
+[35] Song, Y.J., van Renesse, R.: Bosco: One-step byzantine asynchronous consensus. In: International Symposium on
+Distributed Computing. pp. 438–450. Springer (2008)
+[36] Stathakopoulou, C., David, T., Pavlovic, M., Vukolić, M.: Mir-BFT: High-throughput robust bft for decentralized
+networks (2019), arXiv:1906.05552, http://arxiv.org/abs/1906.05552
+[37] Vonlanthen, Y., Sliwinski, J., Albarello, M., Wattenhofer, R.: Banyan: Fast rotating leader bft. In: Proceedings of the
+25th International Middleware Conference. pp. 494–507 (2024)
+[38] Yakovenko, A.: Solana: A new architecture for a high performance blockchain v0.8.13. https://solana.com/solana-
+whitepaper.pdf (2018)
+[39] Yang, L., Park, S.J., Alizadeh, M., Kannan, S., Tse, D.: Dispersedledger: High-throughput byzantine consensus on
+variable bandwidth networks. In: 19th USENIX Symposium on Networked Systems Design and Implementation (NSDI
+22). pp. 493–512 (2022)
+[40] Yin, M., Malkhi, D., Reiter, M.K., Gueta, G.G., Abraham, I.: HotStuff: BFT consensus in the lens of blockchain (2018),
+arXiv:1803.05069, http://arxiv.org/abs/1803.05069

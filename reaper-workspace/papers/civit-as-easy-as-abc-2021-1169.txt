@@ -1,0 +1,2643 @@
+As easy as ABC:
+Optimal (A)ccountable (B)yzantine (C)onsensus is easy!
+Pierre Civita,∗ , Seth Gilbertb , Vincent Gramolic,d , Rachid Guerraouid and Jovan Komatovicd,∗∗
+a Sorbonne Université, CNRS, LIP6, 4 place Jussieu, Paris, 75005, France
+b NUS Singapore, 21 Lower Kent Ridge Road, 119077, Singapore
+c University of Sydney, 1 Cleveland St, Darlington NSW, 2008, Australia
+d École Polytechnique Fédérale de Lausanne (EPFL), Rte Cantonale, Lausanne, 1015, Switzerland
+
+
+
+ARTICLE INFO                                         ABSTRACT
+Keywords:                                            In a non-synchronous system with 𝑛 processes, no 𝑡0 -resilient (deterministic or probabilistic)
+distributed consensus                                Byzantine consensus protocol can prevent a disagreement among correct processes if the
+accountability                                       number of faulty processes is ≥ 𝑛 − 2𝑡0 . Therefore, the community defined the accountable
+fault detection                                      Byzantine consensus problem: the problem of (i) solving Byzantine consensus whenever
+Byzantine fault tolerance                            possible (e.g., when the number of faulty processes does not exceed 𝑡0 ), and (ii) allowing
+                                                     correct processes to obtain proofs of culpability of 𝑛 − 2𝑡0 faulty processes whenever a
+                                                     disagreement occurs. This paper presents , a simple yet efficient transformation of any
+                                                     non-synchronous 𝑡0 -resilient (deterministic or probabilistic) Byzantine consensus protocol
+                                                     into its accountable counterpart. In the common case (up to 𝑡0 faults),  introduces an
+                                                     additive overhead of two communication rounds and 𝑂(𝑛2 ) exchanged bits. Whenever they
+                                                     disagree, correct processes detect culprits by exchanging 𝑂(𝑛3 ) messages, which we prove
+                                                     optimal. Lastly,  is not limited to Byzantine consensus:  provides accountability for
+                                                     other essential distributed problems (e.g., reliable and consistent broadcast).
+
+
+
+
+1. Introduction
+
+    Byzantine consensus [38] is a fundamental problem of distributed computing. It plays a major role in state
+
+machine replication (SMR) [1, 6, 43, 50, 40, 20], particular cryptographic protocols [9, 33], and blockchain systems [3,
+
+14, 26, 32]. In brief, Byzantine consensus enables processes to agree on a common value despite Byzantine (arbitrary)
+
+failures. Concretely, the problem is defined among 𝑛 processes, out of which some processes can misbehave in
+
+an arbitrary manner (these processes can crash, send different messages to different processes, fail to send some
+
+messages, etc.); processes that misbehave are said to be faulty, whereas non-faulty processes are said to be correct.
+
+The following interface is exposed:
+
+     • input 𝗉𝗋𝗈𝗉𝗈𝗌𝖾(𝑣): A process proposes a value 𝑣. Each correct process proposes exactly one value.
+
+     • output 𝖽𝖾𝖼𝗂𝖽𝖾(𝑣′ ): A process decides a value 𝑣′ . Each correct process decides at most one value (i.e., decisions
+
+        are irrevocable).
+
+The following properties characterize the problem:
+    ∗ Corresponding author
+   ∗∗ Principal corresponding author
+
+      pierre.civit@lip6.fr (P. Civit); seth.gilbert@comp.nus.edu.sg (S. Gilbert);
+vincent.gramoli@sydney.edu.au (V. Gramoli); rachid.guerraoui@epfl.ch (R. Guerraoui);
+jovan.komatovic@epfl.ch (J. Komatovic)
+    orcid(s): 0000-0003-2394-1201 (P. Civit); 0000-0003-3298-7412 (S. Gilbert); 0000-0001-5632-8572 (V. Gramoli);
+0000-0002-4794-8902 (R. Guerraoui)
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                                 Page 1 of 40
+                                                 Accountable Byzantine Consensus
+
+    • Agreement: No two correct processes decide different values.
+
+    • Validity: If all correct processes propose the same value 𝑣, then no correct process decides a value 𝑣′ ≠ 𝑣.
+
+    • Deterministic termination: Every correct process eventually decides.
+
+    • Probabilistic termination: Every correct process eventually decides with probability 1.
+
+Definition 1 (Byzantine consensus protocol). A protocol is a 𝑡0 -resilient deterministic (resp., probabilistic) Byzantine
+
+consensus protocol if it satisfies agreement, validity and deterministic (resp., probabilistic) termination while
+
+tolerating up to 𝑡0 faulty processes.
+
+    In this paper, we are particularly interested in non-synchronous Byzantine consensus protocols: protocols that
+
+operate in an environment without (permanent) timely communication. Dwork, Lynch and Stockmeyer proved that
+
+non-synchronous Byzantine consensus cannot be solved with 𝑛∕3 (or more) faulty processes [31]. By adapting their
+
+technique, we prove another negative result: the safety of Byzantine consensus can always be compromised in
+
+severely corrupted systems. (The following theorem is proven in Appendix A.)
+
+Theorem 1 (Unavoidable disagreement). For any non-synchronous 𝑡0 -resilient (deterministic or probabilistic) Byzan-
+
+tine consensus protocol among 𝑛 processes, there exists an execution with 𝑡 ≥ 𝑛 − 2𝑡0 faulty processes in which correct
+
+processes disagree (i.e., decide different values).
+
+    A direct consequence of Theorem 1 is that no blockchain based on a non-synchronous Byzantine consensus
+
+protocol can prevent its divergence if the system is overly corrupted. Real-life consequences of such unlucky
+
+scenarios can be substantial. For example, people might lose valuable assets due to a fork created in a blockchain –
+
+such an attack is called double-spending.
+
+    While disagreements (and, thus, double-spending attacks) are unavoidable in severely corrupted systems (by
+
+Theorem 1), can we at least detect faulty processes which are responsible for disagreements? Such a detection would
+
+naturally stimulate processes to behave correctly, thus increasing the security of the entire system. Luckily, Civit
+
+et al. [24] answered this question affirmatively by introducing accountability to Byzantine consensus protocols.
+
+Namely, they defined the accountable Byzantine consensus problem: the problem of (i) solving Byzantine consensus
+
+whenever possible (e.g., when the number of faulty processes does not exceed some predefined threshold), and (ii)
+
+allowing correct processes to obtain proofs of culpability of (some) faulty processes whenever a disagreement occurs.
+
+Definition 2 (Accountable Byzantine consensus protocol). A protocol is a 𝑡0 -resilient deterministic (resp., probabilis-
+
+tic) accountable Byzantine consensus protocol if it satisfies the following two properties:
+
+    • Byzantine consensus solvability: In all executions with up to 𝑡0 faults, the protocol solves the Byzantine
+
+       consensus problem, i.e., it satisfies agreement, validity and deterministic (resp., probabilistic) termination.
+
+
+First Author et al.: Preprint submitted to Elsevier                                                          Page 2 of 40
+                                                  Accountable Byzantine Consensus
+
+    • Accountability: If two correct processes decide different values, every correct process eventually irrefutably
+
+       detects (at least) 𝑛 − 2𝑡0 faulty processes and obtains a proof of culpability of each detected process. A proof
+
+       of culpability of a process can be independently verified by a third party, and it is impossible to produce such
+
+       a proof for a correct process.
+
+    Informally, a protocol is an accountable Byzantine consensus protocol if (1) it solves the Byzantine consensus
+
+problem when the system is not overly corrupted (Byzantine consensus solvability), and (2) it allows each correct
+
+process to detect (at least) 𝑛 − 2𝑡0 culprits whenever a disagreement occurs (accountability). Moreover, detection
+
+of culprits in the case of a disagreement implies an attainment of their culpability proofs. Importantly, no proof of
+
+culpability of a correct process can ever be obtained. Note that, if there are more than 𝑡0 faulty processes, correct
+
+processes might never decide and accountability is not provided in this case. In other words, accountability is
+
+guaranteed only in the case of a disagreement.
+
+
+1.1. Contributions
+    In this paper, we present the following contributions:
+
+   1. We introduce a generic and simple transformation –  – that maps any non-synchronous 𝑡0 -resilient
+
+       (deterministic or probabilistic) Byzantine consensus protocol into its accountable counterpart. Additionally,
+
+       our transformation is efficient: in the common case (i.e., in all executions with up to 𝑡0 faulty processes), 
+
+       introduces an additive overhead of (1) two all-to-all communication rounds, and (2) 𝑂(𝑛2 ) exchanged bits.
+
+       In the case of a disagreement, correct processes achieve accountability by exchanging 𝑂(𝑛3 ) “accountability-
+
+       specific” messages; we refer to this metric as the accountability complexity. Our transformation relies on (1) a
+
+       public-key infrastracture [41, 19], and (2) a threshold signature scheme [47].
+
+        owes its simplicity and efficiency to an observation that the simple composition presented in Algorithm 1
+
+       solves the Byzantine consensus problem in a non-synchronous environment. Indeed, if the number of faults
+
+       does not exceed 𝑡0 , all correct processes eventually decide the same value from Byzantine consensus (line 2).
+
+       Therefore, all correct processes eventually receive 𝑛 − 𝑡0 matching confirm messages (line 4), and decide
+
+       (line 5). The critical mechanism illustrated in Algorithm 1 is that faulty processes must send conflicting
+
+       confirm messages in order to cause a disagreement. Hence, whenever correct processes disagree, an exchange
+
+       of received confirm messages is sufficient for obtaining accountability.
+
+Algorithm 1 Intuition behind  transformation
+ 1: function 𝗉𝗋𝗈𝗉𝗈𝗌𝖾(𝑣) do
+ 2:    𝑣′ ← 𝑏𝑐.𝗉𝗋𝗈𝗉𝗈𝗌𝖾(𝑣)                                        ⊳ 𝑏𝑐 is any non-synchronous 𝑡0 -resilient Byzantine consensus protocol
+ 3:    broadcast [confirm, 𝑣′ ]
+ 4:    wait for [confirm, 𝑣′ ] from 𝑛 − 𝑡0 processes
+ 5:    return 𝑣′
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                      Page 3 of 40
+                                                   Accountable Byzantine Consensus
+
+   2. We prove a lower bound on the accountability complexity in a non-synchronous environment: any accountable
+
+       Byzantine consensus protocol incurs Ω(𝑛3 ) accountability complexity, with 𝑡0 ∈ Ω(𝑛). As a consequence, 
+
+       suffices for achieving optimal accountability complexity.
+
+   3. We show that the applicability of  is not limited to Byzantine consensus. Specifically, we define a
+
+       class of easily-accountable agreement tasks, and demonstrate that generalized  transformation provides
+
+       accountability for such tasks. Important distributed problems, such as Byzantine reliable and consistent
+
+       broadcast [13, 17], fall into the class of easily-accountable agreement tasks.
+
+
+1.2. Related Work
+    The work on accountability in distributed systems was pioneered in [35]: PeerReview, a generic accountability
+
+layer for distributed systems, was presented. Importantly, PeerReview does not allow correct processes to irrefutably
+
+detect faulty processes in non-synchronous environments: faulty processes might be suspected forever (i.e., processes
+
+strongly “believe” that the accused process is faulty, but no definitive proof is obtained), yet never conclusively
+
+detected. Hence, PeerReview does not suffice for accountability in non-synchronous Byzantine consensus. The
+
+formal study of Byzantine failures in the context of accountability was initiated by Haeberlen and Kuznetsov [36].
+
+    Recently, with the expansion of blockchain systems, the interest in accountable distributed protocols resurfaced
+
+once again. Polygraph [23], the first accountable Byzantine consensus protocol, was introduced by Civit et al. The
+
+Polygraph protocol is based on the DBFT consensus protocol [26] used in blockchains [27], tolerates up to 𝑛 faulty
+
+processes in achieving accountability, and has the communication complexity of 𝑂(𝑛4 ) in the common case. It is
+
+worth observing that Polygraph worsens the communication complexity of (the binary-value version of) the DBFT
+
+base protocol by an 𝑂(𝑛) multiplicative factor. Casper [16] is another system designed around the goal of obtaining
+
+accountability in blockchains, while Trap [45] combines accountability with game theory to increase the Byzantine
+
+fault tolerance of blockchains.
+
+    Recently, the possibility of obtaining accountability in protocols based on PBFT [20] was investigated [46].
+
+Specifically, accountable variants of PBFT [20] and HotStuff [51] were presented; however, these protocols allow
+
+for accountability only if up to 2𝑛∕3 processes are faulty, which implies that their “accountability threshold” is
+
+lower than the one of Polygraph. A generic transformation 𝜏𝑠𝑐𝑟 of any protocol solving a Byzantine decision
+
+task into its accountable equivalent was introduced in [25]. Thus, 𝜏𝑠𝑐𝑟 suffices for obtaining accountability in
+
+any Byzantine consensus protocol. The drawback of the proposed transformation is its cost: 𝜏𝑠𝑐𝑟 worsens the
+
+communication complexity of a Byzantine consensus protocol by a multiplicative factor of 𝑂(𝑛2 ) (or 𝑂(𝑛) in
+
+“broadcast-based” protocols1 ). The commonality between the discussed prior work is employing sophisticated
+    1 The 𝜏
+            𝑠𝑐𝑟 transformation [25] modifies each protocol by reliably-broadcasting [13, 17] its messages. Therefore, if the original protocol
+exclusively sends its messages to all processes (i.e., no unicasts are present), 𝜏𝑠𝑐𝑟 introduces an overhead of an 𝑂(𝑛) multiplicative factor.
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                             Page 4 of 40
+                                                 Accountable Byzantine Consensus
+
+                                                            Communication Complexity
+  Base Consensus        Communication Complexity                                           Accountability
+                                                          of the Accountable Counterpart                         Paper
+     Protocol          of the Base Consensus Protocol                                        Threshold
+                                                               in the Common Case
+      PBFT                           𝑂(𝑛4 )                            𝑂(𝑛4 )                  2𝑛∕3         Sheng et al. [46]
+    HotStuff                         𝑂(𝑛3 )                            𝑂(𝑛3 )                  2𝑛∕3         Sheng et al. [46]
+  Binary DBFT                        𝑂(𝑛3 )                            𝑂(𝑛4 )                    𝑛           Civit et al. [23]
+ Multivalue DBFT                     𝑂(𝑛4 )                             ( )
+                                                                       𝑂(𝑛 4
+                                                                                     )           𝑛           Civit et al. [23]
+       Any                            𝑋                       𝑋 ⋅ 𝑂(𝑛2 ) or 𝑋 ⋅ 𝑂(𝑛)             𝑛           Civit et al. [25]
+       Any                            𝑋                                  𝑋                       𝑛            this paper
+
+Table 1
+Overview of the main properties of existing accountable Byzantine consensus protocols.
+
+
+
+mechanisms for achieving accountability. Indeed, the prior work achieves accountability with the help of non-trivial
+
+modifications applied to the base consensus protocol.
+
+    In contrast, we take a fundamentally different approach that allows us to treat the base consensus protocol as a
+
+“closed box”, thus obtaining simpler and more efficient accountable Byzantine consensus protocols. Table 1 compares
+
+accountable Byzantine consensus protocols obtained by  with the existing alternatives.
+
+
+Roadmap. We present the necessary preliminaries in §2. We devote §3 to our  transformation. In §4, we
+prove a cubic lower bound on the accountability complexity. We define easily-accountable agreement tasks, and
+
+prove the applicability of generalized  to such tasks in §5. We conclude the paper in §6. Optional appendix
+
+includes (1) a proof of Theorem 1 (Appendix A), and (2) a detailed specification of the cryptographic primitives we
+
+use (Appendix B).
+
+
+2. Preliminaries
+
+System model. We consider a system Ψ = {𝑃1 , ..., 𝑃𝑛 } of 𝑛 processes that communicate by exchanging messages
+through a point-to-point authenticated network. Concretely, a message is a sequence of bits whose semantics is
+
+application-specific. The system is non-synchronous: there is no known bound that always holds on message delays
+
+and relative speed of the processes. Non-synchronous systems include:
+
+    • asynchronous systems, where the bound does not exist; and
+
+    • partially synchronous systems [31], where the bound holds only after some unknown Global Stabilization
+
+       Time (GST).
+
+    Each process is assigned its local protocol. A local protocol of a process defines the steps to be taken during a run
+
+of the system. The collection of all local protocols is a distributed protocol (or simply a protocol).
+
+    Some processes might be faulty: these processes may arbitrarily deviate from their local protocol (e.g., by
+
+crashing, failing to receive or send messages, sending different messages to different processes, performing arbitrary
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                              Page 5 of 40
+                                                 Accountable Byzantine Consensus
+
+state transitions). That is, this paper considers the Byzantine failure model [38]. If a process is not faulty, the process
+
+is correct. We assume that the communication is reliable: a message sent by a correct process to a correct process is
+
+eventually received.
+
+    An execution is a single run of the system. We denote by 𝑡 the actual number of faulty processes in an execution.
+
+
+Best-effort broadcast. Throughout the entire paper, we extensively rely on the best-effort broadcast primitive [17].
+This primitive exposes the following interface:
+
+    • input 𝖻𝗋𝗈𝖺𝖽𝖼𝖺𝗌𝗍(𝑚): A process broadcasts a message 𝑚; each correct process can broadcast its messages
+
+       arbitrarily many times.
+
+    • output 𝖽𝖾𝗅𝗂𝗏𝖾𝗋(𝑠, 𝑚′ ): A process delivers a message 𝑚′ with sender 𝑠.
+
+The following properties are satisfied:
+
+    • Validity: If a correct process broadcasts a message 𝑚, then every correct process eventually delivers 𝑚.
+
+    • Integrity: If a correct process delivers a message 𝑚 with sender 𝑠 and 𝑠 is correct, then 𝑠 has previously
+
+       broadcast 𝑚.
+
+Best-effort broadcast can easily be implemented in an asynchronous environment assuming a reliable point-to-point
+
+network: the sender sends its message to every process. In the rest of the paper, we exclusively rely on the best-effort
+
+broadcast primitive for protocol designs. Hence, whenever we say that “a process broadcasts a message”, we mean
+
+that the process broadcasts the message using the best-effort broadcast primitive.
+
+
+Cryptographic primitives. This paragraph outlines the cryptographic primitives we use throughout the paper. For
+the completeness, these primitives are formally treated in Appendix B.
+
+    We assume a public-key infrastructure (PKI): each process is associated with its public/private key pair that is
+
+used to sign messages and verify signatures of other processes. Crucially, the following holds:
+
+    • If a correct process 𝑃 signs a message 𝑚, every correct process successfully verifies that 𝑚 was signed by 𝑃 .
+
+    • If a message 𝑚 is accompanied by a signature of a correct process 𝑃 , then 𝑃 has indeed signed 𝑚.
+
+A message 𝑚 signed by the PKI private key of a process 𝑃𝑖 is denoted by 𝑚𝜎𝑖 .
+
+    Additionally, we assume a (𝑘, 𝑛)-dual threshold signature scheme [47], where 𝑘 is a parameter of the scheme.
+
+In this scheme, each process holds a distinct private key, and there exists a single public key. Each process 𝑃𝑖 can
+
+use its private key to produce a partial signature of a message 𝑚 by invoking 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇𝑖 (𝑚). Moreover, a partial
+
+signature 𝑡𝑠𝑖𝑔𝑛𝑎𝑡𝑢𝑟𝑒 of a message 𝑚 produced by process 𝑃𝑖 could be verified by 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒𝑖 (𝑚, 𝑡𝑠𝑖𝑔𝑛𝑎𝑡𝑢𝑟𝑒) (as
+
+is the case for the PKI). Finally, a set 𝑆 = {𝑡𝑠𝑖𝑔𝑛𝑎𝑡𝑢𝑟𝑒1 , 𝑡𝑠𝑖𝑔𝑛𝑎𝑡𝑢𝑟𝑒2 , ..., 𝑡𝑠𝑖𝑔𝑛𝑎𝑡𝑢𝑟𝑒𝑘 } of partial signatures, where
+
+|𝑆| = 𝑘 and, for each 𝑡𝑠𝑖𝑔𝑛𝑎𝑡𝑢𝑟𝑒𝑖 ∈ 𝑆, 𝑡𝑠𝑖𝑔𝑛𝑎𝑡𝑢𝑟𝑒𝑖 = 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇𝑖 (𝑚), could be combined into a single digital
+
+signature by invoking 𝖢𝗈𝗆𝖻𝗂𝗇𝖾(𝑆). A combined digital signature 𝑡𝑐𝑜𝑚𝑏𝑖𝑛𝑒𝑑 of message 𝑚 could be verified by
+
+
+First Author et al.: Preprint submitted to Elsevier                                                            Page 6 of 40
+                                                      Accountable Byzantine Consensus
+
+𝖵𝖾𝗋𝗂𝖿𝗒(𝑚, 𝑡𝑐𝑜𝑚𝑏𝑖𝑛𝑒𝑑); if 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝑡𝑐𝑜𝑚𝑏𝑖𝑛𝑒𝑑) = ⊤ (true), then 𝑡𝑐𝑜𝑚𝑏𝑖𝑛𝑒𝑑 was obtained by combining 𝑘 partial
+
+signatures of 𝑚. For obtaining the threshold signature scheme, we can either rely on (1) a trusted setup, or (2) a
+
+distributed key generation protocol [28, 2]. In the latter case, the best known solution [28] incurs 𝑂(𝑛3 ) (expected)
+
+communication cost; in this paper, we assume the cost is amortized (i.e., the threshold signature scheme is setup
+
+only once for a sequence of consensus instances).
+
+    Crucially, we assume that the PKI private key of a correct process is never revealed (irrespectively of the number
+
+of faulty processes in the system). Therefore, if a message 𝑚 is signed by the PKI private key of a process 𝑃𝑖 and 𝑃𝑖
+
+is correct, then the message 𝑚 was certainly sent by 𝑃𝑖 . Conversely, if the number of faulty processes exceeds 𝑛 − 𝑘,
+
+the threshold private key of a process can be revealed, and a partial signature of a correct process might be forged.2
+
+In other words, we assume a computationally-bounded adversary for which the following holds:
+
+     • The adversary cannot forge a PKI signature of a correct process.
+
+     • If 𝑡 ≤ 𝑛 − 𝑘, the adversary cannot forge a partial signature of a correct process.
+
+For the full details, refer to Appendix B.
+
+Proof of culpability. In order for correct processes to satisfy accountability (Definition 2), they need to obtain a
+proof of culpability of each detected process. Let us formally define a proof of culpability of a process.
+
+Definition 3 (Proof of culpability). A set Σ𝑖 of messages properly signed by the PKI private key of a process 𝑃𝑖 is a
+
+proof of culpability of 𝑃𝑖 if and only if there does not exist an execution such that (1) 𝑃𝑖 is correct, and (2) 𝑃𝑖 sends
+
+all the messages from the Σ𝑖 set.
+
+    Intuitively, a proof of culpability of a process is a set of messages which are properly signed (by the PKI private
+
+key) such that, if the process is correct, the process could not have sent all of those messages. Therefore, a proof of
+
+culpability undeniably proves that the concerned process is faulty (and this proof can be verified by a third party). A
+
+proof of culpability includes only messages signed by the PKI private key as the private PKI key of a correct process
+
+is never revelead (as opposed to the threshold private key of a correct process which might be revelead if the number
+
+of faulty processes exceeds 𝑛 − 𝑘; see the paragraph “Cryptographic primitives”). Thus, a proof of culpability of a
+
+correct process can never be obtained.
+
+    Let us give an example of a proof of culpability. Suppose that a correct process 𝑃𝑖 never sends two conflicting
+
+proposal messages in some protocol. Hence, a set Σ𝑖 = {[proposal, 𝑣]𝜎𝑖 , [proposal, 𝑣′ ≠ 𝑣]𝜎𝑖 } is a proof of
+
+culpability of 𝑃𝑖 as Σ𝑖 demonstrates that 𝑃𝑖 has sent two conflicting proposal messages.
+
+    Lastly, if a correct process detects a process 𝑃𝑖 and accompanies a proof of culpability Σ𝑖 of 𝑃𝑖 to the detection,
+
+we say that the process detects 𝑃𝑖 using Σ𝑖 .
+    2 The fact that the threshold private key of a correct process can be revealed if the system is overly corrupted allows us to not assume a trusted
+
+setup in obtaining the threshold signature scheme, i.e., the scheme might be obtained via a distributed key generation protocol (e.g., [2, 28]).
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                                    Page 7 of 40
+                                                 Accountable Byzantine Consensus
+
+Communication complexity. In this work, as in many in distributed computing [49, 4, 22], we care about the
+number of exchanged bits of information. To this end we define a word: a word contains a constant number of
+
+signatures and values. Each message contains at least a single word.
+
+    For deterministic protocols, we are interested in the worst-case communication complexity.
+
+Definition 4 (Worst-case communication complexity). The worst-case communication complexity of a deterministic
+
+protocol is the maximum number of words sent in messages by correct processes across all possible executions. If
+
+the protocol operates in the partially synchronous model, the worst-case communication complexity considers only
+
+the messages sent after GST.
+
+    For probabilistic protocols, we are interested in the expected communication complexity.
+
+Definition 5 (Expected communication complexity). The expected communication complexity of a probabilistic
+
+protocol is the maximum number of words sent in messages by correct processes across all possible executions,
+
+where (1) the maximum is computed over all inputs and applicable adversaries, and (2) the expectation is taken over
+
+the random outputs generated locally by correct processes. If the protocol operates in the partially synchronous
+
+model, the expected communication complexity considers only the messages sent after GST.
+
+
+Accountability complexity. The accountability complexity is a novel complexity metric designed for measuring the
+accountability-specific performance of protocols. We define the accountability complexity since the communication
+
+complexity is not a suitable metric for measuring the performance of accountable Byzantine consensus protocols
+
+in the degraded case (i.e., when the number of faults exceeds a predefined threshold). For example, Polygraph [24]
+
+and accountable variants of PBFT and Hotstuff [46] suffer from the infinite worst-case communication complexity
+
+in the degraded case: Byzantine processes force correct processes to constantly execute “one more round”, thus
+
+constructing an infinite execution where correct processes never decide.
+
+    In order to define the accountability complexity, we first define the accountability-specific messages.
+
+Definition 6 (Accountability-specific message). Let  denote the set of all “used” culpability proofs across all
+
+executions of an accountable Byzantine consensus protocol:
+
+
+       = {a proof of culpability Σ𝑖 of 𝑃𝑖 | there exists an execution in which a correct process detects 𝑃𝑖 using Σ𝑖 }.
+
+
+A message 𝑚 is an accountability-specific message if and only if there exists a proof of culpability Σ ∈  such that
+
+𝑚 ∈ Σ.
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                         Page 8 of 40
+                                                     Accountable Byzantine Consensus
+
+    Intuitively, a message is accountability-specific if it is used (in any execution) by a correct process to detect a
+
+faulty process. For example, if a correct process detects a faulty process 𝑃𝑖 using Σ𝑖 in some execution, then all
+
+messages that belong to Σ𝑖 are accountability-specific messages.
+
+    Finally, we are ready to formally define the accountability complexity.
+
+Definition 7 (Accountability complexity). The accountability complexity of an accountable Byzantine consensus
+
+protocol is the maximum number of accountability-specific messages sent by correct processes across all executions
+
+with at least two correct processes.
+
+    Intuitively, the accountability complexity represents the number of messages correct processes exchange with
+
+the goal of achieving accountability.
+
+
+3.  Transformation
+
+    This section presents , our transformation that enables any non-synchronous (deterministic or probabilistic)
+
+Byzantine consensus protocol to obtain accountability. We first introduce the accountable confirmer problem, and
+
+give its asynchronous implementation (§3.1). Then, we construct our  transformation around the accountable
+
+confirmer (§3.2). Finally, we discuss the applicability and limitations of  (§3.3).
+
+
+3.1. Accountable Confirmer
+    The accountable confirmer problem is a distributed problem defined among 𝑛 processes, out of which some can
+
+be faulty (i.e., Byzantine). It exposes the following interface:
+
+     • input 𝗌𝗎𝖻𝗆𝗂𝗍(𝑣): A process submits a value 𝑣. Each correct process submits exactly one value.
+
+     • output 𝖼𝗈𝗇𝖿 𝗂𝗋𝗆(𝑣′ ): A process confirms a value 𝑣′ . Each correct process confirms at most one value.
+
+     • output 𝖽𝖾𝗍𝖾𝖼𝗍(𝐹 , 𝑝𝑟𝑜𝑜𝑓 ): A process detects processes from the set 𝐹 such that 𝑝𝑟𝑜𝑜𝑓 contains a proof of
+
+       culpability of each process included in 𝐹 . Each correct process triggers 𝖽𝖾𝗍𝖾𝖼𝗍(⋅, ⋅) at most once.
+
+A 𝑡𝑎𝑐
+   0
+      -resilient accountable confirmer protocol satisfies the following properties:
+
+     • Terminating convergence: If (1) the number of faulty processes does not exceed 𝑡𝑎𝑐
+                                                                                       0
+                                                                                          , and (2) all correct processes
+
+       submit the same value, then that value is eventually confirmed by all correct processes.3
+
+     • Validity: The value confirmed by a correct process was submitted by a correct process.
+
+     • Accountability: If two correct processes confirm different values, every correct process eventually irrefutably
+
+       detects (at least) 𝑛 − 2𝑡𝑎𝑐
+                                0
+                                   faulty processes and obtains a proof of culpability of each detected process.
+
+We give an asynchronous implementation of the accountable confirmer problem in Algorithm 2. Importantly, our
+
+implementation (Algorithm 2) works under any computationally-bounded adversary.
+     3 Note that it is not guaranteed that any correct process confirms a value if correct processes submit different values (even if the number of
+
+faulty processes does not exceed 𝑡𝑎𝑐0
+                                      ).
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                                  Page 9 of 40
+                                                 Accountable Byzantine Consensus
+
+Intuition behind Algorithm 2. Consider the following algorithm (described in prose). (1) Once a correct process
+submits its value, it broadcasts a signed (by the PKI private key) message containing the submitted value. (2) The
+
+process waits for 𝑛 − 𝑡𝑎𝑐
+                       0
+                          messages containing the same value. (3) Once this happens, the process confirms the value,
+
+and broadcasts the received 𝑛 − 𝑡𝑎𝑐
+                                 0
+                                    messages to all processes in the system.
+
+    This simple algorithm ensures terminating convergence since, when there are up to 𝑡𝑎𝑐
+                                                                                       0
+                                                                                          faults and all correct
+
+processes submit the same value, all correct processes eventually receive 𝑛 − 𝑡𝑎𝑐
+                                                                               0
+                                                                                  messages containing the submitted
+
+value; thus, all correct processes confirm the value. As for the accountability property, if two correct processes
+
+disagree, every correct process eventually receives two conflicting sets of 𝑛 − 𝑡𝑎𝑐
+                                                                                 0
+                                                                                    messages. Every process whose
+
+messages belong to both sets is faulty as no correct process submits multiple values.
+
+
+Description of Algorithm 2. The actual implementation (Algorithm 2) of a 𝑡𝑎𝑐
+                                                                          0
+                                                                             -resilient accountable confirmer
+
+protocol builds upon the presented intuition. We emphasize that Algorithm 2 implements a 𝑡𝑎𝑐
+                                                                                          0
+                                                                                             -resilient accountable
+
+confirmer for any 𝑡𝑎𝑐
+                   0
+                      ≤ ⌈𝑛∕3⌉ − 1. It takes advantage of a (𝑘, 𝑛)-dual threshold signature scheme (see §2, paragraph
+
+“Cryptographic primitives”), where 𝑘 = 𝑛 − 𝑡𝑎𝑐
+                                            0
+                                               , in order to achieve quadratic communication complexity in the
+
+common case (i.e., in all executions with up to 𝑡𝑎𝑐
+                                                 0
+                                                    faults). Note that an implementation which completely follows
+
+the presented intution would suffer from a cubic communication complexity in the common case as each correct
+
+process would rebroadcast 𝑂(𝑛) messages after confirming its value.
+
+    Each process initially broadcasts the value it submitted in a submit message (line 19): the submit message
+
+contains the value and a partial signature of the value. Moreover, the entire message is signed by the PKI private
+
+key of the sender. Once a process receives such a submit message, the process (1) checks whether the message is
+
+properly signed (line 7), (2) verifies the partial signature (line 21), and (3) checks whether the received value is equal
+
+to its submitted value (line 21). If all checks pass, the process stores the received partial signature (line 23) and the
+
+entire message (line 24). Once a process stores partial signatures from (at least) 𝑛−𝑡𝑎𝑐
+                                                                                      0
+                                                                                         processes (line 26), the process
+
+confirms its submitted value (line 28) and informs other processes about its confirmation by combining the received
+
+partial signatures into a light certificate (line 29). The role of threshold signatures in our implementation is to allow
+
+every light certificate to contain a single signature (rather than 𝑛 − 𝑡𝑎𝑐
+                                                                        0
+                                                                           signatures), thus obtaining a quadratic overall
+
+communication complexity if 𝑡 ≤ 𝑡𝑎𝑐
+                                 0
+                                    .
+
+    Once a process receives two conflicting light certificates (line 34), the process concludes that correct processes
+
+might have confirmed different values. If the process has already confirmed its value, the process broadcasts the set
+
+of (at least) 𝑛 − 𝑡𝑎𝑐
+                   0
+                      properly signed [submit, 𝑣, ∗] messages (line 35), where 𝑣 is the value confirmed (and submitted)
+
+by the process; such a set of messages is a full certificate for value 𝑣. Finally, once a process receives two conflicting
+
+full certificates (line 40), the process obtains proof of culpability of (at least) 𝑛 − 2𝑡𝑎𝑐
+                                                                                          0
+                                                                                             faulty processes (line 48), which
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                             Page 10 of 40
+                                                         Accountable Byzantine Consensus
+
+ensures accountability. Indeed, each full certificate contains 𝑛 − 𝑡𝑎𝑐
+                                                                    0
+                                                                       properly signed messages: every process whose
+
+messages belong to the conflicting full certificates is faulty and these messages represent a proof of its misbehavior.
+
+(Recall that no faulty process ever obtains the PKI private key of a correct process.)
+
+Definitions for Algorithm 2
+  1) A combined digital signature 𝑡𝑠𝑖𝑔 is a valid light certificate for value 𝑣 if and only if 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑣, 𝑡𝑠𝑖𝑔) = ⊤.
+  2) A set  of properly signed [submit, 𝑣, ∗]𝜎∗ messages is a valid full certificate for value 𝑣 if and only if:
+      a) || ≥ 𝑛 − 𝑡𝑎𝑐
+                    0
+      b) Each message 𝑚 is sent (i.e., signed) by a distinct process.
+  3) Let 𝑡𝑠𝑖𝑔 𝑣 be a valid light certificate for value 𝑣 and let 𝑡𝑠𝑖𝑔 𝑣′ be a valid light certificate for value 𝑣′ . 𝑡𝑠𝑖𝑔 𝑣 conflicts with 𝑡𝑠𝑖𝑔 𝑣′ if and only if
+  𝑣 ≠ 𝑣′ .
+  4) Let 𝑣 be a valid full certificate for value 𝑣 and let 𝑣′ be a valid full certificate for value 𝑣′ . 𝑣 conflicts with 𝑣′ if and only if 𝑣 ≠ 𝑣′ .
+  5) Let (𝑚1 , 𝑚2 ) be a pair of messages properly signed by some process 𝑃𝑖 . (𝑚1 , 𝑚2 ) is a proof of culpability of 𝑃𝑖 if and only if:
+       a) 𝑚1 = [submit, 𝑣, 𝑠ℎ𝑎𝑟𝑒1 ]𝜎𝑖 , and
+       b) 𝑚2 = [submit, 𝑣′ , 𝑠ℎ𝑎𝑟𝑒2 ]𝜎𝑖 , and
+       c) 𝑣 ≠ 𝑣′ .
+
+
+
+
+Theorem 2. Algorithm 2 is an asynchronous 𝑡𝑎𝑐
+                                           0
+                                              -resilient accountable confirmer protocol safe under any computationally-
+
+bounded adversary, where 𝑡𝑎𝑐
+                          0
+                             ≤ ⌈𝑛∕3⌉ − 1, with:
+
+    • 𝑂(𝑛2 ) worst-case communication complexity in the common case (i.e., when 𝑡 ≤ 𝑡𝑎𝑐
+                                                                                     0
+                                                                                        ), and
+
+    • 𝑂(𝑛3 ) submit messages being sent by correct processes.
+
+Proof. We start by proving the terminating convergence and validity properties. If 𝑡 ≤ 𝑡𝑎𝑐
+                                                                                        0
+                                                                                           and all correct processes
+
+submit the same value 𝑣, the rule at line 26 eventually triggers at every correct process. Since every correct process
+
+confirms only the value it has submitted (line 28), terminating convergence and validity are satisfied by Algorithm 2.
+
+    Next, let us prove accountability. Let a correct process 𝑃𝑖 confirm a value 𝑣 and let another correct process 𝑃𝑗
+
+confirm a value 𝑣′ ≠ 𝑣. The rule at line 34 is eventually triggered at each correct process that confirms a value.
+
+Once the rule is triggered at 𝑃𝑖 and 𝑃𝑗 , these processes broadcast their full certificates (line 35). Eventually, the rule
+
+at line 40 is triggered at each correct process, which ensures accountability. Indeed, every process whose submit
+
+messages belong to both conflicting full certificates is detected (line 42 - line 46); moreover, such a process is indeed
+
+faulty since no correct process submits different values, i.e., no correct process ever sends different submit messages.
+
+    Finally, we prove the claimed complexity:
+
+    • If 𝑡 ≤ 𝑡𝑎𝑐
+              0
+                 , the communication complexity of the algorithm is quadratic because (1) light certificates are sent
+
+       only once and they contain a single threshold signature, and (2) no correct process broadcasts a full certificate
+
+       as no two conflicting light certificates can be produced.
+
+    • Each correct process sends 𝑛 submit messages at line 19. Moreover, each correct process includes (at most) 𝑛
+
+       submit messages in each full-certificate message it sends (line 35). Therefore, each correct process sends
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                                             Page 11 of 40
+                                                    Accountable Byzantine Consensus
+
+Algorithm 2 𝑡𝑎𝑐
+             0
+                -Resilient Accountable Confirmer: Code for process 𝑃𝑖
+ 1: Implements:
+ 2:   𝑡𝑎𝑐
+       0
+          -Resilient Accountable Confirmer, instance 𝑎𝑐
+ 3: Uses:
+ 4:    Best-Effort Broadcast [17], instance 𝑏𝑒𝑏                                 ⊳ Unreliable broadcast with no guarantees if the sender is faulty
+ 5:    (𝑘, 𝑛)-Threshold Signature Scheme, where 𝑘 = 𝑛 − 𝑡𝑎𝑐
+                                                         0
+ 6: Rules:
+ 7:    1) Any submit message that is not properly signed is discarded.
+ 8:    2) Rules at lines 26, 34 and 40 are activated at most once.
+ 9: upon event ⟨𝑎𝑐, 𝖨𝗇𝗂𝗍⟩ do
+10:    𝑣𝑎𝑙𝑢𝑒𝑖 ← ⊥
+11:    𝑐𝑜𝑛𝑓 𝑖𝑟𝑚𝑒𝑑 𝑖 ← 𝖿 𝖺𝗅𝗌𝖾
+12:    𝑓 𝑟𝑜𝑚𝑖 ← ∅
+13:    𝑙𝑖𝑔ℎ𝑡𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑖 ← ∅
+14:    𝑓 𝑢𝑙𝑙𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑖 ← ∅
+15:    𝑜𝑏𝑡𝑎𝑖𝑛𝑒𝑑𝐿𝑖𝑔ℎ𝑡𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑠𝑖 ← ∅
+16:    𝑜𝑏𝑡𝑎𝑖𝑛𝑒𝑑𝐹 𝑢𝑙𝑙𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑠𝑖 ← ∅
+17: upon event ⟨𝑎𝑐, 𝖲𝗎𝖻𝗆𝗂𝗍 | 𝑣⟩ do                                                                                          ⊳ 𝑃𝑖 submits a value
+18:    𝑣𝑎𝑙𝑢𝑒𝑖 ← 𝑣
+19:    trigger ⟨𝑏𝑒𝑏, 𝖡𝗋𝗈𝖺𝖽𝖼𝖺𝗌𝗍 | [submit, 𝑣, 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇𝑖 (𝑣)]𝜎𝑖 ⟩
+20: upon event ⟨𝑏𝑒𝑏, 𝖣𝖾𝗅𝗂𝗏𝖾𝗋 | 𝑃𝑗 , [submit, 𝑣𝑎𝑙𝑢𝑒, 𝑠ℎ𝑎𝑟𝑒]𝜎𝑗 ⟩ do
+21:    if 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒𝑗 (𝑣𝑎𝑙𝑢𝑒, 𝑠ℎ𝑎𝑟𝑒) = ⊤ and 𝑣𝑎𝑙𝑢𝑒 = 𝑣𝑎𝑙𝑢𝑒𝑖 and 𝑃𝑗 ∉ 𝑓 𝑟𝑜𝑚𝑖 then
+22:        𝑓 𝑟𝑜𝑚𝑖 ← 𝑓 𝑟𝑜𝑚𝑖 ∪ {𝑃𝑗 }
+23:        𝑙𝑖𝑔ℎ𝑡𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑖 ← 𝑙𝑖𝑔ℎ𝑡𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑖 ∪ {𝑠ℎ𝑎𝑟𝑒}
+24:        𝑓 𝑢𝑙𝑙𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑖 ← 𝑓 𝑢𝑙𝑙𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑖 ∪ {[submit, 𝑣𝑎𝑙𝑢𝑒, 𝑠ℎ𝑎𝑟𝑒]𝜎𝑗 }
+25:    end if
+26: upon |𝑓 𝑟𝑜𝑚𝑖 | ≥ 𝑛 − 𝑡𝑎𝑐
+                           0
+                              do
+27:    𝑐𝑜𝑛𝑓 𝑖𝑟𝑚𝑒𝑑 𝑖 ← 𝗍𝗋𝗎𝖾
+28:    trigger ⟨𝑎𝑐, 𝖢𝗈𝗇𝖿 𝗂𝗋𝗆 | 𝑣𝑎𝑙𝑢𝑒𝑖 ⟩                                                                                     ⊳ 𝑃𝑖 confirms a value
+29:    trigger ⟨𝑏𝑒𝑏, 𝖡𝗋𝗈𝖺𝖽𝖼𝖺𝗌𝗍 | [light-certificate, 𝑣𝑎𝑙𝑢𝑒𝑖 , 𝖢𝗈𝗆𝖻𝗂𝗇𝖾(𝑙𝑖𝑔ℎ𝑡𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑖 )]⟩
+30: upon event ⟨𝑏𝑒𝑏, 𝖣𝖾𝗅𝗂𝗏𝖾𝗋 | 𝑃𝑗 , [light-certificate, 𝑣𝑎𝑙𝑢𝑒𝑗 , 𝑙𝑖𝑔ℎ𝑡𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑗 ]⟩ do
+31:    if 𝑙𝑖𝑔ℎ𝑡𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑗 is a valid light certificate for 𝑣𝑎𝑙𝑢𝑒𝑗 then
+32:        𝑜𝑏𝑡𝑎𝑖𝑛𝑒𝑑𝐿𝑖𝑔ℎ𝑡𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑠𝑖 ← 𝑜𝑏𝑡𝑎𝑖𝑛𝑒𝑑𝐿𝑖𝑔ℎ𝑡𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑠𝑖 ∪ {[light-certificate, 𝑣𝑎𝑙𝑢𝑒𝑗 , 𝑙𝑖𝑔ℎ𝑡𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑗 ]}
+33:    end if
+34: upon 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒1 , 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒2 ∈ 𝑜𝑏𝑡𝑎𝑖𝑛𝑒𝑑𝐿𝑖𝑔ℎ𝑡𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑠𝑖 where 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒1 conflicts with 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒2
+    and 𝑐𝑜𝑛𝑓 𝑖𝑟𝑚𝑒𝑑 𝑖 = 𝗍𝗋𝗎𝖾 do
+35:    trigger ⟨𝑏𝑒𝑏, 𝖡𝗋𝗈𝖺𝖽𝖼𝖺𝗌𝗍 | [full-certificate, 𝑣𝑎𝑙𝑢𝑒𝑖 , 𝑓 𝑢𝑙𝑙𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑖 ]⟩
+36: upon event ⟨𝑏𝑒𝑏, 𝖣𝖾𝗅𝗂𝗏𝖾𝗋 | 𝑃𝑗 , [full-certificate, 𝑣𝑎𝑙𝑢𝑒𝑗 , 𝑓 𝑢𝑙𝑙𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑗 ]⟩ do
+37:    if 𝑓 𝑢𝑙𝑙𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑗 is a valid full certificate for 𝑣𝑎𝑙𝑢𝑒𝑗 then
+38:        𝑜𝑏𝑡𝑎𝑖𝑛𝑒𝑑𝐹 𝑢𝑙𝑙𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑠𝑖 ← 𝑜𝑏𝑡𝑎𝑖𝑛𝑒𝑑𝐹 𝑢𝑙𝑙𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑠𝑖 ∪ {𝑓 𝑢𝑙𝑙𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑗 }
+39:    end if
+40: upon 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒1 , 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒2 ∈ 𝑜𝑏𝑡𝑎𝑖𝑛𝑒𝑑𝐹 𝑢𝑙𝑙𝐶𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒𝑠𝑖 where 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒1 conflicts with 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒2 do
+41:    𝑝𝑟𝑜𝑜𝑓 = ∅
+42:    for each process 𝑃𝑖 such that 𝑃𝑖 ’s messages belong to both 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒1 and 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒2 :
+43:          𝑚1 ← the submit message signed by 𝑃𝑖 which belongs to 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒1
+44:          𝑚2 ← the submit message signed by 𝑃𝑖 which belongs to 𝑐𝑒𝑟𝑡𝑖𝑓 𝑖𝑐𝑎𝑡𝑒2
+45:          Σ𝑖 ← (𝑚1 , 𝑚2 )
+46:          𝑝𝑟𝑜𝑜𝑓 = 𝑝𝑟𝑜𝑜𝑓 ∪ {Σ𝑖 }
+47:    𝐹 ← the set of processes detected using 𝑝𝑟𝑜𝑜𝑓
+48:    trigger ⟨𝑎𝑐, 𝖣𝖾𝗍𝖾𝖼𝗍 | 𝐹 , 𝑝𝑟𝑜𝑜𝑓 ⟩                                                                             ⊳ 𝑃𝑖 detects faulty processes
+
+
+
+       (at most) 𝑂(𝑛) + 𝑂(𝑛2 ) = 𝑂(𝑛2 ) submit messages, which implies that (at most) 𝑛 ⋅ 𝑂(𝑛2 ) = 𝑂(𝑛3 ) submit
+
+       messages are sent by all correct processes.
+
+The theorem holds.
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                               Page 12 of 40
+                                                  Accountable Byzantine Consensus
+
+3.2. : Byzantine Consensus + Accountable Confirmer = Accountable Byzantine Consensus
+    We now present our  transformation (Algorithm 3), the main contribution of our work.  is built on the
+
+observation that any non-synchronous (deterministic or probabilistic) Byzantine consensus protocol paired with the
+
+accountable confirmer solves the accountable Byzantine consensus problem. Specifically, we prove that Algorithm 3
+
+solves the accountable Byzantine consensus problem, which implies that  indeed enables non-synchronous
+
+Byzantine consensus protocols to obtain accountability.
+
+Algorithm 3  Transformation: Code for process 𝑃𝑖
+ 1: Implements:
+ 2:    𝑡0 -Resilient Accountable Byzantine Consensus, instance 𝑎𝑏𝑐
+ 3: Uses:
+ 4:    ⊳ Deterministic or probabilistic Byzantine consensus protocol to be transformed
+ 5:    𝑡0 -Resilient Byzantine Consensus, instance 𝑏𝑐
+ 6:    𝑡0 -Resilient Accountable Confirmer implemented by Algorithm 2, instance 𝑎𝑐
+ 7: upon event ⟨𝑎𝑏𝑐, 𝖯𝗋𝗈𝗉𝗈𝗌𝖾 | 𝑝𝑟𝑜𝑝𝑜𝑠𝑎𝑙⟩ do                                                                      ⊳ Proposal
+ 8:    trigger ⟨𝑏𝑐, 𝖯𝗋𝗈𝗉𝗈𝗌𝖾 | 𝑝𝑟𝑜𝑝𝑜𝑠𝑎𝑙⟩
+ 9: upon event ⟨𝑏𝑐, 𝖣𝖾𝖼𝗂𝖽𝖾 | 𝑑𝑒𝑐𝑖𝑠𝑖𝑜𝑛⟩ do
+10:    trigger ⟨𝑎𝑐, 𝖲𝗎𝖻𝗆𝗂𝗍 | 𝑑𝑒𝑐𝑖𝑠𝑖𝑜𝑛⟩
+11: upon event ⟨𝑎𝑐, 𝖢𝗈𝗇𝖿 𝗂𝗋𝗆 | 𝑐𝑜𝑛𝑓 𝑖𝑟𝑚𝑎𝑡𝑖𝑜𝑛⟩ do
+12:    trigger ⟨𝑎𝑏𝑐, 𝖣𝖾𝖼𝗂𝖽𝖾 | 𝑐𝑜𝑛𝑓 𝑖𝑟𝑚𝑎𝑡𝑖𝑜𝑛⟩                                                                     ⊳ Decision
+13: upon event ⟨𝑎𝑐, 𝖣𝖾𝗍𝖾𝖼𝗍 | 𝐹 , 𝑝𝑟𝑜𝑜𝑓 ⟩ do
+14:    trigger ⟨𝑎𝑏𝑐, 𝖣𝖾𝗍𝖾𝖼𝗍 | 𝐹 , 𝑝𝑟𝑜𝑜𝑓 ⟩                                                                       ⊳ Detection
+
+
+
+    The following theorem proves that the  transformation (Algorithm 3) is correct.
+
+Theorem 3 (Correctness of ). Let 𝑏𝑐 be a non-synchronous 𝑡0 -resilient deterministic (resp.,probabilistic)
+
+Byzantine consensus protocol, where 𝑡0 ≤ ⌈𝑛∕3⌉ − 1. Let 𝑎𝑏𝑐 be a protocol obtained by applying  (Algorithm 3)
+
+to 𝑏𝑐. Then, 𝑎𝑏𝑐 is a non-synchronous 𝑡0 -resilient deterministic (resp., probabilistic) accountable Byzantine consensus
+
+protocol which tolerates the same computationally-bounded adversary as 𝑏𝑐.
+
+Proof. Consider an execution where 𝑡 ≤ 𝑡0 . Let 𝑏𝑐 is a deterministic (resp., probabilistic) Byzantine consensus
+
+protocol. All correct processes eventually decide (resp., decide with probability 1) the same value 𝑣 from Byzantine
+
+consensus at line 9 by deterministic (resp., probabilistic) termination and agreement of Byzantine consensus.
+
+Moreover, if all correct processes have proposed the same value (line 7), then the proposed value is indeed 𝑣
+
+(ensured by validity of Byzantine consensus). Terminating convergence of accountable confirmer ensures that all
+
+correct processes eventually confirm 𝑣 (line 11) and decide from accountable Byzantine consensus (line 12). Hence,
+
+Algorithm 3 satisfies deterministic (resp., probabilistic) termination, agreement and validity.
+
+    If correct processes disagree (i.e., decide different values at line 12), then these processes have confirmed different
+
+values from the accountable confirmer (line 11). Thus, every correct process detects (and obtains proofs of culpability
+
+of) 𝑛 − 2𝑡0 processes at line 13 (by the accountability property of the accountable confirmer). Finally, as Algorithm 2
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                           Page 13 of 40
+                                                   Accountable Byzantine Consensus
+
+solves the accountable confirmer problem under any computationally-bounded adversary (by Theorem 2), 𝑎𝑏𝑐 is
+
+safe under the same computationally-bounded adversary as 𝑏𝑐.
+
+
+
+    Theorem 3 shows that Algorithm 3 is an (asynchronous) implementation of an accountable Byzantine consensus
+
+protocol. Therefore, any Byzantine consensus protocol can be transformed into an accountable one by “inserting”
+
+that protocol into the composition presented by Algorithm 3 (line 5). Importantly, the upper bound on tolerated
+
+Byzantine processes for deterministic and probabilistic protocols is ⌈𝑛∕3⌉ − 1 [31, 12], which implies that the 
+
+transformation is applicable to Byzantine consensus protocols with every possible resilience. Furthermore, we note
+
+that  provides maximal resilience against disagreement: if  is applied to a 𝑡0 -resilient Byzantine consensus
+
+protocol, a disagreement in the resulting protocol cannot occur with less than 𝑛 − 2𝑡0 faulty processes.
+
+    Next, we show that  does not worsen the communication complexity in the common case of sup-quadratic
+
+Byzantine consensus protocols and induces a cubic accountability complexity.
+
+Theorem 4. Let 𝑏𝑐 be a 𝑡0 -resilient deterministic (resp., probabilistic) Byzantine consensus protocol, where 𝑡0 ≤
+
+⌈𝑛∕3⌉ − 1, with the worst-case (resp., expected) communication complexity 𝑐𝑐 in the common case (with up to 𝑡0 faults).
+
+Let 𝑎𝑏𝑐 be a protocol obtained by applying  to 𝑏𝑐. Then, 𝑎𝑏𝑐 has the worst-case (resp., expected) communication
+                (         )
+complexity 𝗆𝖺𝗑 𝑐𝑐, 𝑂(𝑛2 ) in the common case and 𝑂(𝑛3 ) accountability complexity.
+
+Proof. As the communication complexity of the accountable confirmer is 𝑂(𝑛2 ) in the common case (by Theorem 2),
+                                                                       (          )
+the worst-case (resp., expected) communication complexity of 𝑎𝑏𝑐 is 𝗆𝖺𝗑 𝑐𝑐, 𝑂(𝑛2 ) in the common case. Moreover,
+
+as the only accountability-specific messages sent by 𝑎𝑏𝑐 are the submit messages of the accountable confirmer and
+
+𝑂(𝑛3 ) submit messages are sent by correct processes (by Theorem 2), the accountability complexity is 𝑂(𝑛3 ).
+
+    Lastly, we remark that  does not worsen the communication complexity of any (1) deterministic Byzantine
+
+consensus protocol, or (2) (possibly probabilistic) Byzantine consensus protocol safe under a strongly adaptive
+
+adversary. Namely, Dolev and Reischuk [29] proved that any deterministic Byzantine consensus protocol incurs
+
+a quadratic worst-case communication complexity in the common case. Similarly, Abraham et al. [5] showed that
+
+the quadratic lower bound for expected communication complexity holds against an adaptive adversary. However,
+
+we underline that  worsens the communication complexity of partially synchronous probabilistic Byzantine
+
+consensus protocols with sub-quadratic expected complexity (e.g., [44]).4
+    4 We emphasize that [44] assumes a static adversary, thus allowing itself to circumvent the quadratic lower bound [5].
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                          Page 14 of 40
+                                                 Accountable Byzantine Consensus
+
+3.3. Discussion
+    In this subsection, we discuss ’s applicability to different variants of the consensus problem, as well as some
+
+of ’s limitations.
+
+
+’s applicability to different variants of Byzantine consensus. The (accountable) Byzantine consensus
+problem (as defined in §1) specifies the validity property, which ensures that, if all correct processes propose the
+
+same value, then only that value could be decided by a correct process. In the literature, this is not the only variant
+
+of the validity property; the variant we use is traditionally called strong validity. Other most notable variants of the
+
+validity property include:
+
+    • Weak Validity: If all processes are correct and if a correct process decides value 𝑣, then 𝑣 is proposed by a
+
+       (correct) process [42, 51, 15].
+
+    • External Validity: A value decided by a correct process satisfies a predefined 𝑣𝑎𝑙𝑖𝑑 predicate [18].
+
+    Importantly, the correctness of  does not depend on a specific variant of the validity property: the
+
+“connection” between proposed values and the decided value is preserved by . In other words, an accountable
+
+Byzantine consensus protocol which is a product of  satisfies the same validity property as the original
+
+consensus protocol.
+
+
+Limitations of . We now list a few limitations of :
+   1.  is not optimized for the best-case scenarios: It is possible to devise Byzantine consensus protocols
+
+       that exhibit 𝑜(𝑛2 ) communication in some favourable scenarios. For instance, HotStuff [51] achieves only
+
+       linear communication if no faulty processes exist and the execution is synchronous from the very beginning.
+
+       However, this linear communication is lost when  is applied to HotStuff as processes “always” exchange
+
+       the submit messages, which leads to the inevitable 𝑂(𝑛2 ) communication cost.
+
+   2.  (more precisely, our implementation of the accountable confirmer) uses threshold signatures [39] to
+
+       obtain 𝑂(𝑛2 ) communication complexity in the common case. As we have already mentioned in §2, we do
+
+       not need to assume a trusted setup to obtain a threshold signature scheme: an asynchronous distributed
+
+       key generation (ADKG) protocol [2], executed on top of a PKI setup, provides a threshold signature scheme.
+
+       Importantly, we are not aware of an ADKG protocol whose communication complexity is quadratic. Therefore,
+
+        introduces a quadratic overhead only if (1) a trusted setup is assumed, or (2) the communication cost of
+
+       an ADKG protocol is amortized. An alternative is to use compressed 𝛴 protocols [8], which allow us to obtain
+
+       a transparent threshold signature scheme (without trusted setup) with a logarithmic overhead per threshold
+                                                               (         )
+       signature: communication overhead of  would be 𝑂 𝑛2 ⋅ log(𝑛) .
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                        Page 15 of 40
+                                                 Accountable Byzantine Consensus
+
+       In practice, it is worth considering multi-signatures [30, 10] instead of the aforementioned threshold
+
+       signatures. Multi-signatures have an accompanying bit-mask of 𝑛 bits. In summary, if 𝜅 denotes the size of a
+
+       signature (usually, 𝜅 = 256), the communication overhead of  would be:
+
+           • 𝑂(𝜅 ⋅ 𝑛2 + 𝑛3 ) in the case of multi-signatures;
+
+           • 𝑂(𝜅 ⋅ 𝑛2 ) in the case of threshold signatures (assuming a trusted setup or a cost-amortized ADKG); and
+
+           • 𝑂(𝜅 ⋅ 𝑛2 ⋅ 𝗅𝗈𝗀(𝑛)) in the case of compressed 𝛴-protocols.
+
+       A formal treatment of all of the aforementioned cryptographic primitives is available in Appendix B.
+
+
+4. Lower Bound on Accountability Complexity
+
+    In this section, we prove that any non-synchronous 𝑡0 -resilient accountable Byzantine consensus protocol incurs
+
+cubic accountability complexity (when 𝑡0 ∈ Ω(𝑛)). Throughout the entire subsection, we fix any non-synchronous
+
+𝑡0 -resilient (deterministic or probabilistic) accountable Byzantine consensus protocol 𝑎𝑏𝑐. Without loss of generality,
+
+we assume that 𝑛 = 3𝑡0 + 1.
+
+    We prove the lower bound by showing that the accountability complexity of 𝑎𝑏𝑐 is Ω(𝑛3 ). Specifically, we prove
+
+that there exists an execution  such that correct processes send Ω(𝑛3 ) accountability-specific messages in .
+
+
+Execution Λ. First, we construct a specific (finite) execution Λ. We fix three disjoint groups of processes: (1) group
+𝐴 = {𝑎1 , 𝑎2 , ..., 𝑎𝑡0 }, where |𝐴| = 𝑡0 , (2) group 𝐵 = {𝑏1 , 𝑏2 , ..., 𝑏𝑡0 , 𝑏𝑡0 +1 }, where |𝐵| = 𝑡0 + 1 = 𝑛 − 2𝑡0 , and (3) group
+
+𝐶 = {𝑐1 , 𝑐2 , ..., 𝑐𝑡0 }, where |𝐶| = 𝑡0 . Throughout the entire subsection, we rely on the aforementioned groups.
+
+    Since 𝑎𝑏𝑐 solves Byzantine consensus if there are up to 𝑡0 faults, the following two infinite executions exist:
+
+   1. 𝑒1 : All processes from the group 𝐶 are faulty, and these processes are silent throughout the entire execution
+
+       (i.e., they send no messages). Moreover, all processes from the 𝐴 ∪ 𝐵 set propose the same value 𝑣. Since there
+
+       are 𝑡0 faulty processes (as |𝐶| = 𝑡0 ), 𝑎𝑏𝑐 ensures that all processes from the 𝐴 ∪ 𝐵 set eventually decide the
+
+       same value 𝑣 (by Byzantine consensus solvability of 𝑎𝑏𝑐) by some global time 𝑡1 .
+
+   2. 𝑒2 : All processes from the group 𝐴 are faulty, and these processes are silent throughout the entire execution.
+
+       Moreover, all processes from the 𝐵 ∪ 𝐶 set propose the same value 𝑣′ ≠ 𝑣. As there are 𝑡0 faulty processes
+
+       (since |𝐴| = 𝑡0 ), 𝑎𝑏𝑐 ensures that all processes from the 𝐵 ∪ 𝐶 set eventually decide the value 𝑣′ ≠ 𝑣 by some
+
+       global time 𝑡2 .
+
+    The existence of the executions 𝑒1 and 𝑒2 allows us to devise another infinite execution 𝑒, where:
+
+    • Processes from the group 𝐴 and processes from the group 𝐶 are correct, whereas processes from the group 𝐵
+
+       are faulty. Moreover, all processes from the group 𝐴 propose 𝑣, and all processes from the group 𝐶 propose
+
+       𝑣′ ≠ 𝑣.
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                     Page 16 of 40
+                                                       Accountable Byzantine Consensus
+
+     • The processes from the group 𝐵 behave towards the processes from the group 𝐴 as in execution 𝑒1 , and the
+
+        processes from the group 𝐵 behave towards the processes from the group 𝐶 as in 𝑒2 . Moreover, if an event
+
+        𝜖 (e.g., reception of a message, sending of a message, local computation) occurs at global time 𝑡𝜖 in 𝑒1 or 𝑒2 ,
+
+        then 𝜖 occurs at the same time 𝑡𝜖 in execution 𝑒.
+
+     • All messages between processes from the group 𝐴 and the group 𝐶 are delayed until after time 𝑇0 =
+
+        max(𝑡1 , 𝑡2 ).
+
+Importantly, execution 𝑒 is indistinguishable from execution 𝑒1 to processes from the group 𝐴, which implies that all
+
+processes from the group 𝐴 decide value 𝑣 by time 𝑡1 . Similarly, all processes from the group 𝐶 decide value 𝑣′ ≠ 𝑣
+
+by time 𝑡2 . Thus, correct processes disagree in 𝑒.
+
+     We denote by Λ the prefix of execution 𝑒 until time 𝑇0 = max(𝑡1 , 𝑡2 ).5 Note that the following holds for Λ:
+
+     • All processes from the group 𝐴 decide 𝑣 in Λ.
+
+     • All processes from the group 𝐶 decide 𝑣′ ≠ 𝑣 in Λ.
+
+     • No message is exchanged between any two processes (𝑎 ∈ 𝐴, 𝑐 ∈ 𝐶).
+
+     The first intermediate result we prove is that no correct process 𝑝 ∈ 𝐴 ∪ 𝐶 can obtain a proof of culpability of
+
+any process from the messages it received in Λ. Informally, the reason is that all processes seem correct in the eyes
+
+of a correct process; recall that the groups 𝐴 and 𝐶 do not communicate with each other in Λ.
+
+Lemma 1. Consider a process 𝑝 ∈ 𝐴 ∪ 𝐶. Given the messages 𝑝 receives in Λ, 𝑝 is unable to construct a proof of
+
+culpability of any process.
+
+Proof. Without loss of generality, let 𝑝 ∈ 𝐴. Recall that Λ is indistinguishable from 𝑒1 until time 𝑇0 to 𝑝. Assume
+
+that, by the means of contradiction, 𝑝 obtains a proof of culpability of some process from the messages received in
+
+Λ.
+
+     We now construct an infinite execution 𝑒∗1 by relying on 𝑒1 :
+
+     1. All processes are correct in 𝑒∗1 .
+
+     2. All messages sent by the processes from the group 𝐶 to any process from the groups 𝐴 or 𝐵 are delayed until
+
+        after time 𝑇0 .
+
+     3. The execution 𝑒∗1 unfolds in the exact same way as 𝑒1 until time 𝑇0 .
+
+Due to the construction of 𝑒∗1 , 𝑝 cannot distinguish 𝑒∗1 (until time 𝑇0 ) from Λ. Thus, 𝑝 obtains a proof of culpability
+
+of some process in 𝑒∗1 . However, this is impossible as all processes are correct.
+
+
+Intuition. Now that we have designed the finite execution Λ, we can present the intuition behind the construction
+of . Let us fix any process 𝑎 ∈ 𝐴.
+     5 Recall that 𝑒 is an infinite execution. On the other hand, Λ is a finite execution.
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                         Page 17 of 40
+                                                 Accountable Byzantine Consensus
+
+    First, note that there exists a continuation 𝑒1𝑎 of Λ in which (1) only 𝑎 and 𝑐1 ∈ 𝐶 are correct, and (2) these two
+
+processes do not receive messages from any other process after 𝑇0 . Importantly, all processes in 𝐴 ⧵ {𝑎} are silent
+
+after 𝑇0 ; note that their behavior is correct, except that sent messages which are not received by 𝑇0 are omitted (this
+
+will play an important role in the conclusion of the proof intuition). As Lemma 1 proves, 𝑐1 is unable to build any
+
+proof of culpability given the messages it has received in Λ. As accountability must be satisfied in 𝑒1𝑎 , 𝑎 must help 𝑐1
+
+in obtaining (at least) 𝑡0 +1 proofs of culpability. Therefore, 𝑎 must send (at least) 𝑡0 +1 = Ω(𝑛) accountability-specific
+
+messages to 𝑐1 . Let 𝑇1 denote the time by which 𝑎 sends Ω(𝑛) accountability-specific messages to 𝑐1 .
+
+    However, if 𝑎 receives a message from 𝑐2 ∈ 𝐶 after 𝑇1 , 𝑎 must help 𝑐2 in satisfying accountability. Indeed, 𝑎
+
+cannot rely on 𝑐1 helping 𝑐2 as 𝑐1 might be faulty. Thus, 𝑎 needs to send Ω(𝑛) accountability-specific messages to 𝑐2 .
+
+Following the same logic, we construct a finite execution 𝑒𝑎 in which 𝑎 sends Ω(𝑛) accountability-specific messages
+
+to each process 𝑐 ∈ 𝐶; hence, 𝑎 sends Ω(𝑛2 ) accountability-specific messages in 𝑒𝑎 . We denote by 𝑇𝑎 the time by
+
+which 𝑎 sends Ω(𝑛2 ) messages in 𝑒𝑎 . Figure 1 gives a visual depiction of the intuition behind the design of 𝑒𝑎 .
+
+
+
+
+                                            Figure 1: Intuition behind the execution 𝑒𝑎 .
+
+
+
+    At this point, for every process 𝑎 ∈ 𝐴, we have an execution 𝑒𝑎 in which (1) 𝑎 sends Ω(𝑛2 ) accountability-specific
+
+messages, and (2) all other processes from the group 𝐴 are silent. Therefore, we can “merge” all of these execution
+
+into  in the following manner:
+
+   1. Only processes from the group 𝐴 are correct. All other processes (i.e., 𝐵 ∪ 𝐶) are faulty.
+
+   2. Message between processes from the group 𝐴 which are not received by 𝑇0 (i.e., in Λ) are delayed until after
+
+       max(𝑇𝑎1 , 𝑇𝑎2 , ..., 𝑇𝑎𝑡 ).
+                              0
+
+   3. Each process 𝑐 ∈ 𝐶 behaves towards each process 𝑎 ∈ 𝐴 as it does in 𝑒𝑎 .
+
+As no process 𝑎 ∈ 𝐴 can distinguish  from 𝑒𝑎 until 𝑇𝑎 , 𝑎 sends Ω(𝑛2 ) messages in . Thus, Ω(𝑛3 ) accountability-
+
+specific messages are sent in , which suffices for proving the lower bound.
+
+
+Construction of  (part 1): In the first part of the construction, we build an execution 𝑒𝑎 in which (1) only a fixed
+process 𝑎 ∈ 𝐴 is correct, and (2) 𝑎 sends (at least) 𝑡0 + 1 ∈ Ω(𝑛) accountability-specific messages to each process
+
+
+First Author et al.: Preprint submitted to Elsevier                                                           Page 18 of 40
+                                                 Accountable Byzantine Consensus
+
+from the group 𝐶. Thus, 𝑎 sends a quadratic number of accountability-specific messages in 𝑒𝑎 . As constructing 𝑒𝑎 is
+
+non-trivial, we construct 𝑒𝑎 incrementally (through a sequence of steps).
+
+Step 1: Construction of an infinite execution 𝑒1𝑎 in which 𝑎 sends Ω(𝑛) accountability-specific messages to 𝑐1 .
+
+We construct 𝑒1𝑎 by relying on the previously described execution Λ. Specifically, we construct 𝑒1𝑎 as follows:
+
+   1. Only processes 𝑎 and 𝑐1 are correct.
+
+   2. We construct the prefix 𝜋𝑎1 of 𝑒1𝑎 until time 𝑇0 in the following way:
+
+         (a) Let 𝜋𝑎1 be Λ.
+
+         (b) For every message 𝑚 such that (1) 𝑚 is sent by a process 𝑠 in 𝜋𝑎1 with 𝑠 ≠ 𝑎 and 𝑠 ≠ 𝑐1 , and (2) 𝑚 is not
+
+             received in 𝜋𝑎1 (i.e., Λ), the sending event of 𝑚 is removed from 𝜋𝑎1 . In other words, each message which
+
+             is sent by a process other than 𝑎 and 𝑐1 and not received by 𝑇0 is removed from 𝜋𝑎1 . This step ensures
+
+             that processes can only receive messages from 𝑎 and 𝑐1 after 𝑇0 .
+
+   3. Each process 𝑝 ∈ Ψ ⧵ {𝑎, 𝑐1 } is silent after time 𝑇0 , i.e., it does not send any message after time 𝑇0 .
+
+Figure 2 depicts the devised execution 𝑒1𝑎 .
+
+
+
+
+                                                      Figure 2: Execution 𝑒1𝑎 .
+
+
+
+    Let us analyze 𝑒1𝑎 (the summary of the analysis can be seen in Figure 2):
+
+    • No process receives any message from a process 𝑠 after time 𝑇0 , where 𝑠 ≠ 𝑎 and 𝑠 ≠ 𝑐1 (step 2b). In other
+
+       words, if any process receives a message after time 𝑇0 , then the message was sent either by 𝑎 or 𝑐1 .
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                           Page 19 of 40
+                                                 Accountable Byzantine Consensus
+
+    • Until time 𝑇0 , 𝑒1𝑎 is indistinguishable from Λ to both 𝑎 and 𝑐1 (step 2a and step 2b). Thus, 𝑎 decides 𝑣 in 𝑒1𝑎 ,
+
+       whereas 𝑐 decides 𝑣′ ≠ 𝑣 in 𝑒1𝑎 . Moreover, 𝑐1 does not obtain any proof of culpability until time 𝑇0 in 𝑒1𝑎 (due
+
+       to Lemma 1).
+
+    • For every process 𝑞 ∈ (𝐴 ∪ 𝐶) ⧵ {𝑎, 𝑐1 }, 𝑞 does not behave correctly until time 𝑇0 solely because it omits some
+
+       messages (step 2b).
+
+    Finally, we prove that 𝑎 sends (at least) 𝑡0 + 1 ∈ Ω(𝑛) accountability-specific messages in 𝑒1𝑎 . Intuitively, 𝑎 does so
+
+to ensure that 𝑐1 is able to obtain a proof of culpability of 𝑡0 + 1 = 𝑛 − 2𝑡0 processes in 𝑒1𝑎 (to satisfy accountability).
+
+Lemma 2. Process 𝑎 sends Ω(𝑛) accountability-specific messages to 𝑐1 in 𝑒1𝑎 .
+
+Proof. Given the messages 𝑐1 receives until time 𝑇0 in 𝑒1𝑎 , 𝑐1 is not able to construct a proof of culpability of any
+
+process (by Lemma 1). However, as 𝑎𝑏𝑐 satisfies accountability, 𝑐1 eventually obtains proofs of culpability of 𝑡0 + 1
+
+processes. Hence, 𝑐1 obtains the proofs after time 𝑇0 . As 𝑐1 only receives messages from 𝑎 (and itself) after time 𝑇0 ,
+
+𝑐1 must have incorporated (at least) 𝑡0 + 1 messages sent by 𝑎 into the obtained proofs of culpabilities; thus, all of
+
+these messages are accountability-specific. Therefore, 𝑎 sends Ω(𝑛) accountability-specific messages to 𝑐1 in 𝑒1𝑎 .
+
+    We denote by 𝑇1 be the first time such that (1) 𝑇1 > 𝑇0 , and (2) 𝑎 sends Ω(𝑛) accountability-specific messages to
+
+𝑐1 by time 𝑇1 in 𝑒1𝑎 .
+
+Step 2: Construction of an infinite execution 𝑒2𝑎 in which 𝑎 sends Ω(𝑛) accountability-specific messages to both 𝑐1
+
+and 𝑐2 .
+
+This step of the construction is purely demonstrative. Namely, we show how to construct 𝑒2𝑎 by relying on 𝑒1𝑎 . In the
+
+next step of the construction, we will generalize the construction from 𝑒𝑖𝑎 (in which 𝑎 sends Ω(𝑛) accountability-
+
+specific messages to each process in {𝑎1 , ..., 𝑎𝑖 }) to 𝑒𝑖+1
+                                                          𝑎 (in which 𝑎 sends Ω(𝑛) accountability-specific messages to
+
+each process in {𝑎1 , ..., 𝑎𝑖 , 𝑎𝑖+1 }.
+
+    We construct 𝑒2𝑎 in the following way:
+
+   1. Only processes 𝑎 and 𝑐2 are correct.
+
+   2. We construct the prefix 𝜋𝑎2 of 𝑒2𝑎 until time 𝑇1 in the following manner:
+
+           (a) Let 𝜋𝑎2 be the prefix of 𝑒1𝑎 until time 𝑇1 .
+
+           (b) We correct the behavior of 𝑐2 until time 𝑇0 by inserting all the messages omitted in 𝑒1𝑎 (i.e., 𝑐2 behaves
+
+               exactly as it behaves in Λ). After time 𝑇0 , the behavior of 𝑐2 is correct (as 𝑐2 is correct in 𝑒2𝑎 ).
+
+           (c) For every message 𝑚 sent by 𝑐1 in 𝜋𝑎2 such that (1) 𝑚 is sent to a process 𝑟 with 𝑟 ≠ 𝑎 and 𝑟 ≠ 𝑐1 , and (2)
+
+               𝑚 is not received by time 𝑇0 , the sending event of 𝑚 is removed from 𝜋𝑎2 . In other words, only 𝑎 (and 𝑐1 )
+
+               receive messages from 𝑐1 after 𝑇0 .
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                 Page 20 of 40
+                                                   Accountable Byzantine Consensus
+
+         (d) For every message 𝑚 sent by 𝑐1 in 𝜋𝑎2 such that (1) 𝑚 is sent to 𝑎, and (2) 𝑚 is not received by time 𝑇1 ,
+
+             the sending event of 𝑚 is removed from 𝜋𝑎2 . This step of the construction ensures that 𝑎 only receives
+
+             messages from 𝑐1 until time 𝑇1 ; after 𝑇1 , 𝑎 receives no messages from 𝑐1 .
+
+   3. Process 𝑐2 does not receive any message from any other process between times 𝑇0 and 𝑇1 .
+
+   4. Each process 𝑝 ∈ Ψ ⧵ {𝑎, 𝑐2 } is silent after time 𝑇1 , i.e., it does not send any message after time 𝑇1 . Recall that
+
+       processes in Ψ ⧵ {𝑎, 𝑐1 , 𝑐2 } are silent after time 𝑇0 (due to the construction of 𝑒1𝑎 ).
+
+Figure 3 depicts 𝑒2𝑎 .
+
+
+
+
+                 Figure 3: Execution 𝑒2𝑎 . All modifications introduced to 𝑒1𝑎 (in order to obtain 𝑒2𝑎 ) are noted in red.
+
+
+
+    The following holds for 𝑒2𝑎 (summarized in Figure 3):
+
+    • After 𝑇0 , only 𝑎 and 𝑐1 receive messages from 𝑐1 (step 2c). Moreover, even 𝑎 stops receiving messages from 𝑐1
+
+       after time 𝑇1 (step 2d).
+
+    • After time 𝑇0 , 𝑐2 only receives messages from 𝑎 and itself (step 2c). Furthermore, between 𝑇0 and 𝑇1 , 𝑐2 only
+
+       receives messages from itself (step 3).
+
+    • Until time 𝑇0 , 𝑒2𝑎 is indistinguishable from Λ to both 𝑎 and 𝑐2 (step 2a). Thus, 𝑎 decides 𝑣, whereas 𝑐2 decides
+
+       𝑣′ ≠ 𝑣.
+
+    • For every process 𝑞 ∈ (𝐴 ∪ 𝐶) ⧵ {𝑎, 𝑐1 , 𝑐2 }, 𝑞 does not behave correctly until time 𝑇0 solely because it omits
+
+       some messages.
+
+    We conclude this step of the construction of 𝑒𝑎 by proving that 𝑎 sends Ω(𝑛) accountability-specific messages
+
+both to 𝑐1 and 𝑐2 in 𝑒2𝑎 .
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                          Page 21 of 40
+                                                   Accountable Byzantine Consensus
+
+Lemma 3. Process 𝑎 sends Ω(𝑛) accountability-specific messages both to 𝑐1 and 𝑐2 in 𝑒2𝑎 .
+
+Proof. First, 𝑎 sends Ω(𝑛) accountability-specific messages to 𝑐1 in 𝑒2𝑎 as (1) 𝑒2𝑎 is indistinguishable from 𝑒1𝑎 to 𝑎
+
+until time 𝑇1 (due to the construction of 𝑒2𝑎 ), and (2) 𝑎 sends Ω(𝑛) accountability-specific messages by 𝑇1 in 𝑒1𝑎 (by
+
+Lemma 2). Hence, it is left to prove that 𝑎 sends Ω(𝑛) accountability-specific messages to 𝑐2 in 𝑒2𝑎 , as well.
+
+    As already noted, 𝑎 and 𝑐2 disagree in 𝑒2𝑎 . Since 𝑎𝑏𝑐 satisfies accountability, 𝑐2 eventually obtains proofs of
+
+culpability of (at least) 𝑡0 + 1 processes. Moreover, due to Lemma 1, given the messages 𝑐2 receives until time 𝑇0 , 𝑐2
+
+is unable to form a proof of culpability of any process. Therefore, 𝑐2 obtains the culpability proofs after 𝑇0 . Given
+
+that 𝑐2 only receives messages from 𝑎 (and itself) after 𝑇0 , 𝑐2 must have “used” Ω(𝑛) messages received from 𝑎 to
+
+form the culpability proofs (in order to satisfy accountability). Thus, 𝑎 indeed sends Ω(𝑛) accountability-specific
+
+messages to 𝑐2 in 𝑒2𝑎 , which concludes the proof.
+
+    We denote by 𝑇2 the first time such that (1) 𝑇2 > 𝑇1 , and (2) 𝑎 sends Ω(𝑛) accountability-specific messages to 𝑐2
+
+by time 𝑇2 in 𝑒2𝑎 . Note that 𝑎 sends Ω(𝑛) messages to both 𝑐1 and 𝑐2 by 𝑇2 in 𝑒2𝑎 as 𝑇2 > 𝑇1 .
+
+Step 3: Construction of an infinite execution 𝑒𝑖+1
+                                               𝑎 in which 𝑎 sends Ω(𝑛) accountability-specific messages to each
+
+process in {𝑐1 , 𝑐2 , ..., 𝑐𝑖 , 𝑐𝑖+1 }, where 𝑖 ∈ [1, 𝑡0 − 1].
+
+    We construct 𝑒𝑖+1     𝑖                                                 𝑖
+                  𝑎 from 𝑒𝑎 . In order to do so, we describe the execution 𝑒𝑎 :
+
+    • Property 1: Only processes 𝑎 and 𝑐𝑖 are correct in 𝑒𝑖𝑎 .
+
+    • Property 2: Until time 𝑇0 , 𝑒𝑖𝑎 is indistinguishable from Λ to both 𝑎 and 𝑐𝑖 .
+
+    • Property 3: For every process 𝑐 ∈ {𝑐𝑖+1 , 𝑐𝑖+2 , ..., 𝑐𝑡0 }, 𝑐 behaves correctly in 𝑒𝑖𝑎 until time 𝑇0 except that some
+
+       messages are omitted.
+
+    • Property 4: For every process 𝑓 ∈ Ψ ⧵ {𝑎, 𝑐1 , 𝑐2 , ..., 𝑐𝑖−1 , 𝑐𝑖 }, no process receives any message from 𝑓 after 𝑇0 .
+
+    • Property 5: For every process 𝑐 ∈ {𝑐1 , 𝑐2 , ..., 𝑐𝑖−1 }, only processes 𝑎 and 𝑐 receive any message from 𝑐 after 𝑇0 .
+
+    • Property 6: There exists a time 𝑇𝑖 > 𝑇0 such that 𝑎 has sent Ω(𝑛) messages to each process 𝑐 ∈
+
+       {𝑐1 , 𝑐2 , ..., 𝑐𝑖−1 , 𝑐𝑖 }.
+
+    • Property 7: For every 𝑗 ∈ [1, 𝑖 − 1], there exists a time 𝑇𝑗 such that, if a process 𝑎 receives a message from 𝑐𝑗
+
+       after 𝑇0 , the reception happens between 𝑇𝑗−1 and 𝑇𝑗 (𝑇𝑗 > 𝑇𝑗−1 ).
+
+    • Property 8: Process 𝑐𝑖 does not receive any message from another process between 𝑇0 and 𝑇𝑖−1 .
+
+    • Property 9: If process 𝑎 receives a message from 𝑐𝑖 after 𝑇0 , the reception happens after 𝑇𝑖−1 .
+
+The execution 𝑒𝑖𝑎 is summarized in Figure 4. Observe that 𝑒1𝑎 and 𝑒2𝑎 satisfy the aforementioned properties.
+
+    Now, we construct 𝑒𝑖+1     𝑖                                 2       1
+                       𝑎 from 𝑒𝑎 in the same way we constructed 𝑒𝑎 from 𝑒𝑎 :
+
+   1. Only processes 𝑎 and 𝑐𝑖+1 are correct.
+
+   2. We construct the prefix 𝜋𝑎𝑖+1 of 𝑒𝑖+1
+                                        𝑎 until time 𝑇𝑖 in the following manner:
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                            Page 22 of 40
+                                                 Accountable Byzantine Consensus
+
+
+
+
+                                             Figure 4: A summary of the execution 𝑒𝑖𝑎 .
+
+
+
+         (a) Let 𝜋𝑎𝑖+1 be the prefix of 𝑒𝑖𝑎 until time 𝑇𝑖 .
+
+         (b) We correct the behavior of 𝑐𝑖+1 until time 𝑇0 by inserting all the messages omitted in 𝑒𝑖𝑎 (i.e., 𝑐𝑖+1 behaves
+
+             exactly as it behaves in Λ). After time 𝑇0 , the behavior of 𝑐𝑖+1 is correct (as 𝑐𝑖+1 is correct in 𝑒𝑖+1
+                                                                                                                  𝑎 ).
+
+         (c) For every message 𝑚 sent by 𝑐𝑖 in 𝜋𝑎𝑖 such that (1) 𝑚 is sent to a process 𝑟 with 𝑟 ≠ 𝑎 and 𝑟 ≠ 𝑐𝑖 , and (2)
+
+             𝑚 is not received by time 𝑇0 , the sending event of 𝑚 is removed from 𝜋𝑎𝑖 . In other words, only 𝑎 (and 𝑐𝑖 )
+
+             receive messages from 𝑐𝑖 after 𝑇0 .
+
+         (d) For every message 𝑚 sent by 𝑐𝑖 in 𝜋𝑎𝑖 such that (1) 𝑚 is sent to 𝑎, and (2) 𝑚 is not received by time 𝑇𝑖 ,
+
+             the sending event of 𝑚 is removed from 𝜋𝑎𝑖 . This step of the construction ensures that 𝑎 only receives
+
+             messages from 𝑐𝑖 until time 𝑇𝑖 ; after 𝑇𝑖 , 𝑎 receives no messages from 𝑐𝑖 .
+
+   3. Process 𝑐𝑖+1 does not receive any message from any other process between times 𝑇0 and 𝑇𝑖 .
+
+   4. Each process 𝑝 ∈ Ψ ⧵ {𝑎, 𝑐𝑖+1 } is silent after time 𝑇𝑖 , i.e., it does not send any message after time 𝑇1 . Recall
+
+       that processes in Ψ ⧵ {𝑎, 𝑐1 , 𝑐2 , ..., 𝑐𝑖−1 , 𝑐𝑖 , 𝑐𝑖+1 } are silent after time 𝑇0 (due to the property 4 of 𝑒𝑖𝑎 ).
+
+Figure 5 depicts 𝑒𝑖+1
+                  𝑎 .
+
+    First, let us prove that all nine introduced properties are preserved for 𝑒𝑖+1
+                                                                               𝑎 :
+
+    • Property 1: Only processes 𝑎 and 𝑐𝑖+1 are correct by construction of 𝑒𝑖+1
+                                                                            𝑎 .
+
+    • Property 2: For 𝑐𝑖+1 , this property is satisfied due to the construction of 𝑒𝑖+1
+                                                                                    𝑎 (step 2b). For 𝑎, the property is
+
+       satisfied as (1) 𝑎 cannot distinguish 𝑒𝑖+1     𝑖                                                    𝑖
+                                              𝑎 from 𝑒𝑎 until time 𝑇𝑖 > 𝑇0 , and (2) 𝑎 cannot distinguish 𝑒𝑎 from Λ
+
+       until time 𝑇0 .
+
+    • Property 3: This property is satisfied as it is satisfied for 𝑒𝑖𝑎 .
+
+    • Property 4: This property is satisfied as it is satisfied for 𝑒𝑖𝑎 .
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                      Page 23 of 40
+                                                 Accountable Byzantine Consensus
+
+
+
+
+             Figure 5: Execution 𝑒𝑖+1
+                                  𝑎
+                                      . All modifications introduced to 𝑒𝑖𝑎 (in order to obtain 𝑒𝑖+1
+                                                                                                 𝑎
+                                                                                                     ) are noted in red.
+
+
+
+    • Property 5: For every process 𝑐 ∈ {𝑐1 , 𝑐2 , ..., 𝑐𝑖−1 }, the property is satisfied as it is satisfied for 𝑒𝑖𝑎 . For 𝑐𝑖 , the
+
+       property holds due to the construction of 𝑒𝑖+1
+                                                  𝑎 (step 2c).
+
+    • Property 6: We prove the property by proving Lemma 4.
+
+    • Property 7: For every process 𝑐 ∈ {𝑐1 , 𝑐2 , ..., 𝑐𝑖−1 }, the property holds as it holds for 𝑒𝑖𝑎 . For 𝑐𝑖 , if 𝑎 receives a
+
+       message from 𝑐𝑖 after 𝑇0 , that happens after 𝑇𝑖−1 (as 𝑒𝑖+1                          𝑖
+                                                               𝑎 is indistinguishable from 𝑒𝑎 until 𝑇𝑖 > 𝑇𝑖−1 to 𝑎 and 𝑎
+
+       receives messages from 𝑐𝑖 only after 𝑇𝑖−1 due to the property 9 of 𝑒𝑖𝑎 ). Moreover, 𝑎 receives no messages from
+
+       𝑐𝑖 after time 𝑇𝑖 due to the construction of 𝑒𝑎𝑖+1 (step 2d).
+
+    • Property 8: This property is ensured due to the step 3 of the construction.
+
+    • Property 9: The property is ensured by construction. Namely, 𝑎 cannot distinguish 𝑒𝑖+1     𝑖
+                                                                                         𝑎 from 𝑒𝑎 until time 𝑇𝑖
+
+       and 𝑎 does not receive any message from 𝑐𝑖+1 in 𝑒𝑖𝑎 (as the property 4 holds for 𝑒𝑖𝑎 ).
+
+    Finally, let us prove that 𝑎 sends Ω(𝑛) messages to each process 𝑐 ∈ {𝑐1 , 𝑐2 , ..., 𝑐𝑖 , 𝑐𝑖+1 } in 𝑒𝑖+1
+                                                                                                         𝑎 ; the following
+
+lemma ensures that the property 6 is satisfied for 𝑒𝑖+1
+                                                    𝑎 .
+
+Lemma 4. Process 𝑎 sends Ω(𝑛) accountability-specific messages to each process 𝑐 ∈ {𝑐1 , 𝑐2 , ..., 𝑐𝑖 , 𝑐𝑖+1 } in 𝑒𝑖+1
+                                                                                                                   𝑎 .
+
+Proof. First, 𝑎 sends Ω(𝑛) accountability-specific messages to each process in the {𝑐1 , 𝑐2 , ..., 𝑐𝑖−1 , 𝑐𝑖 } set in 𝑒𝑖+1
+                                                                                                                       𝑎
+
+as (1) 𝑒𝑖+1
+        𝑎   is indistinguishable to 𝑎 from 𝑒𝑖𝑎 until time 𝑇𝑖 (due to the construction of 𝑒𝑖+1
+                                                                                          𝑎 ), and (2) 𝑎 sends Ω(𝑛)
+
+accountability-specific messages to each process in {𝑐1 , 𝑐2 , ..., 𝑐𝑖 } by 𝑇𝑖 in 𝑒𝑖𝑎 (by the property 6 of 𝑒𝑖𝑎 ). Hence, it is
+
+left to prove that 𝑎 sends Ω(𝑛) accountability-specific messages to 𝑐𝑖+1 in 𝑒𝑖+1
+                                                                             𝑎 , as well.
+
+    Processes 𝑎 and 𝑐𝑖+1 disagree in 𝑒𝑖+1
+                                      𝑎 . Since 𝑎𝑏𝑐 satisfies accountability, 𝑐𝑖+1 eventually obtains proofs of
+
+culpability of (at least) 𝑡0 + 1 processes. Moreover, due to Lemma 1, given the messages 𝑐𝑖+1 receives until time
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                        Page 24 of 40
+                                                 Accountable Byzantine Consensus
+
+𝑇0 , 𝑐𝑖+1 is unable to form a proof of culpability of any process. Therefore, 𝑐𝑖+1 obtains the culpability proofs after 𝑇0 .
+
+Given that 𝑐𝑖+1 only receives messages from 𝑎 (and itself) after 𝑇0 (due to the properties 4 and 5 of 𝑒𝑖+1
+                                                                                                       𝑎 ), 𝑐𝑖+1 must
+
+have “used” Ω(𝑛) messages received from 𝑎 to form the culpability proofs (to satisfy accountability). Thus, 𝑎 indeed
+
+sends Ω(𝑛) accountability-specific messages to 𝑐𝑖+1 in 𝑒𝑖+1
+                                                        𝑎 , as well.
+
+
+    We denote by 𝑇𝑖+1 the first time such that (1) 𝑇𝑖+1 > 𝑇𝑖 , and (2) 𝑎 sends Ω(𝑛) accountability-specific messages to
+
+𝑐𝑖+1 by time 𝑇𝑖+1 in 𝑒𝑖+1
+                      𝑎 . Note that 𝑎 sends Ω(𝑛) messages to each process in the {𝑐1 , ..., 𝑐𝑖 , 𝑐𝑖+1 } set by 𝑇𝑖+1 .
+
+
+Step 4: Construction of a finite execution 𝑒𝑎 in which (1) 𝑎 sends Ω(𝑛2 ) accountability-specific messages, and (2) 𝑎
+
+is the only correct process.
+
+    We construct 𝑒𝑎 in the following manner:
+
+   1. Only process 𝑎 is correct in 𝑒𝑎 .
+
+   2. We build the prefix 𝜋𝑎 of 𝑒𝑎 until time 𝑇𝑡0 in the following manner, where 𝑇𝑡0 is the time specified explicitly
+                                     𝑡
+       in the construction of 𝑒𝑎0 (constructed by the generic transformation introduced in the previous step):
+                                         𝑡
+         (a) Let 𝜋𝑎 be the prefix of 𝑒𝑎0 until time 𝑇𝑡0 .
+
+         (b) For every message 𝑚 sent by 𝑐𝑡0 in 𝜋𝑎 such that (1) 𝑚 is sent to a process 𝑟 with 𝑟 ≠ 𝑎 and 𝑟 ≠ 𝑐𝑡0 , and
+
+             (2) 𝑚 is not received by time 𝑇0 , the sending event of 𝑚 is removed from 𝜋𝑎 . In other words, only 𝑎 (and
+
+             𝑐𝑡0 ) receive messages from 𝑐𝑡0 after 𝑇0 .
+
+         (c) For every message 𝑚 sent by 𝑐𝑡0 in 𝜋𝑎 such that (1) 𝑚 is sent to 𝑎, and (2) 𝑚 is not received by time 𝑇𝑡0 ,
+
+             the sending event of 𝑚 is removed from 𝜋𝑎 . This step of the construction ensures that 𝑎 only receives
+
+             messages from 𝑐𝑡0 until time 𝑇𝑡0 ; after 𝑇𝑡0 , 𝑎 receives no messages from 𝑐𝑡0 .
+
+   3. Each process 𝑝 ∈ Ψ ⧵ {𝑎} is silent after time 𝑇𝑖 , i.e., it does not send any message after time 𝑇𝑡0 . Recall that
+
+       processes in Ψ ⧵ {𝑎, 𝑐1 , 𝑐2 , ..., 𝑐𝑡0 } are silent after time 𝑇0 .
+                                 𝑡
+Since 𝑎 cannot distinguish 𝑒𝑎0 from 𝑒𝑎 until time 𝑇𝑡0 , 𝑎 sends Ω(𝑛2 ) accountability-specific messages in 𝑒𝑎 . Lastly, we
+
+associate 𝑒𝑎 with 𝑇𝑎 = 𝑇𝑡0 .
+
+
+Construction of  (part 2): The first part of the proof was devoted to constructing 𝑒𝑎 , an execution in which a fixed
+correct process 𝑎 ∈ 𝐴 sends a quadratic number of accountability-specific messages. The second part “merges” all
+
+of these executions in order to obtain an execution with a cubic number of sent accountability-specific messages.
+
+Theorem 5. The accountability complexity of 𝑎𝑏𝑐, where 𝑎𝑏𝑐 is a 𝑡0 -resilient (deterministic or probabilistic) accountable
+
+Byzantine consensus protocol and 𝑡0 ∈ Ω(𝑛), is Ω(𝑛3 ).
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                            Page 25 of 40
+                                                 Accountable Byzantine Consensus
+
+Proof. We prove the theorem by constructing an execution  with a cubic number of accountability-specific
+
+messages. Recall that, for each process 𝑎 ∈ 𝐴, time 𝑇𝑎 > 𝑇0 is associated with 𝑒𝑎 ; 𝑎 sends Ω(𝑛2 ) accountability-
+
+specific messages by 𝑇𝑎 in 𝑒𝑎 .
+
+    We construct  in the following manner. First, we “merge” executions 𝑒𝑎 until time 𝑇0 , for every 𝑎 ∈ 𝐴. More
+
+formally, we build a prefix 𝜌 of  until time 𝑇0 using the following construction:
+
+   1. Let 𝜌 be the prefix of 𝑒𝑎1 until time 𝑇0 , where 𝑎1 ∈ 𝐴.
+
+   2. For every process 𝑎 ∈ 𝐴 ⧵ {𝑎1 }:
+
+         (a) If there exists a message 𝑚 sent by a process 𝑝 ∈ Ψ in the prefix of 𝑒𝑎 until time 𝑇0 such that 𝑚 is not
+
+              sent in 𝜌, add 𝑚 to be sent in 𝜌 at the exact same time as in 𝑒𝑎 .
+
+Intuitively, we create 𝜌 as the “union” of the prefixes of 𝑒𝑎 until time 𝑇0 , for every 𝑎 ∈ 𝐴. Observe that all processes
+
+from the group 𝐴 are correct in 𝜌.
+
+    After time 𝑇0 , we do the following:
+
+   1. Processes from the 𝐶 set behave towards a process 𝑎 as they do in 𝑒𝑎 , for every 𝑎 ∈ 𝐴.
+
+   2. Processes from the group 𝐵 are silent, i.e., they do not send any messages.
+
+   3. Messages between processes from the group 𝐴 that are not received by time 𝑇0 are delayed until after time
+
+       𝑇 ∗ = max(𝑇𝑎1 , 𝑇𝑎2 , ..., 𝑇𝑎𝑡 ).
+                                     0
+
+    Given that no process 𝑎 ∈ 𝐴 distinguishes  from 𝑒𝑎 until time 𝑇 ∗ > 𝑇𝑎 , each process 𝑎 ∈ 𝐴 sends a quadratic
+
+number of accountability-complexity messages in . Since |𝐴| = 𝑡0 ∈ Ω(𝑛), the overall accountability complexity
+
+of execution  is Ω(𝑛3 ), which concludes the proof.
+
+
+5. Generalized  Transformation
+
+    We have shown that  enables Byzantine consensus protocols to obtain accountability. This section gener-
+
+alizes our  transformation and defines its applicability. Namely, we specify a class of distributed computing
+
+problems named easily-accountable agreement tasks, and we prove that generalized  enables accountability in
+
+such tasks.
+
+    We introduce agreement tasks in §5.1. Then, we define the class of easily-accountable agreement tasks (§5.2),
+
+and prove the correctness of generalized  transformation applied to such agreement tasks (§5.3).
+
+
+5.1. Agreement Tasks
+    Agreement tasks represent an abstraction of distributed input-output problems performed in a Byzantine
+
+environment. Specifically, each process has its input value. We assume that “⊥” denotes the special input value
+
+of a process that specifies that the input value is non-existent. A process may eventually halt; if a process halts, it
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                         Page 26 of 40
+                                                 Accountable Byzantine Consensus
+
+produces its output value. The “⊥” output value of a process means that the process has not yet halted (and produced
+
+its output value). We denote by 𝐼𝑖 (resp., 𝑂𝑖 ) the input (resp., output) value of process 𝑃𝑖 . We note that some processes
+
+might never halt if permitted by the definition of an agreement task. We provide the formal explanation in the rest
+
+of the subsection.
+
+     An agreement task  is parameterized with the upper bound 𝑡 on number of faulty processes that are tolerated.
+
+In other words, the specification of an agreement task assumes that no more than 𝑡 processes are faulty in any
+
+execution.
+
+     Any agreement task could be defined as a relation between input and output values of processes. Since we assume
+
+that processes might fail, we only care about input and output values of correct processes. Hence, an agreement task
+
+could be defined as a relation between input and output values of correct processes.
+
+     An input configuration of an agreement task  is 𝜈𝐼 = {(𝑃𝑖 , 𝐼𝑖 ) with 𝑃𝑖 is correct}, where |𝜈𝐼 | ≥ 𝑛 − 𝑡 : an input
+
+configuration consists of input values of all correct processes. Similarly, an output configuration of an agreement task
+
+is 𝜈𝑂 = {(𝑃𝑖 , 𝑂𝑖 ) with 𝑃𝑖 is correct}, where |𝜈𝑂 | ≥ 𝑛 − 𝑡 : it contains output values of correct processes. We denote
+
+by 𝜃(𝜈𝑂 ) = |{𝑂𝑖 | (𝑃𝑖 , 𝑂𝑖 ) ∈ 𝜈𝑂 ∧ 𝑂𝑖 ≠ ⊥}| the number of distinct non-⊥ values in the 𝜈𝑂 output configuration.
+
+     Finally, we define an agreement task  as tuple (, , Δ, 𝑡 ), where:
+
+     •  denotes the set of all input configurations of .
+
+     •  denotes the set of all output configurations of  such that 𝜃(𝜈𝑂 ) ≤ 1, for every 𝜈𝑂 ∈ .
+
+     • Δ ∶  → 2 , where 𝜈𝑂 ∈ Δ(𝜈𝐼 ) if and only if the output configuration 𝜈𝑂 ∈  is valid given the input
+
+       configuration 𝜈𝐼 ∈ .
+
+     • 𝑡 ≤ ⌈𝑛∕3⌉ − 1 denotes the maximum number of faulty processes the task assumes.
+
+As seen from the definition, correct processes that halt always output the same value in agreement tasks. Moreover,
+
+we define agreement tasks to tolerate less than 𝑛∕3 faults. Without loss of generality, we assume that Δ(𝜈𝐼 ) ≠ ∅, for
+
+every input configuration 𝜈𝐼 ∈ . Moreover, for every 𝜈𝑂 ∈ , there exists 𝜈𝐼 ∈  such that 𝜈𝑂 ∈ Δ(𝜈𝐼 ).
+
+     We note that some problems that are traditionally considered as “agreement” problems do not fall into our
+
+classification of agreement tasks. For instance, Byzantine lattice agreement [48] or 𝑘-set agreement [21] are not
+
+agreement tasks per our definition since the number of distinct non-⊥ values that can be outputted is greater than
+
+1.
+
+
+Solutions. The following definitions specifies solutions of agreement tasks.
+
+Definition 8 (Solution of an agreement task). A protocol Π deterministically (resp., probabilistically) solves an
+
+agreement task  = (, , Δ, 𝑡 ) if and only if, in every execution with up to 𝑡 faults, there exists (resp., exists
+
+with probability 1) an unknown time 𝑇𝐷 such that 𝜈𝑂 ∈ Δ(𝜈𝐼 ), where 𝜈𝐼 ∈  denotes the input configuration that
+
+
+First Author et al.: Preprint submitted to Elsevier                                                           Page 27 of 40
+                                                 Accountable Byzantine Consensus
+
+consists of input values of all correct processes and 𝜈𝑂 ∈  denotes the output configuration that (1) consists of
+
+output values (potentially ⊥) of all correct processes, and (2) no correct process 𝑃𝑖 with 𝑂𝑖 = ⊥ updates its output
+
+value after 𝑇𝐷 .
+
+    Lastly, we define accountable solutions of agreement tasks.
+
+Definition 9 (Accountable solution of an agreement task). A protocol Π𝐴𝑐𝑐
+                                                                      
+                                                                          deterministically (resp., probabilisti-
+
+cally) solves an agreement task  = (, , Δ, 𝑡 ) with accountability if and only if the following holds:
+
+    • -Solvability: Π𝐴𝑐𝑐
+                      
+                          deterministically (resp., probabilistically) solves .
+
+    • Accountability: If two correct processes output different values, then every correct process eventually detects
+
+       (at least) 𝑛 − 2𝑡 faulty processes and obtains a proof of culpability of each detected process.
+
+
+5.2. Easily-Accountable Agreement Tasks
+    Fix an agreement task  = (, , Δ, 𝑡 ). We say that  is an easily-accountable agreement task if and only if one
+
+of the following conditions is satisfied:
+
+   1. “All-or-None-Decidability”: There does not exist 𝜈𝑂 ∈  such that (𝑃𝑖 , 𝑂𝑖 ≠ ⊥) ∈ 𝜈𝑂 and (𝑃𝑗 , 𝑂𝑗 = ⊥) ∈ 𝜈𝑂 ;
+
+       or
+
+   2. “Partial-Decidability”: For every 𝜈𝐼 ∈  such that there exists 𝜈𝑂 ∈ Δ(𝜈𝐼 ), where (𝑃𝑖 , 𝑂𝑖 = 𝑣 ≠ ⊥) ∈ 𝜈𝑂 and
+
+       (𝑃𝑗 , 𝑂𝑗 = ⊥) ∈ 𝜈𝑂 , the following holds:
+
+
+              for every 𝑐 ∈ ℙ({𝑃𝑖 | (𝑃𝑖 , 𝐼𝑖 ) ∈ 𝜈𝐼 }), ∃𝜈𝑂′ ∈ Δ(𝜈𝐼 ), where ∀𝑃𝑖 ∈ 𝑐 ∶ (𝑃𝑖 , 𝑂𝑖 = 𝑣) ∈ 𝜈𝑂′ and
+
+                                       ∀𝑃𝑗 ∈ {𝑃𝑘 | (𝑃𝑘 , 𝐼𝑘 ) ∈ 𝜈𝐼 } ⧵ 𝑐 ∶ (𝑃𝑗 , 𝑂𝑗 = ⊥) ∈ 𝜈𝑂′ .
+
+
+    “All-or-None-Decidability” characterizes all the problems in which either every process halts or none does. For
+
+instance, Byzantine consensus [38] and Byzantine reliable broadcast [17] satisfy “All-or-None-Decidability”.
+
+    On the other hand, some agreement tasks permit that some processes halt, whereas others do not. We say that
+
+these tasks satisfy “Partial-Decidability” if and only if it is allowed for any subset of correct processes to halt (and
+
+output a value). Note that “Partial-Decidability” covers the case where no correct process ever halts. Byzantine
+
+consistent broadcast [17] is the only agreement task we are aware of that satisfies “Partial-Decidability” (in the
+
+case of a Byzantine sender). However, the significance of Byzantine consistent broadcast (e.g., for implementing
+
+cryptocurrencies [34]) motivated us to consider the “Partial-Decidability” property.
+
+
+5.3. Correctness of Generalized  Transformation
+    We now prove the correctness of our generalized  transformation (Algorithm 4). First, we show that
+
+Algorithm 4 solves an easily-accountable agreement task  if  satisfies “All-or-None-Decidability”.
+
+
+First Author et al.: Preprint submitted to Elsevier                                                              Page 28 of 40
+                                                   Accountable Byzantine Consensus
+
+Algorithm 4 Generalized  Transformation - Code For Process 𝑃𝑖
+ 1: Implements:
+ 2:    Agreement Task  With Accountability, instance 𝑎 − 
+ 3: Uses:
+ 4:    ⊳ Protocol to be transformed
+ 5:    Protocol that (deterministically or probabilistically) solves agreement task , instance Π
+ 6:    𝑡 -Resilient Accountable Confirmer, where 𝑡 is the resilience of , instance 𝑎𝑐
+ 7: upon event ⟨𝑎 − , 𝖨𝗇𝗉𝗎𝗍 | 𝑖𝑛𝑝𝑢𝑡⟩ do                                                                            ⊳ Input
+ 8:    trigger ⟨Π , 𝖨𝗇𝗉𝗎𝗍 | 𝑖𝑛𝑝𝑢𝑡⟩
+ 9: upon event ⟨Π , 𝖮𝗎𝗍𝗉𝗎𝗍 | 𝑜𝑢𝑡𝑝𝑢𝑡⟩ do
+10:    trigger ⟨𝑎𝑐, 𝖲𝗎𝖻𝗆𝗂𝗍 | 𝑜𝑢𝑡𝑝𝑢𝑡⟩
+11: upon event ⟨𝑎𝑐, 𝖢𝗈𝗇𝖿 𝗂𝗋𝗆 | 𝑐𝑜𝑛𝑓 𝑖𝑟𝑚𝑎𝑡𝑖𝑜𝑛⟩ do
+12:    trigger ⟨𝑎 − , 𝖮𝗎𝗍𝗉𝗎𝗍 | 𝑐𝑜𝑛𝑓 𝑖𝑟𝑚𝑎𝑡𝑖𝑜𝑛⟩                                                                     ⊳ Output
+13: upon event ⟨𝑎𝑐, 𝖣𝖾𝗍𝖾𝖼𝗍 | 𝐹 , 𝑝𝑟𝑜𝑜𝑓 ⟩ do
+14:    trigger ⟨𝑎 − , 𝖣𝖾𝗍𝖾𝖼𝗍 | 𝐹 , 𝑝𝑟𝑜𝑜𝑓 ⟩                                                                      ⊳ Detection
+
+
+
+Lemma 5. Let  = (, , Δ, 𝑡 ) be an easily-accountable agreement task that satisfies “All-or-None-Decidability”.
+
+Algorithm 4 deterministically (resp., probabilistically) solves  if Π (line 5) deterministically (resp., probabilisti-
+
+cally) solves .
+
+Proof. If no correct process ever outputs a value at line 9, then no correct process confirms any value from
+
+accountable confirmer (because no correct process submits any value to accountable confirmer at line 10). Hence,
+
+no correct process produces any output at line 12, which concludes the proof in this scenario.
+
+    Otherwise, each correct process eventually outputs a value at line 9. Moreover, all correct processes output
+
+the exact same value 𝑣 (since  is an agreement task). Therefore, all correct processes submit the same value
+
+𝑣 to accountable confirmer (line 10). By terminating convergence of accountable confirmer, all correct processes
+
+eventually confirm value 𝑣 (line 11) and output it (line 12). Once this happens, the agreement task  is solved,
+
+which concludes the lemma.
+
+    Now, we prove that Algorithm 4 solves an easily-accountable agreement task  if  satisfies “Partial-
+
+Decidability”.
+
+Lemma 6. Let  = (, , Δ, 𝑡 ) be an easily-accountable agreement task that satisfies “Partial-Decidability”. Al-
+
+gorithm 4 deterministically (resp., probabilistically) solves  if Π (line 5) deterministically (resp., probabilistically)
+
+solves .
+
+Proof. Let 𝜈𝐼 denote a specific input configuration of . We consider two cases:
+
+    • If no or all correct processes output a value at line 9, the proof is identical to the proof of Lemma 5.
+
+    • Otherwise, there exists a correct process that outputs a value 𝑣 at line 9 and another correct process that does
+
+       not output any value at line 9. Since  is an agreement task, any correct process that outputs a value at line 9
+
+       outputs the value 𝑣. Moreover, any correct process that outputs a value at line 12 outputs the value 𝑣 (ensured
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                           Page 29 of 40
+                                                     Accountable Byzantine Consensus
+
+       by validity of accountable confirmer). Finally, once the system stabilizes at time 𝑇𝐷 (the system stabilizes at
+
+       time 𝑇𝐷 if and only if no correct process 𝑃𝑖 with 𝑂𝑖 = ⊥ updates its output value after 𝑇𝐷 ), the fact that any
+
+       subset of correct processes could halt and that all halted processes output 𝑣 implies that Algorithm 4 solves
+
+       .
+
+The lemma holds.
+
+    Finally, we are ready to prove that Algorithm 4 solves  with accountability, where  is an easily-accountable
+
+agreement task, which means that generalized  is correct.
+
+Theorem 6. Let  = (, , Δ, 𝑡 ) be an easily-accountable agreement task. Algorithm 4 deterministically (resp.,
+
+probabilistically) solves  with accountability if Π (line 5) deterministically (resp., probabilistically) solves .
+
+Proof. Algorithm 4 satisfies -solvability by lemmas 5 and 6. Finally, Algorithm 4 ensures accountability since the
+
+accountable confirmer ensures detection of (at least) 𝑛 − 2𝑡 faulty processes whenever a disagreement occurs.
+
+
+6. Concluding Remarks
+
+    We presented , a generic and simple transformation that allows non-synchronous (deterministic or
+
+probabilistic) Byzantine consensus protocols to obtain accountability. Besides its simplicity,  is efficient:
+
+it introduces an additive overhead of only two all-to-all communication rounds and 𝑂(𝑛2 ) exchanged bits of
+
+information in the common case. Furthermore, we show that  can easily be generalized to other agreement
+
+problems (e.g., Byzantine reliable broadcast, Byzantine consistent broadcast). Future work includes (1) designing
+
+similarly simple and efficient transformations for problems not covered by the generalized  transformation,
+
+like Byzantine lattice and 𝑘-set agreement problems, and (2) circumventing the cubic accountability complexity
+
+bound using randomization techniques.
+
+
+Acknowledgments
+
+    This work is supported in part by the Australian Research Council Future Fellowship funding scheme
+
+(#180100496), and by Singapore MOE Grant MOE2018-T2-1-160.
+
+
+References
+ [1] Abd-El-Malek, M., Ganger, G.R., Goodson, G.R., Reiter, M.K., Wylie, J.J., 2005. Fault-scalable Byzantine fault-tolerant services, in: Herbert,
+
+     A., Birman, K.P. (Eds.), Proceedings of the 20th ACM Symposium on Operating Systems Principles 2005, SOSP 2005, Brighton, UK, October
+
+     23-26, 2005, ACM. pp. 59–74. URL: https://doi.org/10.1145/1095810.1095817, doi:10.1145/1095810.1095817.
+
+ [2] Abraham, I., Jovanovic, P., Maller, M., Meiklejohn, S., Stern, G., Tomescu, A., 2021. Reaching Consensus for Asynchronous Distributed Key
+
+     Generation, in: Proceedings of the ACM Symposium on Principles of Distributed Computing (PODC), pp. 363–373.
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                                Page 30 of 40
+                                                     Accountable Byzantine Consensus
+
+ [3] Abraham, I., Malkhi, D., Nayak, K., Ren, L., Spiegelman, A., 2017. Solida: A Blockchain Protocol Based on Reconfigurable Byzantine
+
+     Consensus, in: Aspnes, J., Bessani, A., Felber, P., Leitão, J. (Eds.), 21st International Conference on Principles of Distributed Systems,
+
+     OPODIS 2017, Lisbon, Portugal, December 18-20, 2017, Schloss Dagstuhl - Leibniz-Zentrum für Informatik. pp. 25:1–25:19. URL: https:
+
+     //doi.org/10.4230/LIPIcs.OPODIS.2017.25, doi:10.4230/LIPIcs.OPODIS.2017.25.
+
+ [4] Abraham, I., Malkhi, D., Spiegelman, A., 2019a. Asymptotically Optimal Validated Asynchronous Byzantine Agreement, in: Proceedings of
+
+     the 2019 ACM Symposium on Principles of Distributed Computing (PODC), pp. 337–346.
+
+ [5] Abraham, I., Malkhi, D., Spiegelman, A., 2019b. Asymptotically Optimal Validated Asynchronous Byzantine Agreement, in: Robinson, P.,
+
+     Ellen, F. (Eds.), Proceedings of the 2019 ACM Symposium on Principles of Distributed Computing, PODC 2019, Toronto, ON, Canada, July
+
+     29 - August 2, 2019, ACM. pp. 337–346. URL: https://doi.org/10.1145/3293611.3331612, doi:10.1145/3293611.
+
+     3331612.
+
+ [6] Amir, Y., Danilov, C., Dolev, D., Kirsch, J., Lane, J., Nita-Rotaru, C., Olsen, J., Zage, D., 2010. Steward: Scaling Byzantine Fault-Tolerant
+
+     Replication to Wide Area Networks. IEEE Trans. Dependable Secur. Comput. 7, 80–93. URL: https://doi.org/10.1109/TDSC.
+
+     2008.53, doi:10.1109/TDSC.2008.53.
+
+ [7] Andrychowicz, M., Dziembowski, S., 2015. Pow-based distributed cryptography with no trusted setup, in: Gennaro, R., Robshaw, M.
+
+     (Eds.), Advances in Cryptology - CRYPTO 2015 - 35th Annual Cryptology Conference, Santa Barbara, CA, USA, August 16-20, 2015,
+
+     Proceedings, Part II, Springer. pp. 379–399. URL: https://doi.org/10.1007/978-3-662-48000-7_19, doi:10.1007/
+
+     978-3-662-48000-7\_19.
+
+ [8] Attema, T., Cramer, R., Rambaud, M., 2021. Compressed $\varSigma $-Protocols for Bilinear Group Arithmetic Circuits and Application
+
+     to Logarithmic Transparent Threshold Signatures, in: Tibouchi, M., Wang, H. (Eds.), Advances in Cryptology - ASIACRYPT 2021 -
+
+     27th International Conference on the Theory and Application of Cryptology and Information Security, Singapore, December 6-10, 2021,
+
+     Proceedings, Part IV, Springer. pp. 526–556. URL: https://doi.org/10.1007/978-3-030-92068-5_18, doi:10.1007/
+
+     978-3-030-92068-5\_18.
+
+ [9] Ben-Or, M., Goldwasser, S., Wigderson, A., 1988. Completeness Theorems for Non-Cryptographic Fault-Tolerant Distributed Computation
+
+     (Extended Abstract), in: Simon, J. (Ed.), Proceedings of the 20th Annual ACM Symposium on Theory of Computing, May 2-4, 1988, Chicago,
+
+     Illinois, USA, ACM. pp. 1–10. URL: https://doi.org/10.1145/62212.62213, doi:10.1145/62212.62213.
+
+[10] Boneh, D., Drijvers, M., Neven, G., 2018. Compact Multi-signatures for Smaller Blockchains, in: Advances in Cryptology - ASIACRYPT
+
+     2018 - 24th International Conference on the Theory and Application of Cryptology and Information Security, Brisbane, QLD, Australia,
+
+     December 2-6, 2018, Proceedings, Part II, pp. 435–464.
+
+[11] Boneh, D., Gentry, C., Lynn, B., Shacham, H., 2003. Aggregate and verifiably encrypted signatures from bilinear maps, in: Biham, E. (Ed.),
+
+     Advances in Cryptology - EUROCRYPT 2003, International Conference on the Theory and Applications of Cryptographic Techniques,
+
+     Warsaw, Poland, May 4-8, 2003, Proceedings, Springer. pp. 416–432. URL: https://doi.org/10.1007/3-540-39200-9_26,
+
+     doi:10.1007/3-540-39200-9\_26.
+
+[12] Bracha, G., 1984. An Asynchronous [(n-1)/3]-Resilient Consensus Protocol, in: Kameda, T., Misra, J., Peters, J.G., Santoro, N. (Eds.),
+
+     Proceedings of the Third Annual ACM Symposium on Principles of Distributed Computing, Vancouver, B. C., Canada, August 27-29, 1984,
+
+     ACM. pp. 154–162. URL: https://doi.org/10.1145/800222.806743, doi:10.1145/800222.806743.
+
+[13] Bracha, G., 1987. Asynchronous Byzantine Agreement Protocols. Inf. Comput. 75, 130–143. URL: https://doi.org/10.1016/
+
+     0890-5401(87)90054-X, doi:10.1016/0890-5401(87)90054-X.
+
+[14] Buchman, E., 2016. Tendermint: Byzantine Fault Tolerance in the Age of Blockchains. Ph.D. thesis.
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                               Page 31 of 40
+                                                     Accountable Byzantine Consensus
+
+[15] Buchman, E., Kwon, J., Milosevic, Z., 2018. The latest gossip on BFT consensus. Technical Report 1807.04938. arXiv.
+
+[16] Buterin, V., Griffith, V., 2017. Casper the Friendly Finality Gadget. arXiv preprint arXiv:1710.09437 .
+
+[17] Cachin, C., Guerraoui, R., Rodrigues, L., 2011. Introduction to Reliable and Secure Distributed Programming. Springer Science & Business
+
+     Media.
+
+[18] Cachin, C., Kursawe, K., Petzold, F., Shoup, V., 2001. Secure and Efficient Asynchronous Broadcast Protocols, in: Proceedings of the Annual
+
+     International Cryptology Conference (CRYPTO), Springer. pp. 524–541.
+
+[19] Canetti, R., 2004. Universally composable signature, certification, and authentication, in: 17th IEEE Computer Security Foundations
+
+     Workshop, (CSFW-17 2004), 28-30 June 2004, Pacific Grove, CA, USA, IEEE Computer Society. p. 219.                    URL: http://doi.
+
+     ieeecomputersociety.org/10.1109/CSFW.2004.24, doi:10.1109/CSFW.2004.24.
+
+[20] Castro, M., Liskov, B., 1999. Practical Byzantine Fault Tolerance, in: Proceedings of the Third Symposium on Operating Systems Design and
+
+     Implementation (OSDI), p. 173–186.
+
+[21] Chaudhuri, S., 1993. More Choices Allow More Faults: Set Consensus Problems In Totally Asynchronous Systems. Information and
+
+     Computation 105, 132–158.
+
+[22] Civit, P., Dzulfikar, M.A., Gilbert, S., Gramoli, V., Guerraoui, R., Komatovic, J., Vidigueira, M., 2022a. Byzantine Consensus is Θ(𝑛2 ):
+
+     The Dolev-Reischuk Bound is Tight even in Partial Synchrony!, in: Scheideler, C. (Ed.), 36th International Symposium on Distributed
+
+     Computing, DISC 2022, October 25-27, 2022, Augusta, Georgia, USA, Schloss Dagstuhl - Leibniz-Zentrum für Informatik. pp. 14:1–14:21.
+
+     URL: https://doi.org/10.4230/LIPIcs.DISC.2022.14, doi:10.4230/LIPIcs.DISC.2022.14.
+
+[23] Civit, P., Gilbert, S., Gramoli, V., 2020. Brief Announcement: Polygraph: Accountable Byzantine Agreement, in: Proceedings of the 34th
+
+     International Symposium on Distributed Computing (DISC), pp. 45:1–45:3.
+
+[24] Civit, P., Gilbert, S., Gramoli, V., 2021. Polygraph: Accountable Byzantine Agreement, in: Proceedings of the IEEE 41st International
+
+     Conference on Distributed Computing Systems (ICDCS), pp. 403–413. doi:10.1109/ICDCS51616.2021.00046.
+
+[25] Civit, P., Gilbert, S., Gramoli, V., Guerraoui, R., Komatovic, J., Milosevic, Z., Serendinschi, A., 2022b. Crime and Punishment in Distributed
+
+     Byzantine Decision Tasks, in: 42st IEEE International Conference on Distributed Computing Systems, ICDCS 2022, Bologna, Italy, July
+
+     11-13, 2022, IEEE. URL: https://eprint.iacr.org/2022/121.
+
+[26] Crain, T., Gramoli, V., Larrea, M., Raynal, M., 2018. DBFT: Efficient Leaderless Byzantine Consensus and its Application to Blockchains, in:
+
+     Proceedings of the IEEE 17th International Symposium on Network Computing and Applications (NCA), pp. 1–8.
+
+[27] Crain, T., Natoli, C., Gramoli, V., 2021. Red Belly: A Secure, Fair and Scalable Open Blockchain, in: Proceedings of the 42nd IEEE Symposium
+
+     on Security and Privacy (SP), pp. 466–483.
+
+[28] Das, S., Yurek, T., Xiang, Z., Miller, A.K., Kokoris-Kogias, L., Ren, L., 2022. Practical asynchronous distributed key generation, in: 43rd
+
+     IEEE Symposium on Security and Privacy, SP 2022, San Francisco, CA, USA, May 22-26, 2022, IEEE. pp. 2518–2534. URL: https:
+
+     //doi.org/10.1109/SP46214.2022.9833584, doi:10.1109/SP46214.2022.9833584.
+
+[29] Dolev, D., Reischuk, R., 1985. Bounds on information exchange for Byzantine agreement. Journal of the ACM (JACM) 32, 191–204.
+
+[30] Drijvers, M., Gorbunov, S., Neven, G., Wee, H., 2020. Pixel: Multi-signatures for Consensus, in: Capkun, S., Roesner, F. (Eds.), 29th USENIX
+
+     Security Symposium, USENIX Security 2020, August 12-14, 2020, USENIX Association. pp. 2093–2110. URL: https://www.usenix.
+
+     org/conference/usenixsecurity20/presentation/drijvers.
+
+[31] Dwork, C., Lynch, N., Stockmeyer, L., 1988. Consensus in the presence of partial synchrony. Journal of the ACM (JACM) 35, 288–323.
+
+[32] Gilad, Y., Hemo, R., Micali, S., Vlachos, G., Zeldovich, N., 2017.     Algorand: Scaling Byzantine Agreements for Cryptocurrencies, in:
+
+     Proceedings of the 26th Symposium on Operating Systems Principles, Shanghai, China, October 28-31, 2017, ACM. pp. 51–68. URL:
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                                Page 32 of 40
+                                                      Accountable Byzantine Consensus
+
+     https://doi.org/10.1145/3132747.3132757, doi:10.1145/3132747.3132757.
+
+[33] Goldreich, O., Micali, S., Wigderson, A., 1987. How to Play any Mental Game or A Completeness Theorem for Protocols with Honest
+
+     Majority, in: Aho, A.V. (Ed.), Proceedings of the 19th Annual ACM Symposium on Theory of Computing, 1987, New York, New York, USA,
+
+     ACM. pp. 218–229. URL: https://doi.org/10.1145/28395.28420, doi:10.1145/28395.28420.
+
+[34] Guerraoui, R., Kuznetsov, P., Monti, M., Pavlovič, M., Seredinschi, D.A., 2019. The Consensus Number of a Cryptocurrency, in: Proceedings
+
+     of the 2019 ACM Symposium on Principles of Distributed Computing (PODC), pp. 307–316.
+
+[35] Haeberlen, A., Kouznetsov, P., Druschel, P., 2007. PeerReview: Practical Accountability For Distributed Systems, in: Proceedings of the 21st
+
+     ACM Symposium on Operating Systems Principles (SOSP), ACM. pp. 175–188. URL: https://doi.org/10.1145/1294261.
+
+     1294279, doi:10.1145/1294261.1294279.
+
+[36] Haeberlen, A., Kuznetsov, P., 2009. The Fault Detection Problem, in: Proceedings of the 13th International Conference on Principles of
+
+     Distributed Systems (OPODIS), Springer. pp. 99–114. URL: https://doi.org/10.1007/978-3-642-10877-8_10, doi:10.
+
+     1007/978-3-642-10877-8\_10.
+
+[37] Katz, J., Miller, A., Shi, E., 2014. Pseudonymous secure computation from time-lock puzzles. IACR Cryptol. ePrint Arch. , 857URL:
+
+     http://eprint.iacr.org/2014/857.
+
+[38] Lamport, L., Shostak, R., Pease, M., 2019. The Byzantine Generals Problem, in: Concurrency: the Works of Leslie Lamport, pp. 203–226.
+
+[39] Libert, B., Joye, M., Yung, M., 2016. Born and Raised Distributively: Fully Distributed Non-Interactive Adaptively-Secure Threshold
+
+     Signatures with Short Shares. Theor. Comput. Sci. 645, 1–24. URL: https://doi.org/10.1016/j.tcs.2016.02.031,
+
+     doi:10.1016/j.tcs.2016.02.031.
+
+[40] Malkhi, D., Nayak, K., Ren, L., 2019. Flexible Byzantine Fault Tolerance, in: Cavallaro, L., Kinder, J., Wang, X., Katz, J. (Eds.), Proceedings of
+
+     the 2019 ACM SIGSAC Conference on Computer and Communications Security, CCS 2019, London, UK, November 11-15, 2019, ACM. pp.
+
+     1041–1053. URL: https://doi.org/10.1145/3319535.3354225, doi:10.1145/3319535.3354225.
+
+[41] Maurer, U.M., 1996. Modelling a public-key infrastructure, in: Bertino, E., Kurth, H., Martella, G., Montolivo, E. (Eds.), Computer Security -
+
+     ESORICS 96, 4th European Symposium on Research in Computer Security, Rome, Italy, September 25-27, 1996, Proceedings, Springer. pp.
+
+     325–350. URL: https://doi.org/10.1007/3-540-61770-1_45, doi:10.1007/3-540-61770-1\_45.
+
+[42] Milosevic, Z., Hutle, M., Schiper, A., 2009. Unifying Byzantine Consensus Algorithms with Weak Interactive Consistency, in: International
+
+     Conference On Principles Of Distributed Systems (OPODIS), Springer. pp. 300–314.
+
+[43] Momose, A., Ren, L., 2021. Multi-Threshold Byzantine Fault Tolerance, in: Kim, Y., Kim, J., Vigna, G., Shi, E. (Eds.), CCS ’21: 2021 ACM
+
+     SIGSAC Conference on Computer and Communications Security, Virtual Event, Republic of Korea, November 15 - 19, 2021, ACM. pp.
+
+     1686–1699. URL: https://doi.org/10.1145/3460120.3484554, doi:10.1145/3460120.3484554.
+
+[44] Naor, O., Keidar, I., 2020. Expected linear round synchronization: The missing link for linear byzantine SMR, in: 34th International
+
+     Symposium on Distributed Computing, DISC 2020, October 12-16, 2020, Virtual Conference, Schloss Dagstuhl - Leibniz-Zentrum für
+
+     Informatik. pp. 26:1–26:17. URL: https://doi.org/10.4230/LIPIcs.DISC.2020.26, doi:10.4230/LIPIcs.DISC.
+
+     2020.26.
+
+[45] Pedrosa, A.R., Gramoli, V., 2022. Trap: The Bait of Rational Players to Solve Byzantine Consensus, in: Proceedings of the 17th ACM Asia
+
+     Conference on Computer and Communications Security (ASIACCS).
+
+[46] Sheng, P., Wang, G., Nayak, K., Kannan, S., Viswanath, P., 2021. BFT Protocol Forensics, in: Computer and Communication Security (CCS).
+
+[47] Shoup, V., 2000. Practical threshold signatures, in: Preneel, B. (Ed.), Advances in Cryptology - EUROCRYPT 2000, International Conference
+
+     on the Theory and Application of Cryptographic Techniques, Bruges, Belgium, May 14-18, 2000, Proceeding, Springer. pp. 207–220. URL:
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                                    Page 33 of 40
+                                                     Accountable Byzantine Consensus
+
+     https://doi.org/10.1007/3-540-45539-6_15, doi:10.1007/3-540-45539-6\_15.
+
+[48] de Souza, L.F., Kuznetsov, P., Rieutord, T., Tucci Piergiovanni, S., 2021. Accountability and Reconfiguration: Self-Healing Lattice Agreement,
+
+     in: Proceedings of the 25th International Conference on Principles of Distributed Systems (OPODIS), pp. 25:1–25:23.
+
+[49] Spiegelman, A., 2021. In Search for an Optimal Authenticated Byzantine Agreement, in: Proceedings of the 35th International Symposium
+
+     on Distributed Computing (DISC), pp. 38:1–38:19.
+
+[50] Veronese, G.S., Correia, M., Bessani, A.N., Lung, L.C., Veríssimo, P., 2013. Efficient Byzantine Fault-Tolerance. IEEE Trans. Computers 62,
+
+     16–30. URL: https://doi.org/10.1109/TC.2011.221, doi:10.1109/TC.2011.221.
+
+[51] Yin, M., Malkhi, D., Reiter, M.K., Golan-Gueta, G., Abraham, I., 2019. HotStuff: BFT Consensus with Linearity and Responsiveness, in:
+
+     Proceedings of the 2019 ACM Symposium on Principles of Distributed Computing (PODC), pp. 347–356.
+
+
+
+
+A. Formal Proof of Theorem 1
+
+Theorem 1 (Unavoidable disagreement; restated). For any non-synchronous 𝑡0 -resilient (deterministic or proba-
+
+bilistic) Byzantine consensus protocol among 𝑛 processes, there exists an execution with 𝑡 ≥ 𝑛 − 2𝑡0 faulty processes
+
+in which correct processes disagree (i.e., decide different values).
+
+Proof. As we need to have at least two correct processes (in order for a disagreement to occur), 𝑡 ≤ 𝑛 − 2. Let 𝐵
+
+denote the group of faulty processes; |𝐵| = 𝑡 ≥ 𝑛 − 2𝑡0 . We denote by 𝐴 a group of any ⌈ 𝑛−𝑡
+                                                                                           2
+                                                                                              ⌉ correct processes and
+
+by 𝐶 the group of “other” ⌊ 𝑛−𝑡
+                             2
+                                ⌋ correct processes. Note that (1) 𝐴 ∩ 𝐶 = ∅, (2) 𝐴 ≠ ∅ (as 𝑛 − 𝑡 ≥ 2), and (3) 𝐶 ≠ ∅
+
+(as 𝑛 − 𝑡 ≥ 2).
+
+    Consider the following two executions:
+
+     • Execution 𝑒1 : In this execution, processes in 𝐴 ∪ 𝐵 are correct, whereas processes in 𝐶 are faulty and silent
+
+       (i.e., they do not send any messages). All correct processes propose the same value 𝑣. The number of faulty
+
+       processes in 𝑒1 is |𝐶| = ⌊ 𝑛−𝑡
+                                   2
+                                      ⌋ ≤ 𝑡0 . Due to the fact that the Byzantine consensus protocol is 𝑡0 -resilient and
+
+       the number of faulty processes is ≤ 𝑡0 , all correct processes decide 𝑣 by some time 𝑇1 .
+
+     • Execution 𝑒2 : In this execution, processes in 𝐵 ∪ 𝐶 are correct, whereas processes in 𝐴 are faulty and silent.
+
+       All correct processes propose the same value 𝑣′ . The number of faulty processes in 𝑒1 is |𝐴| ≤ 𝑡0 . Hence, all
+
+       correct processes decide 𝑣′ by some time 𝑇2 .
+
+Now, we build an execution 𝑒3 :
+
+    1. Processes in 𝐴 ∪ 𝐶 are correct, whereas processes in 𝐵 are faulty.
+
+    2. Processes in 𝐴 propose 𝑣, whereas processes in 𝐶 propose 𝑣′ .
+
+    3. Processes in 𝐵 behave (1) towards processes in 𝐴 as in 𝑒1 , and (2) towards processes in 𝐶 as in 𝑒2 . Moreover,
+
+       all messages between groups 𝐴 and 𝐶 are delayed until after 𝗆𝖺𝗑(𝑇1 , 𝑇2 ).
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                                                Page 34 of 40
+                                                 Accountable Byzantine Consensus
+
+Until time 𝑇1 , processes in 𝐴 cannot distinguish 𝑒3 from 𝑒1 ; thus, processes in 𝐴 decide 𝑣 in 𝑒3 . Similarly, until time
+
+𝑇2 , processes in 𝐶 cannot distinguish 𝑒3 from 𝑒2 ; thus, processes in 𝐶 decide 𝑣′ in 𝑒3 . Therefore, a disagreement
+
+occurs in 𝑒3 , and there are 𝑛 − 2𝑡0 ≤ 𝑡 ≤ 𝑛 − 2 faulty processes in 𝑒3 , which concludes the proof.
+
+
+B. Cryptographic Primitives: Formal Overview
+
+    This subsection recalls the formal definitions of the cryptographic schemes we rely upon for constructing .
+
+    A family of real numbers (𝑥𝑘 )𝑘∈ℕ ∈ ℝℕ is said to belong to 𝑝𝑜𝑙𝑦(𝑘) if there exists 𝑐 ∈ ℕ such that 𝑥𝑘 = 𝑂(𝑘𝑐 ).
+                                                                                                               𝑘→∞
+A family of real numbers (𝑥𝑘 )𝑘∈ℕ ∈ ℝℕ is said to be negligible, denoted by (𝑥𝑘 )𝑘∈ℕ ∈ 𝑛𝑒𝑔(𝑘), if for every 𝑐 ∈ ℕ,
+
+𝑥𝑘 = 𝑜( 𝑘1𝑐 ). A probabilistic Turing Machine is 𝑘-bounded for some 𝑘 ∈ ℕ if (1) it can be described with 𝑘 bits,
+    𝑘→∞
+assuming a standard bit-string representation, and (2) it halts after 𝑘 transitions.
+
+    The cryptographic schemes and their properties are defined with respect to a security parameter 𝜅 ∈ ℕ. A (local)
+
+protocol is said to be efficient if its complexity belongs to 𝑝𝑜𝑙𝑦(𝜅). A real number 𝑥 (which, traditionally, describes a
+
+probability) is said to be negligible if it is parametrized with the security parameter 𝜅 and 𝑥 ∈ 𝑛𝑒𝑔(𝜅). An adversary
+
+is said to be polynomially-bounded if it is parametrized with the security parameter 𝜅 and is 𝑝𝑜𝑙𝑦(𝜅)-bounded. A
+
+property of a cryptographic scheme is said to hold if it cannot be violated by a polynomially-bounded adversary
+
+with more than a negligible probability.
+
+    Throughout the section, we denote by 𝖲𝗍𝗋𝗂𝗇𝗀 ≜ {0, 1}∗ the set of all strings.
+
+
+B.1. Digital Signatures
+    A digital signature scheme is a tuple of efficient local protocols (𝖦𝖾𝗇, 𝖲𝗂𝗀𝗇, 𝖵𝖾𝗋𝗂𝖿 𝗒), with:
+
+    • 𝖦𝖾𝗇: a probabilistic algorithm that takes the security number 𝜅 as the input, and randomly selects a
+
+       pair (𝑠𝑘𝑖 , 𝑝𝑘𝑖 ) composed of a secret (i.e., private) key 𝑠𝑘𝑖 and a public (i.e., verification) key 𝑝𝑘𝑖 ; the bit-
+
+       representations of 𝑠𝑘𝑖 and 𝑝𝑘𝑖 are of size of (at most) 𝜅 bits.
+
+    • 𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑖 ): a (potentially probabilistic) algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, and (2) a private key 𝑠𝑘𝑖
+
+       as the input. The algorithm outputs a signature 𝜎𝑖 whose bit-representation has a size of (at most) 𝜅 bits.
+
+    • 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝑝𝑘𝑗 , 𝜎𝑗 ): a (potentially probabilistic) algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, (2) the public key
+
+       𝑝𝑘𝑗 of a process 𝑃𝑗 , and (3) a signature 𝜎𝑗 as the input. The algorithm outputs ⊤ (true) or ⊥ (false) depending
+
+       on whether 𝜎𝑗 is deemed as a valid signature.
+
+    The following properties hold:
+                                                         (                      )
+    • Correctness: If (𝑠𝑘𝑖 , 𝑝𝑘𝑖 ) ← 𝖦𝖾𝗇(𝜅), then 𝖵𝖾𝗋𝗂𝖿 𝗒 𝑚, 𝑝𝑘𝑖 , 𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑖 ) returns ⊤.
+
+    • Unforgeability: If 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝑝𝑘𝑗 , 𝜎𝑗 ) returns ⊤, then (1) 𝜎𝑗 ← 𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑗 ) has been executed by 𝑃𝑗 , or (2) 𝑃𝑗 is
+
+       faulty.
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                            Page 35 of 40
+                                                 Accountable Byzantine Consensus
+
+    This scheme is formalized by the functionality 𝑆𝐼𝐺 in the universally composable (UC) framework [19].
+
+
+B.2. Public Key Infrastracture (PKI)
+                                                                                             (
+   An ideal public key infrastructure is a tuple (𝖪𝖾𝗒𝗌, 𝖲𝗂𝗀𝗇, 𝖵𝖾𝗋𝗂𝖿 𝗒), where 𝖪𝖾𝗒𝗌 =          (𝖲𝖪 = (𝑠𝑘1 , ..., 𝑠𝑘𝑛 ), 𝖯𝖪 =
+                 )
+(𝑝𝑘1 , ..., 𝑝𝑘𝑛 ) , with:
+
+    • 𝖯𝖪: a vector of public (i.e., verification) keys stored by every correct process; each public key 𝑝𝑘𝑗 is associated
+
+       with the process 𝑃𝑗 .
+
+    • 𝖲𝖪: a vector of secret (i.e., private) keys such that, for every correct process 𝑃𝑖 , 𝑃𝑖 stores its secret key 𝑠𝑘𝑖
+
+       which corresponds to its public key 𝑝𝑘𝑖 ; 𝑠𝑘𝑖 is hidden from the adversary (i.e., the unforgeability property of
+
+       digital signatures is satisfied; Appendix B.1).
+
+    • 𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑖 ): a (potentially probabilistic) algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, and (2) a private key 𝑠𝑘𝑖
+
+       as the input. The algorithm outputs a signature 𝜎𝑖 .
+
+    • 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝑝𝑘𝑗 , 𝜎𝑗 ): a deterministic algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, (2) the public key 𝑝𝑘𝑗 of a
+
+       process 𝑃𝑗 , and (3) a signature 𝜎𝑗 as the input. The algorithm outputs ⊤ or ⊥ depending on whether 𝜎𝑗 is
+
+       deemed as a valid signature.
+
+    The following properties hold:
+                                                (                      )
+    • Correctness: For every 𝑖 ∈ [1, 𝑛], 𝖵𝖾𝗋𝗂𝖿 𝗒 𝑚, 𝑝𝑘𝑖 , 𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑖 ) returns ⊤.
+
+    • Unforgeability: If 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝑝𝑘𝑗 , 𝜎𝑗 ) returns ⊤, then (1) 𝜎𝑗 ← 𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑗 ) has been executed by 𝑃𝑗 , or (2) 𝑃𝑗 is
+
+       faulty.
+
+    In our paper, we assume an established PKI, i.e., we are not concerned with how such an infrastructure is obtained.
+
+We emphasize that the definition above does not state how a verifier learns the public (i.e., verification) key of another
+
+process. The associated ideal functionality, formalized by 𝐶𝐴 in the UC model [19], corresponds to a “rudimentary
+
+certification authority that registers party identities together with public values provided by the registered party”.
+
+Traditionally, this functionality is emulated in the following manner: a process publicly announces its public key
+
+using the Byzantine reliable broadcast primitive [13, 17]. However, without additional assumptions, the resiliency
+
+of Byzantine reliable broadcast is bounded by 𝑛∕3 (without previously established PKI), even in the synchronous
+
+setting [38], making it impossible for implementation in overly corrupted systems.
+
+    Assuming that each party can solve cryptographic puzzles only at a bounded rate, it is possible to (1) implement
+
+a setup phase to establish an ideal PKI assuming a (potentially very large) bound Δ on message delays [37, 7], and
+
+then (2) run asynchronous protocols on top of the established ideal PKI (in the main phase), without facing the
+
+dilemma between safety and efficiency due to the choice of Δ. (A small Δ would threat the safety, while a large Δ
+
+would increase the latency.)
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                            Page 36 of 40
+                                                 Accountable Byzantine Consensus
+
+B.3. Threshold Signature Scheme
+   A non-interactive (𝑘, 𝑛)-dual threshold signature scheme is a tuple of efficient local protocols (𝖪𝖾𝗒𝗌, 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇,
+                                               (                                                )
+𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒, 𝖵𝖾𝗋𝗂𝖿 𝗒, 𝖢𝗈𝗆𝖻𝗂𝗇𝖾), where 𝖪𝖾𝗒𝗌 = 𝖯𝖪, 𝖲𝖪 = (𝑠𝑘1 , ..., 𝑠𝑘𝑛 ), 𝖵𝖪 = (𝑣𝑘1 , ..., 𝑣𝑘𝑛 ) , with:
+
+    • 𝖯𝖪: a public key store by correct process.
+
+    • 𝖵𝖪: a vector of verification keys stored by every correct process.
+
+    • 𝖲𝖪: a vector of private key shares such that, for every correct process 𝑃𝑖 , 𝑃𝑖 stores its private key share 𝑠𝑘𝑖 ;
+
+       𝑠𝑘𝑖 is hidden from the adversary.
+
+    • 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑖 ): a (potentially probabilistic) algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, and (2) a private
+
+       key share 𝑠𝑘𝑖 as the input. The algorithm outputs a partial signature 𝜎𝑖𝑃 of (at most) 𝜅 bits.
+
+    • 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝑣𝑘𝑗 , 𝜎𝑗𝑃 ): a deterministic algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, (2) the verification key
+
+       𝑣𝑘𝑗 of a process 𝑃𝑗 , and (3) a partial signature 𝜎𝑗𝑃 as the input. The algorithm outputs ⊤ or ⊥ depending on
+
+       whether 𝜎𝑗𝑃 is deemed as a valid partial signature.
+
+    • 𝖢𝗈𝗆𝖻𝗂𝗇𝖾(𝑚, {𝜎𝑖 }𝑖∈𝑆∧𝑆⊂[1,𝑛]∧|𝑆|=𝑘 ): an algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, and (2) a subset 𝑆 of size
+
+       |𝑆| = 𝑘 of partial signatures {𝜎𝑖 }𝑖∈𝑆 . The algorithm outputs a threshold signature 𝜎 𝑇 .
+
+    • 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝖯𝖪, 𝜎 𝑇 ): a deterministic algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, (2) the public key 𝖯𝖪, and (3) a
+
+       threshold signature 𝜎 𝑇 . The algorithm outputs ⊤ or ⊥ depending on whether 𝜎 𝑇 is deemed as a valid threshold
+
+       signature.
+
+    The following properties hold:
+                                                                           (                           )
+    • Correctness of partial signatures: For every 𝑖 ∈ [1, 𝑛], 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒 𝑚, 𝑣𝑘𝑖 , 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑖 ) returns ⊤.
+
+    • Unforgeability of partial signatures: If 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝑣𝑘𝑗 , 𝜎𝑗𝑃 ) returns ⊤, then (1) 𝜎𝑗𝑃 ← 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑗 ) has
+
+       been executed by 𝑃𝑗 , or (2) 𝑃𝑗 is faulty.
+                                                  (                                                         )
+    • Correctness of threshold signatures: 𝖵𝖾𝗋𝗂𝖿 𝗒 𝑚, 𝖯𝖪, 𝖢𝗈𝗆𝖻𝗂𝗇𝖾({𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑗 )}𝑗∈𝐽 ∧𝐽 ⊂[1,𝑛]∧|𝐽 |=𝑘 ) returns ⊤.
+
+    • Unforgeability of threshold signatures: If 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝖯𝖪, 𝜎 𝑇 ) returns ⊤, then there exists a set 𝐽 , |𝐽 | = 𝑘, of
+
+       partial signatures such that, for each 𝜎𝑗𝑃 ∈ 𝐽 , (1) 𝜎𝑗𝑃 ← 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑗 ) has been executed by 𝑃𝑗 , or (2) 𝑃𝑗
+
+       is faulty.
+
+    Importantly, there exist dual threshold signature schemes with threshold signatures having 𝜅 bits (e.g., [47]).
+
+Note that, without a trusted setup, a (𝑘, 𝑛)-dual threshold signature scheme can be obtained via a distributed key
+
+generation (DKG) protocol (e.g., [2]) if the number of faulty processes does not exceed 𝑛−𝑘. Otherwise, no guarantees
+
+exist. For example, if the number of faults exceeds 𝑛 − 𝑘, we can have an imperfect threshold signature scheme in
+
+which the aforementioned properties would not hold (e.g., faulty processes could forge the private key shares of
+
+correct processes and use them to sign statements on their behalf).
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                           Page 37 of 40
+                                                 Accountable Byzantine Consensus
+
+B.4. Threshold Signature Scheme in a Transparent Setup (via Σ-Compressed Protocols)
+    A transparent non-interactive (𝑘, 𝑛)-dual threshold signature scheme is a scheme whose specification is extremely
+
+similar to the specification presented in Appendix B.3. The only difference is that a transparent scheme does not
+
+include a common public key, which implies that a trusted setup nor a DKG protocol is necessary. Hence, obtaining
+
+a transparent scheme is strictly easier (in terms of necessary assumptions) than obtaining a non-transparent scheme
+
+(Appendix B.3). For the completeness, the full specification is given below.
+
+   A transparent non-interactive (𝑘, 𝑛)-dual threshold signature scheme is tuple of efficient local protocols
+                                                                 (                                              )
+(𝖪𝖾𝗒𝗌, 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇, 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒, 𝖵𝖾𝗋𝗂𝖿 𝗒, 𝖠𝗀𝗀𝗋𝖾𝗀𝖺𝗍𝖾), where 𝖪𝖾𝗒𝗌 = 𝖲𝖪 = (𝑠𝑘1 , ..., 𝑠𝑘𝑛 ), 𝖵𝖪 = (𝑣𝑘1 , ..., 𝑣𝑘𝑛 ) , with:
+
+    • 𝖵𝖪: a vector of verification keys stored by every correct process.
+
+    • 𝖲𝖪: a vector of private key shares such that, for every correct process 𝑃𝑖 , 𝑃𝑖 stores its private key share 𝑠𝑘𝑖 ;
+
+       𝑠𝑘𝑖 is hidden from the adversary.
+
+    • 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑖 ): a (potentially probabilistic) algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, and (2) a private
+
+       key share 𝑠𝑘𝑖 as the input. The algorithm outputs a signature share 𝜎𝑖𝑆 of (at most) 𝜅 bits.
+
+    • 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝑣𝑘𝑗 , 𝜎𝑗𝑆 ): a deterministic algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, (2) the verification key
+
+       𝑣𝑘𝑗 of a process 𝑃𝑗 , and (3) a signature share 𝜎𝑗𝑆 as the input. The algorithm outputs ⊤ or ⊥ depending on
+
+       whether 𝜎𝑗𝑆 is deemed as a valid signature.
+
+    • 𝖠𝗀𝗀𝗋𝖾𝗀𝖺𝗍𝖾(𝑚, {𝜎𝑖 }𝑖∈𝑆∧𝑆⊂[1,𝑛]∧|𝑆|=𝑘 ): an algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, and (2) a subset 𝑆 of size
+
+       |𝑆| = 𝑘 of signature shares {𝜎𝑖 }𝑖∈𝑆 . The algorithm outputs an aggregate signature 𝜎 𝐴 .
+
+    • 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝜎 𝐴 ): a deterministic algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, and (2) an aggregate signature 𝜎 𝐴 .
+
+       The algorithm outputs ⊤ or ⊥ depending on whether 𝜎 𝐴 is deemed as a valid aggregate signature.
+
+    The following properties hold:
+                                                                         (                           )
+    • Correctness of signature shares: For every 𝑖 ∈ [1, 𝑛], 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒 𝑚, 𝑣𝑘𝑖 , 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑖 ) returns ⊤.
+
+    • Unforgeability of signature shares: If 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝑣𝑘𝑗 , 𝜎𝑗𝑆 ) returns ⊤, then (1) 𝜎𝑗𝑆 ← 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑗 ) has
+
+       been executed by 𝑃𝑗 , or (2) 𝑃𝑗 is faulty.
+                                                  (                                                       )
+    • Correctness of aggregate signatures: 𝖵𝖾𝗋𝗂𝖿 𝗒 𝑚, 𝖠𝗀𝗀𝗋𝖾𝗀𝖺𝗍𝖾({𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑗 )}𝑗∈𝐽 ∧𝐽 ⊂[1,𝑛]∧|𝐽 |=𝑘 ) returns ⊤.
+
+    • Unforgeability of aggregate signatures: If 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝜎 𝐴 ) returns ⊤, then there exists a set 𝐽 , |𝐽 | = 𝑘, of share
+
+       signatures such that, for each 𝜎𝑗𝑆 ∈ 𝐽 , (1) 𝜎𝑗𝑆 ← 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑗 ) has been executed by 𝑃𝑗 , or (2) 𝑃𝑗 is faulty.
+
+    Importantly, there exist transparent threshold signature schemes such that the aggregate signatures have a size
+
+of 𝑂(𝜅 log(𝑛)) bits (e.g., [8]). Thus, proving that a group of a linear number of processes signed a certain message
+
+requires 𝑂(𝜅 log(𝑛)) bits to be transmitted rather than 𝑂(𝜅) bits for the non-transparent threshold signature schemes
+
+(Appendix B.3).
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                           Page 38 of 40
+                                                 Accountable Byzantine Consensus
+
+B.5. Aggregate Signatures
+   A non-interactive 𝑛-aggregate signature scheme is a tuple of efficient (local) protocols (𝖪𝖾𝗒𝗌, 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇,
+                                               (                                              )
+𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒, 𝖵𝖾𝗋𝗂𝖿 𝗒, 𝖠𝗀𝗀𝗋𝖾𝗀𝖺𝗍𝖾), where 𝖪𝖾𝗒𝗌 = 𝖲𝖪 = (𝑠𝑘1 , ..., 𝑠𝑘𝑛 ), 𝖵𝖪 = (𝑣𝑘1 , ..., 𝑣𝑘𝑛 ) , with:
+
+    • 𝖵𝖪: a vector of verification keys stored by every correct process.
+
+    • 𝖲𝖪: a vector of private key shares such that, for every correct process 𝑃𝑖 , 𝑃𝑖 stores its private key share 𝑠𝑘𝑖 ;
+
+       𝑠𝑘𝑖 is hidden from the adversary.
+
+    • 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑖 ): a (potentially probabilistic) algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, and (2) a private
+
+       key share 𝑠𝑘𝑖 as the input. The algorithm outputs a signature share 𝜎𝑖𝑆 of (at most) 𝜅 bits.
+
+    • 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝑣𝑘𝑗 , 𝜎𝑗𝑆 ): a deterministic algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, (2) the verification key
+
+       𝑣𝑘𝑗 of a process 𝑃𝑗 , and (3) a signature share 𝜎𝑗𝑆 as the input. The algorithm outputs ⊤ or ⊥ depending on
+
+       whether 𝜎𝑗𝑆 is deemed as a valid signature.
+
+    • 𝖠𝗀𝗀𝗋𝖾𝗀𝖺𝗍𝖾(𝑚, {𝜎𝑖 }𝑖∈𝑆∧𝑆⊆[1,𝑛] ): an algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, and (2) a subset 𝑆 of any size of
+
+       signature shares {𝜎𝑖 }𝑖∈𝑆 . The algorithm outputs an aggregate signature 𝜎 𝐴 .
+
+    • 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝜎 𝐴 , 𝐵): a deterministic algorithm that takes (1) a string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀, (2) an aggregate signature 𝜎 𝐴 ,
+
+       and (3) a bit bask 𝐵 ∈ {0, 1}𝑛 . The algorithm outputs ⊤ or ⊥ depending on whether 𝜎 𝐴 is deemed as a valid
+
+       aggregate signature with reference to 𝐵.
+
+    The following properties hold:
+                                                                         (                           )
+    • Correctness of signature shares: For every 𝑖 ∈ [1, 𝑛], 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒 𝑚, 𝑣𝑘𝑖 , 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑖 ) returns ⊤.
+
+    • Unforgeability of signature shares: If 𝖲𝗁𝖺𝗋𝖾𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝑣𝑘𝑗 , 𝜎𝑗𝑆 ) returns ⊤, then (1) 𝜎𝑗𝑆 ← 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑗 ) has
+
+       been executed by 𝑃𝑗 , or (2) 𝑃𝑗 is faulty.
+
+    • Correctness of aggregate signatures: Consider any string 𝑚 ∈ 𝖲𝗍𝗋𝗂𝗇𝗀 and any bit-mask 𝐵 ∈ {0, 1}𝑛 . The
+                              (                                            )
+      following holds: 𝖵𝖾𝗋𝗂𝖿 𝗒 𝑚, 𝖠𝗀𝗀𝗋𝖾𝗀𝖺𝗍𝖾({𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑗 )}𝐵[𝑗]=1 ), 𝐵 returns ⊤.
+
+    • Unforgeability of aggregate signatures: If 𝖵𝖾𝗋𝗂𝖿 𝗒(𝑚, 𝜎 𝐴 , 𝐵) returns ⊤, then, for every 𝑗 ∈ [1, 𝑛] such that
+
+       𝐵[𝑗] = 1, (1) 𝜎𝑗𝑆 ← 𝖲𝗁𝖺𝗋𝖾𝖲𝗂𝗀𝗇(𝑚, 𝑠𝑘𝑗 ) has been executed by 𝑃𝑗 , or (2) 𝑃𝑗 is faulty.
+
+    There exist transparent aggregate signature schemes such that the aggregate signatures have a size of 𝑂(𝜅) bits
+
+(e.g., [11]). The interface of an aggregate signature scheme is similar to the interface of the non-transparent threshold
+
+signature schemes (Appendix B.3). We emphasize two differences:
+
+    • (Complexity) An aggregate signature 𝜎 𝐴 has to be associated with a bit-mask 𝐵 of 𝑛 bits (representing the
+
+       subset of signers). Indeed, this bit-mask is an argument of the associated 𝖵𝖾𝗋𝗂𝖿 𝗒 protocol. Thus, proving that a
+
+       group of a linear number of processes have signed a certain message requires 𝑂(𝜅 + 𝑛) bits to be transmitted
+
+       instead of 𝑂(𝜅) bits for the non-transparent threshold signature schemes (Appendix B.3).
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                         Page 39 of 40
+                                                 Accountable Byzantine Consensus
+
+    • (Transparency) This scheme requires weaker assumptions for the setup (the same ones as the transparent
+
+       threshold signature schemes defined in Appendix B.4). Indeed, the secret keys can be generated independently,
+
+       and the correct processes have to agree on the associated verification keys (exactly as in a PKI).
+
+
+
+
+First Author et al.: Preprint submitted to Elsevier                                                         Page 40 of 40
+

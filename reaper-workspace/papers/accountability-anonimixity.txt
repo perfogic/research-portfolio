@@ -1,0 +1,2202 @@
+Anonymity Preserving Byzantine
+Vector Consensus
+
+arXiv:1902.10010v2 [cs.DC] 27 Apr 2020
+
+Christian Cachin? , Daniel Collins?? , Tyler Crain? ? ? , and Vincent Gramoli†
+
+Abstract. Collecting anonymous opinions finds various applications ranging from simple whistleblowing, releasing secretive information, to complex forms of voting, where participants rank candidates by order of preferences. Unfortunately, as far as we know there is no efficient distributed
+solution to this problem. Previously, participants had to trust third parties, run expensive cryptographic protocols or sacrifice anonymity. In
+this paper, we propose a resilient-optimal solution to this problem called
+AVCP, which tolerates up to a third of Byzantine participants. AVCP
+combines traceable ring signatures to detect double votes with a reduction from vector consensus to binary consensus to ensure all valid votes
+are taken into account. We prove our algorithm correct and show that it
+preserves anonymity with at most a linear communication overhead and
+constant message overhead when compared to a recent consensus baseline. Finally, we demonstrate empirically that the protocol is practical by
+deploying it on 100 machines geo-distributed in 3 continents: America,
+Asia and Europe. Anonymous decisions are reached within 10 seconds
+with a conservative choice of traceable ring signatures.
+
+1
+
+Introduction and related work
+
+Consider a distributed survey where a group of mutually distrusting participants
+wish to exchange their opinions about some issue. For example, participants may
+wish to communicate over the Internet to rank candidates in order of preference
+to change the governance of a blockchain. Without making additional trust assumptions [2, 21, 42], one promising approach is to run a Byzantine consensus
+algorithm [44], or more generally a vector consensus algorithm [19, 26, 50] to
+allow for arbitrary votes. In vector consensus, a set of participants decide on
+a common vector of values, each value being proposed by one process. Unlike
+interactive consistency [44], a protocol solving vector consensus can be executed
+without fully synchronous communication channels, and as such is preferable for
+use over the Internet. Unfortunately, vector consensus protocols tie each participant’s opinion to its identity to ensure one opinion is not overrepresented in
+the decision and to avoid double voting. There is thus an inherent difficulty in
+solving vector consensus while preserving anonymity.
+?
+
+University of Bern, cachin@inf.unibe.ch
+University of Sydney, dcol9436@uni.sydney.edu.au
+???
+University of Sydney, tycrain@gmail.com
+†
+University of Sydney, vincent.gramoli@sydney.edu.au
+??
+
+In this paper, we introduce the anonymity-preserving vector consensus problem that prevents an adversary from discovering the identity of non-faulty participants that propose values in the consensus and we introduce a solution called
+Anonymised Vector Consensus Protocol (AVCP). To prevent the leader in some
+Byzantine consensus algorithms [15] from influencing the outcome of the vote
+by discarding proposals, AVCP reduces the problem to binary consensus that is
+executed without the need for a traditional leader [20].
+We provide a mechanism to prevent Byzantine processes from double voting
+whilst also decoupling their ballots from their identity. In particular, we adopt
+traceable ring signatures [32, 38], which enable participants to anonymously
+prove their membership in a set of participants, exposing a signer’s identity
+if and only if they sign two different votes. This can disincentivise participants
+from proposing multiple votes to the consensus. Alternatively, we could use linkable ring signatures [45], but would not ensure that Byzantine processes are
+held accountable when double-signing. We could also have used blind signatures
+[14, 16], but this would have required an additional trusted authority.
+We also identify interesting conditions to ensure anonymous communication.
+Importantly, participants must propagate their signatures anonymously to hide
+their identity. To this end, we could construct anonymous channels directly. However, these protocols require additional trusted parties, are not robust or require
+O(n) message delays to terminate [17, 35, 36, 41]. Thus, we assume access to
+anonymous channels, such as through publicly-deployed [25, 63] networks which
+often require sustained network observation or large amounts of resources to deanonymise with high probability [34, 48]. Anonymity is ensured then as processes
+do not reveal their identity via ring signatures and communicate over anonymous
+channels. When correlation-based attacks on certain anonymous networks may
+be viable [46] and for efficiency’s sake, processes may anonymously broadcast
+their proposal and then continue the protocol execution over regular channels.
+However, anonymous channels alone cannot ensure anonymity when combined
+with regular channels as an adversary could infer identities through latency [3]
+and message transmission ordering [52]. For example, an adversary may relate
+late message arrivals from a single process over both channels to deduce the
+identity of a slow participant. This is why, to ensure anonymity, the timing and
+order of messages exchanged over anonymous channels should be statistically
+independent (or computationally indistinguishable with a computational adversary) from that of those exchanged over regular channels. In practice, one may
+attempt to ensure that there is a low correlation by ensuring that message delays
+over anonymous and regular channels are sufficiently randomised.
+We construct our solution iteratively first by defining the anonymitypreserving all-to-all reliable problem that may be of independent interest.
+Here, anonymity and comparable properties to reliable broadcast [9] with n
+broadcasters are ensured. By construction a solution to this problem with
+Bracha’s reliable broadcast [7], AVCP can terminate after three regular and
+one anonymous message delay. With this approach, our experimental results
+are promising—with 100 geo-distributed nodes, AVCP generally terminates in
+2
+
+less than ten seconds. We remark that, to ensure confidentiality of proposals
+until after termination, threshold encryption [23, 57], in which a set threshold
+of participants must cooperate to decrypt any message, can be used at the cost
+of an additional message delay.
+
+Related constructions. We consider techniques without additional trusted
+parties. Homomorphic tallying [21] encodes opinions as values that are summed
+in encrypted form prior to decryption. Such schemes that rely on a public bulletin board for posting votes [37] could use Byzantine consensus [44] and make
+timing assumptions on vote submission to perform an election. Unfortunately,
+homomorphic tallying is impractical when the pool of candidates is large and
+impossible when arbitrary. Using a multiplicative homomorphic scheme [28],
+decryption work is exponential in the amount of candidates, and additive
+homomorphic encryption like Paillier’s scheme [51] incur large (RSA-size)
+parameters and more costly operations. Fully homomorphic encryption [10, 33]
+is suitable in theory, but at present is untenable for computing complex circuits
+efficiently. Self-tallying schemes [37], which use homomorphic tallying, are not
+appropriate as at some point all participants must be correct, which is untenable
+with arbitrary (Byzantine) behaviour. Constructions involving mix-nets [18]
+allow for arbitrary ballot structure. However, decryption mix-nets are not a
+priori robust to a single Byzantine or crash failure [18], and re-encryption
+mix-nets which use proofs of shuffle are generally slow in tallying [2, 43],
+requiring hours to tally in larger elections since O(t) processes need to perform
+proofs of shuffle [49] in sequence. DC-nets and subsequent variations [17, 36]
+are not sufficiently robust and generally require O(n) message delays for
+an all-to-all broadcast. On multi-party computation, general techniques like
+Yao’s garbled-circuits [60] incur untenable overhead given enough complexity
+in the structure of ballots. Private-set intersection [30, 61] can be efficient
+for elections that require unanimous agreement, but do not generalise arbitrarily.
+
+Roadmap. The paper is structured as follows. Section 2 provides preliminary
+definitions and specifies the model. Section 3 presents protocols and definitions
+required for our consensus protocol. Section 4 presents our anonymity-preserving
+vector consensus solution. We consider the case where regular and anonymous
+message channels are combined in Section 5. Section 6 benchmarks AVCP on
+up to 100 geo-distributed located on three continents. Section 7 concludes. Appendix A proves the correctness of AVCP. Appendix B describes handling the
+termination of binary consensus instances used in AVCP. Appendix C details
+and proves correct AARBP, presented using a single anonymous broadcast per
+process. Appendix D combines AVCP and threshold encryption, forming a voting scheme which is then analysed. Appendix E evaluates our other distributed
+protocols and necessary cryptographic schemes.
+3
+
+2
+
+Model
+
+We assume the existence of a set of processes P = {p1 , . . . , pn } (where |P | = n,
+and the ith process is pi ), an adversary A who corrupts t < n3 processes in
+P , and a trusted dealer D who generates the initial state of each process.
+For simplicity of exposition, we assume that cryptographic primitives are
+unbreakable. With concrete primitives that provide computational guarantees,
+each party could be modelled as being able to execute a number of instructions
+each message step bounded by a polynomial in a security parameter k [13],
+in which case the transformation of our proofs is straight forward given the
+hardness assumptions required by the underlying cryptographic schemes.
+Network: We assume that P consists of asynchronous, sequential processes that
+communicate over reliable, point-to-point channels in an asynchronous network.
+An asynchronous process is one that executes instructions at its own pace. An
+asynchronous network is one where message delays are unbounded. A reliable
+network is such that any message sent will eventually be delivered by the intended recipient. We assume that processes can also communicate using reliable
+one-way anonymous channels, which we soon describe.
+Each process is equipped with the primitive “send M to pj ”, which sends the
+message M (possibly a tuple) to process pj ∈ P . For simplicity, we assume that
+pj can send a message to itself. A process receives a message M by invoking the
+primitive “receive m”. Each process may invoke “broadcast M ”, which is shorthand for “for each pi ∈ P do send M to pi end for”. Analogously, processes may
+invoke “anon send M to pj ” and “anon broadcast M ” over anonymous channels,
+which we characterise below.
+Since reaching consensus deterministically is impossible in failure-prone
+asynchronous message-passing systems [29], we assume that partial synchrony
+holds among processes in P in Section 4. That is, we assume there exists a point
+in time in protocol execution, the global stabilisation time (GST), unknown to
+all processes, after which the speed of each process and all message transfer
+delays are upper bounded by a finite constant [27].
+Adversary: We assume that the adversary A schedules message delivery over
+the regular channels, restricted to the assumptions of our model (such as partial
+synchrony). For each send call made, A determines when the corresponding
+receive call is invoked. A portion of processes— exactly t < n3 members of
+P —are initially corrupted by A and may exhibit Byzantine faults [44] over
+the lifetime of a protocol’s execution. That is, they may deviate from the
+predefined protocol in an arbitrary way. We assume A can see all computations
+and messages sent and received by corrupted processes. A non-faulty process is
+one that is not corrupted by A and therefore follows the prescribed protocol. A
+can only observe anon send and anon receive calls made by corrupted processes.
+A cannot see the (local) computations that non-faulty processes perform. We
+do not restrict the amount or speed of computation that A can perform.
+
+4
+
+Anonymity assumption: Consider the following experiment. Suppose that
+pi ∈ P is non-faulty and invokes “anon send m to pj ”, where pj ∈ P and is
+possibly corrupted, and pj invokes anon receive with respect to m. No process
+can directly invoke send or invoke receive in response to a send call at any time.
+pj is allowed to use anon send to message corrupted processes if it is corrupted,
+and can invoke anon recv with respect to messages sent by corrupted processes.
+Each process is unable to make oracle calls (described below), but is allowed
+to perform an arbitrary number of local computations. pj then outputs a single
+guess, g ∈ {1, . . . , n} as to the identity of pi . Then for any run of the experiment,
+1
+.
+P r(i = g) ≤ n−t
+As A can corrupt t processes, the anonymity set [22], i.e. the set of processes
+pi is indistinguishable from, comprises n − t non-faulty processes. Our definition
+captures the anonymity of the anonymous channels, but does not consider the
+effects of regular message passing and timing on anonymity. As such, we can
+use techniques to establish anonymous channels in practice with varying levels
+of anonymity with these factors considered.
+Traceable ring signatures: Informally, a ring signature [32, 54] proves that
+a signer has knowledge of a private key corresponding to one of many public
+keys of their choice without revealing the corresponding public key. Hereafter,
+we consider traceable ring signatures (or TRSs), which are ring signatures that
+expose the identity of a signer who signs two different messages. To increase
+flexibility, we can consider traceability with respect to a particular string called
+an issue [59], allowing signers to maintain anonymity if they sign multiple times,
+provided they do so each time with respect to a different issue.
+We now present relevant definitions of the ring signatures which are analogous
+to those of Fujisaki and Suzuki [32]. Let ID ∈ {0, 1}∗ , which we denote as a tag.
+We assume that all processes may query an idealised distributed oracle, which
+implements the following four operations:
+1. σ ← Sign(i, ID, m), which takes the integer i ∈ {1, . . . , n}, tag ID ∈ {0, 1}∗
+and message m ∈ {0, 1}∗ , and outputs the signature σ ∈ {0, 1}∗ . We restrict
+Sign such that only process pi ∈ P may invoke Sign with first argument i.
+2. b ← VerifySig(ID, m, σ), which takes the tag ID, message m ∈ {0, 1}∗ , and
+signature σ ∈ {0, 1}∗ , and outputs a bit b ∈ {0, 1}. All parties may query
+VerifySig.
+3. out ← Trace(ID, m, σ, m0 , σ 0 ), which takes the tag ID ∈ {0, 1}∗ , messages
+m, m0 ∈ {0, 1}∗ and signatures σ, σ 0 ∈ {0, 1}∗ , and outputs out ∈ {0, 1}∗ ∪
+{1, . . . , n} (possibly corresponding to a process pi ). All parties may query
+Trace.
+4. x ← FindIndex(ID, m, σ) takes a tag ID ∈ {0, 1}∗ , a message m ∈ {0, 1}∗ ,
+and a signature σ ∈ {0, 1}∗ , and outputs a value x ∈ {1, . . . , n}. FindIndex
+may not be called by any party, and exists only for protocol definitions.
+We describe the behaviour of the idealised distributed oracle:
+– Signature correctness and unforgeability: VerifySig(ID, m, σ) = 1 ⇐⇒
+there exists some process pi ∈ P that previously invoked Sign(i, ID, m) and
+obtained σ as a response. Unforgeability is captured by the “⇒” claim.
+5
+
+– Traceability and entrapment-freeness: The function Trace behaves as
+defined below ⇐⇒ σ ← Sign(i, ID, m) and σ 0 ← Sign(i0 , ID, m0 ):
+
+
+if i 6= i0 ,
+“indep”
+0
+0
+Trace(ID, m, σ, m , σ ) = “linked” else if m = m0 ,
+
+
+i
+otherwise (i = i0 ∧ m 6= m0 ).
+Traceability is captured by the “⇐” claim: if m = m0 , then the messages
+are linked, otherwise, the identity of the signing process pi = pi0 is exposed.
+Entrapment-freeness is captured by the “⇒” claim: loosely, processes cannot
+be falsely accused of double-signing.
+– Signature anonymity: Consider the following scenario. Let D be an adversary.Let i ∈ {1, . . . , n} be the identifier of a non-faulty process. Suppose that D is given a set of signatures of arbitrary length S = {σ1 , . . . }
+such that, for each pair (σx , σy ) = (Sign(i, ID x , mx ), Sign(i, ID y , my )), either
+ID x = ID y and mx = my holds or ID x 6= ID y holds. D is allowed access
+to the set S, but not any of its previous computations, and may not communicate with other parties. Then, suppose that D is required to output a
+value g ∈ {1, . . . , n}, corresponding to its guess of the value of i, after performing an arbitrary number of computations and oracle calls subject to the
+1
+. Signature anonymity
+restrictions described above. Then P r(i = g) = n−t
+ensures that a process that signs with respect to a single message m per tag
+ID maintains anonymity.
+With respect to FindIndex(ID, m, σ), i ∈ {1, . . . , n} is outputted if and only
+if σ is the result of process pi having previously queried Sign(i, ID, m). The
+unforgeability property implies signature uniqueness: If calls σ ← Sign(i, ID, m)
+and σ 0 ← Sign(j, ID, m0 ) are made, then σ 6= σ 0 holds unless i = j and m = m0 .
+The concrete scheme proposed by Fujisaki and Suzuki [32] computationally
+satisfies these properties in the random oracle model [4] provided the Decisional
+Diffie-Hellman problem is intractable. It has signatures of size O(kn), where
+k is the security parameter. To simplify the presentation, we assume that its
+properties hold unconditionally in the following.
+
+3
+
+Communication primitives
+
+In this section, we detail communication primitives that are invoked in our consensus algorithm presented in Section 4. In particular, we describe and present
+a mechanism for processes to replace communication calls over regular channels
+to ones over anonymous channels, we present the binary consensus problem,
+and define the properties of anonymity-preserving all-to-all reliable broadcast,
+an extension of reliable broadcast, initially described by Bracha [7].
+3.1
+
+Traceable broadcast
+
+Suppose a process p wishes to anonymously message a given set of processes P .
+By invoking anonymous communication channels, p can achieve this, but P \ {p}
+6
+
+is unable to verify that p resides in P , and so cannot meaningfully participate in
+protocol execution. By using (traceable) ring signatures, p can verify its membership in P over anonymous channels without revealing its identity. To this
+end, we outline a simple mechanism to replace the invocation of send and receive
+primitives (over regular channels) with calls to ring signature and anonymous
+messaging primitives anon send and anon receive.
+State. Each process in P tracks msg buf [], which maps a key (an ordered
+list of strings) to a set of messages of the form (m, σ), where σ is the output of a call to Sign. Each set is initially empty. Messages of the form
+(ID, TAG, label, m, σ) (where label = (l1 , . . . , lk ) for some k ≥ 0) are deposited
+as msg buf [ID, TAG, label] ← msg buf [ID, TAG, label] ∪ {m, σ}.
+
+Algorithm 1 Traceable broadcast
+1: upon invocation of broadcast (ID, TAG, label, m)
+2:
+σ ← Sign(i, T, m)
+B T = ID||TAG||l1 || · · · ||lk , where label = (l1 , . . . , lk )
+3:
+anon broadcast (ID, TAG, label, m, σ)
+4: upon invocation of anon receive (ID, TAG, label, m, σ)
+5:
+valid ← (VerifySig(T, m, σ) = 1)
+6:
+if valid then
+7:
+for each (m0 , σ 0 ) ∈ msg buf [ID, TAG, label] do
+8:
+if Trace(T, m, σ, m0 , σ 0 ) 6= “indep” then
+9:
+valid ← false
+B Double-signing detected
+10:
+break
+11:
+msg buf [ID, TAG, label] ← msg buf [ID, TAG, label] ∪ {(m, σ)}
+12:
+if valid then
+13:
+receive (ID, TAG, label, m)
+
+Protocol. Suppose that a process p wishes to invoke broadcast with respect
+to a tuple (ID, TAG, label, m) To replace broadcast (resp. send) calls, a process first signs the value m with respect to string T = ID||TAG||l1 || . . . ||lk
+for some k ≥ 0 (at line 2), outputting σ. We assume every T in Algorithm 1
+takes this form. Then, p invokes anon broadcast (resp. anon send) with respect
+to (ID, TAG, label, m, σ) (line 3).
+On receipt of a tuple (ID, TAG, label, m, σ) via anonymous channels, p first
+checks that the signature σ is well-formed (line 5). Given this, all message/signature pairs in the set msg buf [ID, TAG, label] are compared to the received
+tuple via Trace calls (line 8). Irrespective of the outcome, the received tuple is
+stored in msg buf [] (line 11). Provided that the tuple is independent with respect to the signer of all messages stored thus far in msg buf [ID, TAG, label],
+(ID, TAG, label, m) is considered receipt over regular channels (line 13).
+We now prove that the protocol is correct and ensures anonymity under the
+assumptions of the model.
+7
+
+Lemma 1. Suppose pi
+∈
+P is non-faulty and invokes broadcast
+(ID, TAG, label, m). Suppose pi has previously invoked broadcast an arbitrary number of times. Then, all non-faulty processes will eventually invoke
+receive (ID, TAG, label, m). Moreover, pi preserves anonymity which is modelled
+as follows, provided that pi does not invoke broadcast (ID, TAG, label, m) and
+broadcast (ID 0 , TAG 0 , label, m0 ) where (ID, TAG, label) = (ID 0 , TAG 0 , label0 ).
+Suppose that an adversary A is allowed to output a single guess, g ∈ {1, . . . , n}
+as to the identity of pi a finite amount of time after invoking receive at a
+corrupted process of its choice. A is then allowed to perform an arbitrary
+number of computations and make oracle calls described in Section 2 before
+1
+.
+outputting its guess. Then for any A, P r(i = g) ≤ n−t
+Proof. Process pi invokes Sign(i, ID||TAG||l1 || · · · ||lk , m), producing the signature σ (line 2). Then, pi invokes “anon broadcast (i, ID||TAG||l1 || · · · ||lk , m, σ)”
+(line 3). By construction of the model, A is unable to observe the existence or
+timing of pi ’s call to anon broadcast. By the anonymity assumption, A is not
+1
+able to produce a guess g 6= n−t
+when unable to make oracle calls, since it is
+only aware that the t processes it has corrupted are different from pi . By the
+reliability of the network, A will eventually invoke anon receive with respect to
+m at one of its t corrupted processes, as will every non-faulty process.
+By
+signature
+correctness,
+each
+process
+will
+deduce
+that
+VerifySig(ID||TAG||l1 || · · · ||lk , m, σ) = 1 at line 5. By definition of Sign,
+A cannot invoke Sign(i, ID||TAG||l1 || · · · ||lk , m0 ) nor produce a value σ 0 such
+that VerifySig(ID||TAG||l1 || · · · ||lk , m0 , σ 0 ) = 1 for any m0 . This holds for
+any tuple of the form (ID, TAG, l1 , . . . , lk ). Thus, every non-faulty process
+will progress to line 7. By traceability and entrapment-freeness, A cannot
+produce (m0 , σ 0 ) such that Trace(ID||TAG||l1 || · · · ||lk , m, σ, m0 , σ 0 ) 6= “indep”.
+In particular, if m0 6= m, then A cannot expose the identity of pi through a
+Trace call, as Trace will never output i. Thus, every non-faulty process will
+reach line 13. By signature anonymity, and the fact that pi never signs with
+respect to two tuples such that (ID 0 , TAG 0 , l10 , . . . , lk0 ) = (ID, TAG, l1 , . . . , lk ),
+1
+no previous computation or messages can aid A’s guess to be such that g 6= n−t
+.
+Hereafter, we assume that calls to primitives send and receive are handled by the
+procedure presented in this subsection unless explicitly stated otherwise.
+3.2
+
+Binary consensus
+
+Broadly, the binary consensus problem involves a set of processes reaching an
+agreement on a binary value b ∈ {0, 1}. We first recall the definitions that define
+the binary Byzantine consensus (BBC) problem as stated in [20]. In the following,
+we assume that every non-faulty process proposes a value, and remark that only
+the values in the set {0, 1} can be decided by a non-faulty process.
+1. BBC-Termination: Every non-faulty process eventually decides on a value.
+2. BBC-Agreement: No two non-faulty processes decide on different values.
+8
+
+3. BBC-Validity: If all non-faulty processes propose the same value, no other
+value can be decided.
+We present the safe, non-terminating variant of the binary consensus routine
+from [20] in Algorithm 2. As assumed in the model (Section 2), the terminating
+routine relies on partial synchrony between processes in P . The protocols execute
+in asynchronous rounds.
+
+Algorithm 2 Safe binary consensus routine
+1: bin propose(v):
+2:
+est ← v; r ← 0;
+3:
+repeat:
+4:
+r ← r + 1;
+5:
+BV-broadcast(EST, r, est)
+6:
+wait until (bin values[r] 6= ∅)
+7:
+broadcast (AUX, r, bin values[r])
+8:
+wait until (|valuesr | ≥ n − t) ∧ (val ∈ bin values[r] for all val ∈ valuesr )
+9:
+b ← r (mod 2)
+10:
+if val = w for all val ∈ valuesr where w ∈ {0, 1} then
+11:
+est ← w;
+12:
+if w = b then
+13:
+decide(v) if not yet invoked decide()
+14:
+else
+15:
+est ← b
+16: upon intial receipt of (AUX , r, b) for some b ∈ {0, 1} from process pj
+17:
+valuesr .append(b)
+18: BV-broadcast(EST, r, vi ):
+19:
+broadcast (EST, r, vi )
+20: upon receipt of (EST, r, v)
+21:
+if (EST, r, v) received from (t + 1) processes and not yet broadcast then
+22:
+broadcast (EST, r, v)
+23:
+if (EST, r, v) received from (2t + 1) processes then
+24:
+bin values[r] ← bin values[r] ∪ {v}
+
+State. A process keeps track of a binary value est ∈ {0, 1}, corresponding to
+a process’ current estimate of the decided value, arrays bin values[1..], a round
+number r (initialised to 0), an auxiliary binary value b, and lists of (binary)
+values valuesr , r = 1, 2, . . . , each of which are initially empty.
+Messages. Messages of the form (EST, r, b) and (AUX, r, b), where r ≥ 1 and b ∈
+{0, 1}, are sent and processed by non-faulty processes. Note that we have omitted
+the dependency on a label label and identifier ID for simplicity of exposition.
+9
+
+BV-broadcast. To exchange EST messages, the protocol relies on an all-toall communication abstraction, BV-broadcast [47], which satisfies the following
+properties for a given round r ≥ 1 that a process is executing:
+– BV-Obligation: If at least (t + 1) non-faulty processes BV-broadcast the
+same value v, then v will eventually be added to the set bin values of each
+non-faulty process.
+– BV-Justification: If p is non-faulty and v ∈ bin values[r], then v must
+have been BV-broadcast by a non-faulty process.
+– BV-Uniformity: If v is added to a non-faulty process p’s bin values[r] set,
+then eventually v ∈ bin values[r] at every non-faulty process.
+– BV-Termination: Eventually, bin values[r] becomes non-empty for every
+non-faulty process.
+Primarily, BV-broadcast serves to filter values that are only proposed by
+faulty processes (BV-Obligation and BV-Justification), to ensure progress (BVTermination), and to work towards agreement (BV-Uniformity). When a process
+adds a value v ∈ {0, 1} to its array bin values[r] for some r ≥ 1, we say that v
+was BV-delivered.
+Functions. Let b ∈ {0, 1}. In addition to BV-broadcast and the communication
+primitives in our model (Section 2), a process can invoke bin propose(b) to begin
+executing an instance of binary consensus with input b, and decide(b) to decide
+the value b. In a given instance of binary consensus, these two functions may be
+called exactly once. In addition, the function list.append(v) appends the value
+v to the list list.
+Protocol description. Upon the invocation bin propose(b), where b ∈ {0, 1}, a
+process will enter a sequence of asynchronous rounds.
+In a given round, a process will invoke BV-broadcast (line 5), broadcasting
+its current estimate (line 19) for the round r, which is est. In an instance of
+BV-broadcast, after receiving a binary value from t + 1 different processes, a
+process will broadcast the value if not yet done (line 21). Eventually, a process
+will BV-deliver a value v upon reception from 2t + 1 different processes, fulfilling
+the condition at line 23. In doing so, a process appends v to its set bin values[r]
+(line 24), and we note that bin values[r] is not necessarily in its final form at
+this point in time.
+Since bin values[r] is now a singleton set (after line 6), non-faulty processes
+will broadcast the value v contained in bin values[r] (line 7). Then, processes
+wait until they can form a list valuesr such that val ∈ bin values[r] for all
+val ∈ valuesr and valuesr is formed from at least n − t (AUX, r, b) messages sent
+by distinct processes that they have received (line 8). This ensures that enough
+processes have sent messages to be able to (potentially) decide, and that only
+values BV-broadcast previously are considered candidates for being decided.
+Then, processes attempt to decide a value via local computation. b is set to
+r (mod 2) (line 9), and then each process checks the following:
+10
+
+– If each element of valuesr is w, the estimate for the next round is set to w
+(line 11).
+– Given the above, w is then decided if r (mod 2) = w, (lines 12 and 13). If
+this does not hold, the value can be decided in the next round provided that
+valuesr +1 is uniform at line 11.
+– Else, valuesr contains both 0’s and 1’s (and bin values[r] = {0, 1}), and est
+is set to be r (mod 2) (line 15), as a process cannot decide at this point.
+Note that, upon invocation of decide(), processes still participate in the protocol, enabling other processes who may not have decided to decide. The interested reader may verify the correctness of this protocol, and the corresponding
+terminating, partially-synchronous protocol in [20].
+3.3
+
+Anonymity-preserving all-to-all reliable broadcast
+
+To reach eventual agreement in the presence of Byzantine processes without
+revealing who proposes what, we introduce the anonymity-preserving all-to-all
+reliable broadcast problem that preserves the anonymity of each honest sender
+reliably broadcasting. In this primitive, all processes are assumed to (anonymously) broadcast a message, and all processes deliver messages over time. It
+ensures that all honest processes always receive the same message from one specific sender while hiding the identity of any non-faulty sender.
+Let ID ∈ {0, 1}∗ be an identifier, a string that uniquely identifies an instance of AARB-broadcast. Let m be a message, and σ be the output of the call
+Sign(i, T, m) for some i ∈ {1, . . . , n}, where T = f (ID, label) is as in Algorithm 2.
+Each process is equipped with two operations, “AARBP” and “AARB-deliver”.
+AARBP[ID](m) is invoked once with respect to ID and any message m, denoting the beginning of a process’ execution of AARBP with respect to ID.
+AARB-deliver[ID](m, σ) is invoked between n − t and n times over the protocol’s execution. When a process invokes AARB-deliver[ID](m, σ), they are said
+to “AARB-deliver” (m, σ) with respect to ID. Let T = f (ID, label) be as in Algorithm 2. Then, given t < n3 , we define a protocol that implements anonymitypreserving all-to-all reliable broadcast (AARB-broadcast) with respect to ID as
+satisfying the following six properties:
+1. AARB-Signing: If a non-faulty process pi AARB-delivers a message with
+respect to ID, then it must be of the form (m, σ), where a process pi ∈ P
+invoked Sign(i, T, m) and obtained σ as output.
+2. AARB-Validity: Suppose that a non-faulty process AARB-delivers (m, σ)
+with respect to ID. Let i = FindIndex(T, m, σ) denote the output of an
+idealised call to FindIndex. Then if pi is non-faulty, pi must have anonymously
+broadcast (m, σ).
+3. AARB-Unicity: Consider any point in time in which a non-faulty process p has AARB-delivered more than one tuple with respect to ID. Let
+delivered = {(m1 , σ1 ), . . . , (ml , σl )}, where |delivered| = l, denote the set of
+these tuples. For each i ∈ {1, . . . , l}, let outi = FindIndex(T, mi , σi ) denote
+11
+
+the output of an idealised call to FindIndex. Then for all distinct pairs of
+tuples {(mi , σi ), (mj , σj )}, outi 6= outj .
+4. AARB-Termination-1: If a process pi is non-faulty and invokes
+AARBP[ID](m), all the non-faulty processes eventually AARB-deliver (m, σ)
+with respect to ID, where σ is the output of the call Sign(i, T, m).
+5. AARB-Termination-2: If a non-faulty process AARB-delivers (m, σ) with
+respect to ID, then all the non-faulty processes eventually AARB-deliver
+(m, σ) with respect to ID.
+We require AARB-Signing to ensure that the other properties are meaningful. Since messages are anonymously broadcast, properties refer to the index
+of the signing process determined by an idealised call to FindIndex. In spirit,
+AARB-Validity ensures if a non-faulty process AARB-delivers a message that
+was signed by a non-faulty process pi , then pi must have invoked AARBP. Similarly, AARB-Unicity ensures that a non-faulty process will AARB-deliver at
+most one message signed by each process. We note that AARB-Termination-2
+is critical for consensus, as without it, different processes may AARB-deliver
+different messages produced by the same process, as in the two-step algorithm
+implementing no-duplicity broadcast [8, 53]. Finally, we state the anonymity
+property:
+6. AARB-Anonymity:
+Suppose that non-faulty process pi invokes
+AARBP[ID](m) for some m and given ID, and has previously invoked an
+arbitrary number of AARBP[IDj ](mj ) calls where ID 6= IDj for all such j.
+Suppose that an adversary A is required to output a guess g ∈ {1, . . . , n},
+corresponding to the identity of pi after performing an arbitrary number of
+computations, allowed oracle calls and invocations of networking primitives.
+1
+.
+Then for any A, P r(i = g) ≤ n−t
+Informally, AARB-Anonymity guarantees that the source of an anonymously
+broadcast message by a non-faulty process is unknown to the adversary, in that
+it is indistinguishable from n − t (non-faulty) processes. AARBP can be implemented by composing n instances of Bracha’s reliable broadcast algorithm,
+which we describe and prove correct in Appendix C.
+
+4
+
+Anonymity-preserving vector consensus
+
+In this section, we introduce the anonymity-preserving vector consensus problem and present and discuss the protocol Anonymised Vector Consensus Protocol (AVCP) that solves it. We defer its proof to Appendix A. The anonymitypreserving vector consensus problem brings anonymity to the vector consensus
+problem [26] where non-faulty processes reach an agreement upon a vector containing at least n − t proposed values. More precisely, anonymised vector consensus asserts that the identity of a process who proposes must be indistinguishable
+from that of all non-faulty processes. As in AARBP, instances of AVCP are
+identified uniquely by a given identifier ID. Each process is equipped with two
+12
+
+operations. Firstly, “AVCP[ID](m)” begins execution of an instance of AVCP
+with respect to ID and proposal m. Secondly, “AVC-decide[ID](V )” signals the
+output of V from the instance of AVCP identified by ID, and is invoked exactly
+once per identifier. We define a protocol that solves anonymity-preserving vector consensus with respect to these operations as satisfying the following four
+properties:
+1. AVC-Anonymity: Suppose that non-faulty process pi invokes
+AVCP[ID](m) for some m and given ID, and has previously invoked
+an arbitrary number of AVCP[IDj ](mj ) calls where ID 6= IDj for all such j.
+Suppose that an adversary A is required to output a guess g ∈ {1, . . . , n},
+corresponding to the identity of pi after performing an arbitrary number of
+computations, allowed oracle calls and invocations of networking primitives.
+1
+.
+Then for any A, P r(i = g) ≤ n−t
+It also requires the original agreement and termination properties of vector consensus to be ensured:
+2. AVC-Agreement: All non-faulty processes that invoke AVC-decide[ID](V )
+do so with respect to the same vector V for a given ID.
+3. AVC-Termination: Every non-faulty process eventually invokes
+AVC-decide[ID](V ) for some vector V and a given ID.
+It also requires a validity property that depends on a pre-determined, deterministic validity predicate valid() [12, 20] which we assume is common to all
+processes. We assume that all non-faulty processes propose a value that satisfies
+valid().
+4. AVC-Validity: Consider each non-faulty process that invokes
+AVC-decide[ID](V ) for some V and a given ID. Each value v ∈ V
+must satisfy valid(), and |V | ≥ n − t. Further, at least |V | − t values
+correspond to the proposals of distinct non-faulty processes.
+4.1
+
+AVCP
+
+We present a reduction to binary consensus which may converge in four message
+steps, as in the reduction to binary consensus in DBFT [20], at least one of which
+must be performed over anonymous channels. We note that comparable problems [24], including agreement on a core set over an asynchronous network [5],
+rely on such a reduction. The protocol is divided into two components. Firstly,
+the reduction component (Algorithm 3) reduces anonymity-preserving vector
+consensus to binary consensus. Here, one instance of AARBP and n instances
+of binary consensus are executed. But, since proposals are made anonymously,
+processes cannot associate proposals with binary consensus instances a priori.
+Consequently, processes start with n unlabelled binary consensus instances, and
+label them over time with the hash digest of proposals they deliver (of the form
+h ∈ {0, 1}∗ ). To cope with messages sent and received in unlabelled binary consensus instances, we require a handler component (Algorithm 4) that replaces
+function calls made in binary consensus instances.
+13
+
+Functions. In addition to the communication primitives detailed in Section 2
+and the two primitives “AVCP” and “AVC-decide”, the following primitives may
+be called: “inst.bin propose(v)”, where inst is an instance of binary consensus
+and v ∈ {0, 1}, begins execution of inst with initial value v, “AARBP” and
+“AARB-deliver”, as in Section 3, “valid()” as described above, “m.keys()” (resp.
+“m.values()”), which returns the keys (resp. values) of a map m, “item.key()”,
+which returns the key of item in a map m, “s.pop()”, which removes and returns
+a value from set s, and “H(v)”, a collision-resistant hash function which returns
+h ∈ {0, 1}∗ based on v ∈ {0, 1}∗ .
+State. Each process tracks the following variables: ID ∈ {0, 1}∗ , a common
+identifier for a given instance of AVCP. proposals[], which maps labels of the form
+l ∈ {0, 1}∗ to AARB-delivered messages of the form (m, σ) ∈ ({0, 1}∗ , {0, 1}∗ )
+that may be decided, and is initially empty. decision count, tracking the number
+of binary consensus instances for which a decision has been reached, initialised to
+0. decided ones, the set of proposals for which 1 was decided in the corresponding
+binary consensus instance, initialised to ∅. labelled [], which maps labels, which
+are the hash digest h ∈ {0, 1}∗ of AARB-delivered proposals, to binary consensus
+instances, and is initially empty. unlabelled , a set of binary consensus instances
+(initially of cardinality n) with no current label. ones[][], which maps two keys,
+EST and AUX, to maps with integer keys r ≥ 1 which map to a set of labels,
+all of which are initially empty. counts[][], which maps two keys, EST and AUX,
+to maps with integer keys r ≥ 1 which map to an integer n ∈ {0, . . . , n}, all of
+which are initialised to 0.
+Messages. In addition to messages propagated in AARBP, non-faulty processes process messages of the form (ID,TAG, r, label , b), where TAG ∈ {EST,
+AUX}, r ≥ 1, label ∈ {0, 1}∗ and b ∈ {0, 1}. A process buffers a message
+(ID,TAG, r, label, b) until label labels an instance of binary consensus inst, at
+which point the message is considered receipt in inst. The handler, described
+below, ensures that all messages sent by non-faulty processes eventually correspond to a label in their set of labelled consensus instances (i.e. contained in
+labelled .keys()). Similarly, a non-faulty process can only broadcast such a message after labelling the corresponding instance of binary consensus. Processes
+also process messages of the form (ID,TAG, r, ones), where TAG ∈ {EST ONES,
+AUX ONES}, r ≥ 1, and ones is a set of strings corresponding to binary consensus instance labels.
+Reduction. In the reduction, n (initially unlabelled) instances of binary consensus are used, each corresponding to a value that one process in P may propose.
+Each (non-faulty) process invokes AARBP with respect to ID and their value
+m0 (line 2), anonymously broadcasting (m0 , σ 0 ) therein. On AARB-delivery of
+some message (m, σ), an unlabelled instance of binary consensus is deposited
+into labelled , whose key (label) is set to H(m || σ) (line 10). Proposals that fulfil
+valid() are stored in proposals (line 12), and inst.bin propose(1) is invoked with
+respect to the newly labelled instance inst = labelled [H(m || σ)] if not yet done
+14
+
+Algorithm 3 AVCP (1 of 2): Reduction to binary consensus
+1: AVCP[ID](m0 ):
+2:
+AARBP[ID](m0 )
+B anonymised reliable broadcast of proposal
+3:
+wait until |decided ones| ≥ n − t
+B wait until n − t instances terminate with 1
+4:
+for each inst ∈ unlabelled ∪ labelled .values() such that
+5:
+inst.bin propose() not yet invoked do
+6:
+Invoke inst.bin propose(0)
+B propose 0 in all binary consensus not yet invoked
+7:
+wait until decision count = n B wait until all n instances of binary consensus terminate
+8:
+AVC-decide[ID](decided ones)
+9: upon invocation of AARB-deliver[ID](m, σ)
+10:
+labelled [H(m || σ)] ← unlabelled .pop()
+11:
+if valid(m, σ) then
+B deterministic, common validity function
+12:
+proposals[H(m || σ)] ← (m, σ)
+13:
+Invoke labelled [H(m || σ)].bin propose(1) if not yet invoked
+14: upon inst deciding a value v ∈ {0, 1}, where inst ∈ labelled .values() ∪ unlabelled
+15:
+if v = 1 then B store proposals for which 1 was decided in the corresponding binary consensus
+16:
+decided ones ← decided ones ∪ {proposals[inst.key()]}
+17:
+decision count ← decision count + 1
+
+(line 13). Upon termination of each instance (line 14), provided 1 was decided,
+the corresponding proposal is added to decided ones (line 16). For either decision value, decision count is incremented (line 17). Once 1 has been decided
+in n − t instances of binary consensus, processes will propose 0 in all instances
+that they have not yet proposed in (line 6). Note that upon AARB-delivery of
+valid messages after this point, bin propose(1) is not invoked at line 13. Upon the
+termination of all n instances of binary consensus (after line 7), all non-faulty
+processes decide their set of values for which 1 was decided in the corresponding
+instance of binary consensus (line 8).
+Handler. As proposals are anonymously broadcast, binary consensus instances
+cannot be associated with process identifiers a priori, and so are labelled by
+AARB-delivered messages. Thus, we require the handler, which overrides two of
+the three broadcast calls in the non-terminating variant of the binary consensus
+of [20] (Algorithm 2). We defer the reader to Appendix B for a description of the
+non-terminating algorithm and the terminating variant that requires handling.
+We now describe the handler (Algorithm 4). Let inst be an instance of binary
+consensus. On calling inst.bin propose(b) (b ∈ {0, 1}) (and at the beginning
+of each round r ≥ 1), processes invoke BV-broadcast (line 5 of Algorithm 2),
+immediately calling “broadcast (ID,EST, r, label , b)” (line 19 of Algorithm 2). If
+b = 1, (ID,EST, r, label , 1) is broadcast, and label is added to the set ones[EST][r]
+(line 21). Note that, given AARB-Termination-2, all messages sent by non-faulty
+processes of the form (ID,EST, r, label , 1) will be deposited in an instance inst
+labelled by label . Then, as the binary consensus routine terminates when all
+15
+
+Algorithm 4 AVCP (2 of 2): Handler of Algorithm 2
+18: upon “broadcast (ID,EST, r, label , b)” in inst ∈ labelled .values() ∪ unlabelled
+19:
+if b = 1 then
+20:
+broadcast (ID,EST, r, label , b)
+21:
+ones[EST][r] ← ones[EST][r] ∪ {inst.key()}
+22:
+counts[EST][r] ← counts[EST][r] + 1
+23:
+if counts[EST][r] = n ∧ |ones[EST][r]| < n then
+24:
+broadcast (ID,EST ONES, r, ones[EST][r])
+25: upon “broadcast (ID,AUX, r, label , b)” in inst ∈ labelled .values() ∪ unlabelled
+26:
+if b = 1 then
+27:
+broadcast (ID,AUX, r, label , b)
+28:
+ones[AUX][r] ← ones[AUX][r] ∪ {inst.key()}
+29:
+counts[AUX][r] ← counts[AUX][r] + 1
+30:
+if counts[AUX][r] = n ∧ |ones[AUX][r]| < n then
+31:
+broadcast (ID,AUX ONES, r, ones[AUX][r])
+32: upon receipt of (ID,TAG, r, ones) s.t. TAG ∈ {EST ONES, AUX ONES}
+33:
+wait until one ∈ labelled .keys() ∀one ∈ ones
+34:
+if TAG = EST ONES then
+35:
+TEMP ← EST
+36:
+else TEMP ← AUX
+37:
+for each l ∈ labelled .keys() such that l ∈
+/ ones do
+38:
+deliver (ID,TEMP, r, l, 0) in labelled [l]
+39:
+for each inst ∈ unlabelled do
+40:
+deliver (ID,TEMP, r, ⊥, 0) in inst
+
+non-faulty processes propose the same value, all processes will decide the value
+1 in n − t instances of binary consensus (i.e. will pass line 3), after which they
+execute bin propose(0) in the remaining instances of binary consensus.
+Since these instances may not be labelled when a process wishes to broadcast
+a value of the form (ID,EST, r, label, 0), we defer their broadcast until “broadcast
+(ID,EST, r, label, b)” is called in all n instances of binary consensus. At this point
+(line 23), (ID,EST ONES, r, ones[EST ][r]) is broadcast (line 24). A message of
+the form (ID,EST ONES, r, ones) is interpreted as the receipt of zeros in all
+instances not labelled by elements in ones (at lines 38 and 40). This can only
+be done once all elements of ones label instances of binary consensus (i.e., after
+line 33). Note that if |ones[EST][r] = n|, then there are no zeroes to be processed
+by receiving processes, and so the broadcast at line 24 can be skipped.
+Handling “broadcast (ID,AUX, r, label , b)” calls (line 7 of Algorithm 2) is
+identical to the handling of initial “broadcast (ID,EST, r, label , b)” calls. Note
+that the third broadcast in the original algorithm, where (ID,EST, r, label , b) is
+broadcast upon receipt from t + 1 processes if not yet done before (line 21 of
+Algorithm 2 (BV-Broadcast)), can only occur once the corresponding instance
+of binary consensus is labelled. Thus, it does not need to be handled. From here,
+we can see that messages in the handler are processed as if n instances of the
+original binary consensus algorithm were executing.
+16
+
+Table 1: Comparing the complexity of AVCP and DBFT [20] after GST [27]
+Complexity
+Fault-free message complexity
+Worst-case message complexity
+Fault-free bit complexity
+Worst-case bit complexity
+
+4.2
+
+AVCP
+O(n3 )
+O(tn3 )
+O((S + c)n3 )
+O((S + c)tn3 )
+
+DBFT
+O(n3 )
+O(tn3 )
+O(n3 )
+O(tn3 )
+
+Complexity and optimizations
+
+Let k be a security parameter, S the size of a signature and c the size of a message
+digest. We compare the message and communication complexity of AVCP with
+DBFT [20], which, as written, can be easily altered to solve vector consensus. We
+assume that AVCP is invoking the terminating variant of the binary consensus
+of [20]. When considering complexity, we only count messages in the binary consensus routines once the global stabilisation time (GST) has been reached [27].
+Both fault-free and worst-case message complexity are identical between the two
+protocols. We remark that there exist runs of AVCP where processes are faulty
+with O(n3 ) message complexity, such as when a process has crashed. AVCP
+mainly incurs greater communication complexity proportional to the size of the
+signatures, which can vary from size O(k) [38, 58] to O(kn) [31]. If processes
+make a single anonymous broadcast per run, the fault-free and worst-case bit
+complexities of AVCP are lowered to O(Sn2 + cn3 ) and O(Sn2 + ctn3 ).
+As is done in DBFT [20], we can combine the anonymity-preserving all-toall reliable broadcast of a message m and the proposal of the binary value 1
+in the first round of a binary consensus instance. To this end, a process may
+skip the BV-broadcast step in round 1, which may allow AVCP to converge
+in four message steps, at least one of which must be anonymous. It may be
+useful to invoke “broadcast TAG[r](b)”, where TAG ∈ {EST,AUX} (lines 20 and
+27) when the instance of binary consensus is labelled, rather than simply when
+b = 1 (i.e., the condition preceding these calls). Since it may take some time
+for all n instances of binary consensus to synchronise, doing this may speed up
+convergence in the “faster” instances.
+
+5
+
+Combining regular and anonymous channels
+
+If processes only use anonymous channels to communicate, it is clear that their
+anonymity is preserved provided that processes do not double-sign with ring
+signatures for each message type. For performance and to prevent long-term
+correlation attacks on certain anonymous networks [46], it may be of interest
+to use anonymous message passing to propose a value, and then to use regular
+channels for the rest of a given protocol execution. In this setting, the adversary can de-anonymise a non-faulty process by observing message transmission
+time [3] and the order in which messages are sent and received [52]. For example,
+17
+
+a single non-faulty process may be relatively slow, and so the adversary may
+deduce that messages it delivers late over anonymous channels were sent by
+that process. To cope, we make the following assumption about message passing:
+Independence assumption: Consider processes in P who participate in k ≥ 1
+instances of some distributed protocol where messages are exchanged over both
+regular and anonymous channels. Let Xi be a random variable that maps all
+invocations of send or receive by every process to the time that the operation
+was called in instance i. Analogously, let Yi be a random variable, defined as
+above, but with respect to invocations of anon send and anon receive. Then
+X1 , . . . , Xk , Y1 , . . . , Yk are mutually independent.
+This ensures that the adversary cannot correlate the behaviour of a process over
+regular channels with their behaviour over anonymous channels, and thus the
+adversary cannot de-anonymise them. We show that AVCP and our protocol
+solving anonymity-preserving all-to-all reliable broadcast satisfy their respective
+definitions of anonymity under our assumption in Appendices A and C.
+Our assumption is quite general, and so achieving it in practice depends on
+the latency guarantees of the anonymous channels, the speed of each process,
+and the latency guarantees of the regular channels. One possible strategy could
+be to use public networks like Tor [25] where message transmission time through
+the network can be measured1 . Then, based on the behaviour of the anonymous
+channels, processes can vary the timing of their own messages by introducing random message delays [46] to minimise the correlation between random variables.
+It may also be useful for processes to synchronise between protocol executions.
+This prevents a process from being de-anonymised when they, for example, invoke anon send in some instance when all other processes are executing in a
+different instance.
+
+6
+
+Experiments
+
+Benchmarks of distributed protocols were performed using Amazon EC2 instances. We refer to each EC2 instance used as a node, corresponding to a process
+in protocol descriptions. For each value of n (the number of nodes) chosen, we ran
+experiments with an equal number of nodes from four regions: Oregon (us-west2), Ohio (us-east-2), Singapore (ap-southeast-1) and Frankfurt (eu-central-1).
+The type of instance chosen was c4.xlarge, which provide 7.5GiB of memory,
+and 4 vCPUs, i.e. 4 cores of an Intel Xeon E5-2666 v3 processor. We performed
+between 50 and 60 iterations for each value of n and t benchmarked. We vary n
+incrementally, and vary t both with respect to the maximum fault-tolerance (i.e.
+t = b n−1
+3 c), and also fix t = 6 for values of n = 20, 40, . . . All networking code,
+and the application logic, was written in Python (2.7). As we have implemented
+our cryptosystems in golang, we call our libraries from Python using ctypes2 . To
+1
+2
+
+https://metrics.torproject.org/
+https://docs.python.org/2/library/ctypes.html
+
+18
+
+simulate reliable channels, nodes communicate over TCP. Nodes begin timing
+once all connections have been established (i.e. after handshaking).
+Our protocol, Anonymised Vector Consensus Protocol (AVCP), was implemented on top of the existing DBFT [20] codebase, as was the case with AARBP.
+We do not use the fast-path optimisation described in Section 4, but we hash
+messages during reliable broadcast to reduce bandwidth consumption. We use
+the most conservative choice of ring signatures, O(kn)-sized traceable ring signatures [32], which require O(n) operations for each signing and verification
+call, and O(n2 ) work for tracing overall. Each process makes use of a single
+anonymous broadcast in each run of the algorithm. To simulate the increased
+latency afforded by using publicly-deployed anonymous networks, processes invoke a local timeout for 750ms before invoking anon broadcast, which is a regular
+broadcast in our experiments.
+
+AARBP (t = max)
+AVCP (t = max)
+AARBP (t = 6)
+AVCP (t = 6)
+
+5000
+4000
+3000
+2000
+1000
+
+DBFT
+AVCP
+
+5000
+time to decide (ms)
+
+6000
+time to decide (ms)
+
+DBFT vs AVCP
+
+AARBP vs AVCP
+
+7000
+
+4000
+3000
+2000
+1000
+
+20
+
+30
+
+40
+
+50 60 70 80
+number of nodes (n)
+
+90 100
+
+20
+
+(a) Comparing AARBP and AVCP
+
+30
+
+40
+
+50 60 70 80
+number of nodes (n)
+
+90 100
+
+(b) Comparing DBFT and AVCP
+
+Fig. 1: Evaluating the cost of the anonymous broadcast (AARBP) in our solution
+(AVCP) and the performance of our solution (AVCP) compared to an efficient
+Byzantine consensus baseline (DBFT) without anonymity preservation
+
+Figure 1a compares the performance of AARBP with that of AVCP. In general, convergence time for AVCP is higher as we need at least three more message
+steps for a process to decide. Given that the fast-path optimisation is used, requiring 1 additional message step over AARBP in the good case, the difference
+in performance between AVCP and AARBP would indeed be smaller.
+Comparing AVCP with t = max and t = 6, we see that when t = 6, convergence is slower. Indeed, AVC-Validity states at least n − t values fulfilling
+valid() are included in a process’ vector given that they decide. Consequently,
+as t is smaller, n − t is larger, and so nodes will process and decide more values.
+Although AARB-delivery may be faster for some messages, nodes generally have
+to perform more TRS verification/tracing operations. As nodes decide 1 in more
+instances of binary consensus, messages of the form (MSG, 0, r, S = {s1 , · · · }) are
+propagated where |S| is generally larger, slowing down decision time primarily
+due to size of the message. We conjecture that nodes having to AARB-deliver all
+19
+
+values in S before processing such a message does not slow down performance,
+as all nodes are non-faulty in our experiments.
+Figure 1b compares the performance of DBFT as a vector consensus vector
+routine with AVCP. Indeed, the difference in performance between AVCP and
+DBFT when n = 20 and n = 40 is primarily due to AVCP’s 750ms timeout.
+As expected when scaling n, cryptographic operations result in worse scaling
+characteristics for AVCP. As can be seen, DBFT performs relatively well. However, DBFT does not leverage anonymous channels, nor relies on ring signatures,
+and so AVCP’s comparatively slow performance was expected. It is reassuring
+that AVCP’s performance does not differ by an order of magnitude from that of
+DBFT, given AVCP provides anonymity guarantees.
+Overall, AVCP performs reasonably well. Interestingly, AVCP performs better when t is set as the maximum possible value, and so is best used in practice
+when maximising fault tolerance. Nevertheless, converging when n = 100 takes
+between 5 and 7 seconds, depending on t, which is practically reasonable.
+
+7
+
+Conclusion
+
+In this paper, we have presented modular and efficient distributed protocols
+which allow identified processes to propose values anonymously. Importantly,
+anonymity-preserving vector consensus ensures that the proposals of non-faulty
+processes are not tied to their identity, which has applications in electronic
+voting. We proposed definitions of anonymity in the context of Byzantine
+fault-tolerant computing and corresponding assumptions to mitigate the deanonymisation of identified processes. In terms of future work, it is of interest
+to evaluate anonymity in different formal models [39, 55] and with respect to
+various practical attack vectors [52]. It will be useful also to formalise anonymity
+under more practical assumptions so that the timing of anonymous and regular
+message passing do not correlate highly. In addition, a reduction to a randomized [13] binary consensus algorithm would remove the dependency on the weak
+coordinator, a form of leader used in each round of the binary consensus algorithm we rely on [20].
+
+20
+
+Bibliography
+
+[1] The ristretto group. https://ristretto.group/, 2018. Accessed: 201811-03.
+[2] Ben Adida. Helios: Web-based open-audit voting. In Proceedings of the
+17th Conference on Security Symposium, SS’08, pages 335–348, Berkeley,
+CA, USA, 2008. USENIX Association.
+[3] Adam Back, Ulf Möller, and Anton Stiglic. Traffic analysis attacks and
+trade-offs in anonymity providing systems. In International Workshop on
+Information Hiding, pages 245–257. Springer, 2001.
+[4] Mihir Bellare and Phillip Rogaway. Random oracles are practical: A
+paradigm for designing efficient protocols. In Proceedings of the 1st ACM
+conference on Computer and communications security, pages 62–73. ACM,
+1993.
+[5] Michael Ben-Or, Boaz Kelmer, and Tal Rabin. Asynchronous secure computations with optimal resilience (extended abstract). In Proceedings of the
+Thirteenth Annual ACM Symposium on Principles of Distributed Computing, PODC ’94, pages 183–192, New York, NY, USA, 1994. ACM.
+[6] Daniel J Bernstein. Curve25519: new diffie-hellman speed records. In International Workshop on Public Key Cryptography, pages 207–228. Springer,
+2006.
+[7] Gabriel Bracha. Asynchronous byzantine agreement protocols. Information
+and Computation, 75(2):130 – 143, 1987.
+[8] Gabriel Bracha and Sam Toueg. Resilient consensus protocols. In Proceedings of the second annual ACM symposium on Principles of distributed
+computing, pages 12–26. ACM, 1983.
+[9] Gabriel Bracha and Sam Toueg. Asynchronous consensus and broadcast
+protocols. Journal of the ACM (JACM), 32(4):824–840, 1985.
+[10] Zvika Brakerski and Vinod Vaikuntanathan. Efficient fully homomorphic
+encryption from (standard) lwe. SIAM Journal on Computing, 43(2):831–
+871, 2014.
+[11] Eric Brier and Marc Joye. Weierstraß elliptic curves and side-channel attacks. In International Workshop on Public Key Cryptography, pages 335–
+345. Springer, 2002.
+[12] Christian Cachin, Klaus Kursawe, Frank Petzold, and Victor Shoup. Secure and efficient asynchronous broadcast protocols. In Proceeding of the
+21st Annual International Cryptology Conference on Advances in Cryptology (CRYPTO), pages 524–541, 2001.
+[13] Christian Cachin, Klaus Kursawe, and Victor Shoup. Random oracles in
+Constantinople: Practical asynchronous Byzantine agreement using cryptography. Journal of Cryptology, 18(3):219–246, 2005.
+[14] Jean Camp, Michael Harkavy, J. D. Tygar, and Bennet Yee. Anonymous
+atomic transactions. In In Proceedings of the 2nd USENIX Workshop on
+Electronic Commerce (Nov.), USENIX Assoc, 1996.
+
+[15] Miguel Castro and Barbara Liskov. Practical byzantine fault tolerance. In
+OSDI, volume 99, pages 173–186, 1999.
+[16] David Chaum. Blind signatures for untraceable payments. In Advances in
+cryptology, pages 199–203. Springer, 1983.
+[17] David Chaum. The dining cryptographers problem: Unconditional sender
+and recipient untraceability. Journal of cryptology, 1(1):65–75, 1988.
+[18] David L. Chaum. Untraceable electronic mail, return addresses, and digital
+pseudonyms. Commun. ACM, 24(2):84–90, February 1981.
+[19] Miguel Correia, Nuno Ferreira Neves, and Paulo Verı́ssimo. From consensus to atomic broadcast: Time-free byzantine-resistant protocols without
+signatures. The Computer Journal, 49(1):82–96, 2006.
+[20] Tyler Crain, Vincent Gramoli, Mikel Larrea, and Michel Raynal. DBFT: efficient leaderless Byzantine consensus and its application to blockchains. In
+Proceedings of the 17th IEEE International Symposium on Network Computing and Applications, NCA 2018, pages 1–8, 2018.
+[21] Ronald Cramer, Matthew Franklin, Berry Schoenmakers, and Moti Yung.
+Multi-authority secret-ballot elections with linear work. In International
+Conference on the Theory and Applications of Cryptographic Techniques,
+pages 72–83. Springer, 1996.
+[22] George Danezis and Claudia Diaz. A survey of anonymous communication
+channels. Technical report, Technical Report MSR-TR-2008-35, Microsoft
+Research, 2008.
+[23] Yvo Desmedt. Threshold cryptosystems. In International Workshop on the
+Theory and Application of Cryptographic Techniques, pages 1–14. Springer,
+1992.
+[24] Panos Diamantopoulos, Stathis Maneas, Christos Patsonakis, Nikos Chondros, and Mema Roussopoulos. Interactive consistency in practical, mostlyasynchronous systems. In Parallel and Distributed Systems (ICPADS), 2015
+IEEE 21st International Conference on, pages 752–759. IEEE, 2015.
+[25] Roger Dingledine, Nick Mathewson, and Paul Syverson. Tor: The secondgeneration onion router. In Proceedings of the 13th Conference on USENIX
+Security Symposium - Volume 13, SSYM’04, pages 21–21, Berkeley, CA,
+USA, 2004. USENIX Association.
+[26] Assia Doudou and André Schiper. Muteness failure detectors for consensus
+with byzantine processes. Technical report, in Proceedings of the 17th ACM
+Symposium on Principle of Distributed Computing, (Puerto), 1997.
+[27] Cynthia Dwork, Nancy Lynch, and Larry Stockmeyer. Consensus in the
+presence of partial synchrony. Journal of the ACM (JACM), 35(2):288–
+323, 1988.
+[28] Taher ElGamal. A public key cryptosystem and a signature scheme based on
+discrete logarithms. IEEE transactions on information theory, 31(4):469–
+472, 1985.
+[29] Michael J. Fischer, Nancy A. Lynch, and Michael S. Paterson. Impossibility
+of distributed consensus with one faulty process. J. ACM, 32(2):374–382,
+April 1985.
+22
+
+[30] Michael J Freedman, Kobbi Nissim, and Benny Pinkas. Efficient private
+matching and set intersection. In International conference on the theory
+and applications of cryptographic techniques, pages 1–19. Springer, 2004.
+[31] Eiichiro Fujisaki. Sub-linear size traceable ring signatures without random
+oracles. In IEICE Transactions on Fundamentals of Electronics Communications and Computer Sciences, volume E95.A, pages 393–415, 04 2011.
+[32] Eiichiro Fujisaki and Koutarou Suzuki. Traceable ring signature. In Tatsuaki Okamoto and Xiaoyun Wang, editors, Public Key Cryptography –
+PKC 2007, pages 181–200, Berlin, Heidelberg, 2007. Springer Berlin Heidelberg.
+[33] Craig Gentry. Fully homomorphic encryption using ideal lattices. In Proceedings of the forty-first annual ACM symposium on Theory of computing,
+pages 169–178, 2009.
+[34] Yossi Gilad and Amir Herzberg. Spying in the dark: Tcp and tor traffic
+analysis. In Simone Fischer-Hübner and Matthew Wright, editors, Privacy
+Enhancing Technologies, pages 100–119, Berlin, Heidelberg, 2012. Springer
+Berlin Heidelberg.
+[35] Philippe Golle, Markus Jakobsson, Ari Juels, and Paul Syverson. Universal
+re-encryption for mixnets. In Tatsuaki Okamoto, editor, Topics in Cryptology – CT-RSA 2004, pages 163–178, Berlin, Heidelberg, 2004. Springer
+Berlin Heidelberg.
+[36] Philippe Golle and Ari Juels. Dining cryptographers revisited. In International Conference on the Theory and Applications of Cryptographic Techniques, pages 456–473. Springer, 2004.
+[37] Jens Groth. Efficient maximal privacy in boardroom voting and anonymous broadcast. In Ari Juels, editor, Financial Cryptography, pages 90–104,
+Berlin, Heidelberg, 2004. Springer Berlin Heidelberg.
+[38] Ke Gu, Xinying Dong, and Linyu Wang. Efficient traceable ring signature
+scheme without pairings. Advances in Mathematics of Communications,
+page 0, 2019.
+[39] Joseph Y Halpern and Kevin R O’Neill. Anonymity and information hiding
+in multiagent systems. Journal of Computer Security, 13(3):483–514, 2005.
+[40] Mike Hamburg. Decaf: Eliminating cofactors through point compression.
+In Annual Cryptology Conference, pages 705–723. Springer, 2015.
+[41] Markus Jakobsson. A practical mix. In International Conference on
+the Theory and Applications of Cryptographic Techniques, pages 448–461.
+Springer, 1998.
+[42] Ari Juels, Dario Catalano, and Markus Jakobsson. Coercion-Resistant Electronic Elections, pages 37–63. Springer Berlin Heidelberg, Berlin, Heidelberg, 2010.
+[43] O. Kulyk, S. Neumann, M. Volkamer, C. Feier, and T. Koster. Electronic
+voting with fully distributed trust and maximized flexibility regarding ballot
+design. In 2014 6th International Conference on Electronic Voting: Verifying the Vote (EVOTE), pages 1–10, Oct 2014.
+[44] Leslie Lamport, Robert Shostak, and Marshall Pease. The Byzantine generals problem. ACM Transactions on Programming Languages and Systems
+(TOPLAS), 4(3):382–401, 1982.
+23
+
+[45] Joseph K. Liu, Victor K. Wei, and Duncan S. Wong. Linkable spontaneous
+anonymous group signature for ad hoc groups. In Huaxiong Wang, Josef
+Pieprzyk, and Vijay Varadharajan, editors, Information Security and Privacy, pages 325–335, Berlin, Heidelberg, 2004. Springer Berlin Heidelberg.
+[46] Nick Mathewson and Roger Dingledine. Practical traffic analysis: Extending
+and resisting statistical disclosure. In International Workshop on Privacy
+Enhancing Technologies, pages 17–34. Springer, 2004.
+[47] Achour Mostéfaoui, Hamouma Moumen, and Michel Raynal. Signature-free
+asynchronous binary Byzantine consensus with t < n/3, O(n2 ) messages,
+and O(1) expected time. Journal of the ACM (JACM), 62(4):31, 2015.
+[48] Steven J. Murdoch and George Danezis. Low-cost traffic analysis of Tor.
+In Proceedings of the 2005 IEEE Symposium on Security and Privacy, SP
+’05, pages 183–195, Washington, DC, USA, 2005. IEEE Computer Society.
+[49] C Andrew Neff. A verifiable secret shuffle and its application to e-voting. In
+Proceedings of the 8th ACM conference on Computer and Communications
+Security, pages 116–125, 2001.
+[50] Nuno Ferreira Neves, Miguel Correia, and Paulo Verissimo. Solving vector
+consensus with a wormhole. IEEE Transactions on Parallel and Distributed
+Systems, 16(12):1120–1131, 2005.
+[51] Pascal Paillier. Public-key cryptosystems based on composite degree residuosity classes. In International conference on the theory and applications of
+cryptographic techniques, pages 223–238. Springer, 1999.
+[52] Jean-François Raymond. Traffic analysis: Protocols, attacks, design issues,
+and open problems. In Designing Privacy Enhancing Technologies, pages
+10–29. Springer, 2001.
+[53] Michel Raynal. Reliable Broadcast in the Presence of Byzantine Processes,
+pages 61–73. Springer International Publishing, Cham, 2018.
+[54] Ronald L. Rivest, Adi Shamir, and Yael Tauman. How to leak a secret. In
+Colin Boyd, editor, Advances in Cryptology — ASIACRYPT 2001, pages
+552–565, Berlin, Heidelberg, 2001. Springer Berlin Heidelberg.
+[55] Andrei Serjantov and George Danezis. Towards an information theoretic
+metric for anonymity. In International Workshop on Privacy Enhancing
+Technologies, pages 41–53. Springer, 2002.
+[56] Adi Shamir. How to share a secret. Commun. ACM, 22(11):612–613,
+November 1979.
+[57] Victor Shoup and Rosario Gennaro. Securing threshold cryptosystems
+against chosen ciphertext attack. Journal of Cryptology, 15(2):75–96, Jan
+2002.
+[58] Patrick P. Tsang and Victor K. Wei. Short linkable ring signatures for evoting, e-cash and attestation. In Robert H. Deng, Feng Bao, HweeHwa
+Pang, and Jianying Zhou, editors, Information Security Practice and Experience, pages 48–60, Berlin, Heidelberg, 2005. Springer Berlin Heidelberg.
+[59] Patrick P. Tsang, Victor K. Wei, Tony K. Chan, Man Ho Au, Joseph K.
+Liu, and Duncan S. Wong. Separable linkable threshold ring signatures.
+In Anne Canteaut and Kapaleeswaran Viswanathan, editors, Progress in
+Cryptology - INDOCRYPT 2004, pages 384–398, Berlin, Heidelberg, 2005.
+Springer Berlin Heidelberg.
+24
+
+[60] Andrew Chi-Chih Yao. How to generate and exchange secrets. In 27th
+Annual Symposium on Foundations of Computer Science (sfcs 1986), pages
+162–167. IEEE, 1986.
+[61] Qingsong Ye, Huaxiong Wang, and Josef Pieprzyk. Distributed private
+matching and set operations. In International Conference on Information
+security practice and experience, pages 347–360. Springer, 2008.
+[62] Tsz Hon Yuen, Joseph K Liu, Man Ho Au, Willy Susilo, and Jianying Zhou.
+Efficient linkable and/or threshold ring signature without random oracles.
+The Computer Journal, 56(4):407–421, 2013.
+[63] Bassam Zantout and Ramzi Haraty. I2p data communication system. In
+Proceedings of ICN, pages 401–409. Citeseer, 2011.
+
+A
+
+Analysis of AVCP
+
+In this appendix, we prove that the properties of anonymity-preserving vector consensus (AVC), presented in Section 4, are satisfied by our protocol
+Anonymised Vector Consensus Protocol (AVCP) (Algorithms 3 and 4 in Section 4).
+Lemma 2. In AVCP, for each identifier ID, a non-faulty process’ data structure
+“labelled []” is such that |labelled .values()| ≤ n. Further, no two binary consensus
+instances are labelled by the same value l.
+Proof. For the first part of the lemma, recall that an instance inst is only moved
+to labelled at line 10 upon AARB-delivery of (m, σ). By AARB-Unicity, a nonfaulty process will AARB-deliver at most one tuple (m, σ) for every process pi
+s.t. σ ← Sign(i, ID, m). Since |P | = n, at most n instances inst will thus be
+moved to labelled .
+For the second part of the lemma, recall that we assume signature uniqueness. Thus, every tuple (m, σ) anonymously broadcast by a non-faulty process
+is unique. Moreover, any duplicate tuple (m, σ), even if broadcast by a faulty
+process, cannot be AARB-delivered twice (checked at line 21). Thus, by the
+collision-resistance of H, H(m || σ) 6= H(m0 || σ 0 ) for any two distinct tuples
+(m, σ) and (m0 , σ 0 ) that are AARB-delivered. Since each instance is labelled by
+H(m || σ 0 ) for some tuple (m, σ), it follows that no two instances will conflict in
+label.
+Lemma 3. Consider AVCP. Let p be a non-faulty process. Then, given that the
+“for” loop on lines 39 and 40 is executed as an atomic operation, all instances
+in unlabelled .values() will always contain the same set of messages.
+Proof. At the protocol’s outset, all instances of binary consensus are in labelled ,
+where no messages have been received. The only place that messages are deposited to unlabelled instances is at lines 39 and 40, where messages are deposited into all members of unlabelled . Finally, note that instances can only
+moved out of unlabelled , which occurs at line 10.
+25
+
+Lemma 4. In AVCP, a non-faulty process p sends a message of the form
+(ID,TAG, r, label , b), then there locally exists an instance of binary consensus
+inst such that labelled [label ] = inst.
+Proof. Suppose p sends (ID,EST, r, label , b). If b = 1, then one of three scenarios
+holds: (i) r = 1 and p has invoked inst.bin propose(1) where labelled [label ] =
+inst, (ii) r ≥ 1, p has received t + 1 messages of the form (ID,EST, r, label , b)
+and has not yet broadcast (ID,EST, r, label , b), or (iii) their value est was set to
+b = 1 at the end of the previous round of binary consensus. In case (i), note that
+bin propose(1) (at line 13) is executed after inst is labelled (at line 10). Note
+that in both cases (ii) and (iii), p must have processed messages of the form
+(ID,EST, r, label , 1). As described in the text, these messages are only processed
+after the AARB-delivery of the corresponding message (m, σ) where label =
+H(m || σ) and some instance inst is labelled by label (at line 10). If b = 0, only
+case (ii) needs to be considered, since the other broadcast call is handled by the
+handler (Algorithm 4). Here, b = 1 must have been initially broadcast, which
+is described by cases (i) and (iii). Suppose p sends (ID,AUX, r, label , b). Note
+that b 6= 0, since the handler handles this case. Thus, we consider b = 1. b must
+have been BV-delivered (line 6 of Algorithm 2), requiring p to have processed
+messages of the form (ID,EST, r, label , b), which requires some instance to be
+labelled by label to do. This exhausts the possibilities.
+Lemma 5. Consider AVCP. Let r ≥ 1 be an integer. Then, all messages sent by
+non-faulty processes of the form (ID,TAG, r, label , b) where TAG ∈ {EST, AUX}
+and b ∈ {0, 1}, and (ID,TAG, r, ones) where TAG ∈ {EST ONES, AUX ONES}
+and b ∈ {0, 1}, are eventually deposited into the corresponding binary consensus
+instances of a non-faulty process.
+Proof. Let p be the recipient of a message in the above forms. We first consider messages of the form (ID,TAG, r, label , b) where TAG ∈ {EST, AUX} and
+b ∈ {0, 1}. By Lemma 4, the non-faulty sender of such a message must have
+AARB-delivered some message (m, σ) such that label = H(m || σ). By AARBTermination-2, p will eventually AARB-deliver (m, σ) and subsequently label an
+instance of binary consensus which is uniquely defined by label (Lemma 2). Thus,
+p will eventually process (ID,TAG, r, label , b) in instance inst = labelled [label ].
+Consider messages of the form (ID,TAG, r, ones) where TAG ∈ {EST ONES,
+AUX ONES} and b ∈ {0, 1}. Since the sender is non-faulty, every element of
+ones (i.e. every label) must correspond to a message that was AARB-delivered
+by the sender. By AARB-Termination-2, p will eventually AARB-deliver these
+messages, label instances of binary consensus (at line 10) and thus progress beyond line 33. Thus, p will deposit 0 in all instances not labelled by elements of
+ones (at lines 38 and 40), which is the prescribed behaviour.
+Lemma 6. In AVCP, every non-faulty process reaches line 6, i.e. decides 1 in
+n − t instances of binary consensus.
+Proof. Given at most t faulty processes, at least n − t non-faulty processes invoke AARBP at line 2, broadcasting a value that satisfies valid() by assumption.
+26
+
+By AARB-Termination-1, every message anonymously broadcast by a non-faulty
+process is eventually AARB-delivered by all non-faulty processes. Suppose a nonfaulty process p labels an instance of consensus inst by one of these messages. By
+Lemma 5, all messages sent by non-faulty processes associated with inst are eventually processed by p. Then, all non-faulty processes will invoke bin propose(1) in
+at least n−t instances of binary consensus (i.e. while blocked at line 3). Consider
+the first n − t instances of consensus for which a decision is made at. By the
+intrusion tolerance of binary consensus, no coalition of faulty processes can force
+0 to be a valid value in these consensus instances, since all non-faulty processes
+must invoke bin propose(1) in them. Then, by BBC-Agreement, BBC-Validity
+and BBC-Termination, all non-faulty processes will eventually decide 1 in n − t
+BIN CONS instances. Thus, all non-faulty processes eventually reach line 6.
+We now prove that AVC-Validity holds.
+Theorem 1. AVCP satisfies AVC-Validity, which is stated as follows. Consider
+each non-faulty process that invokes AVC-decide[ID](V ) for some V and a given
+ID. Each value v ∈ V must satisfy valid(), and |V | ≥ n − t. Further, at least
+|V | − t values correspond to the proposals of distinct non-faulty processes.
+Proof. Let p be a non-faulty process. By construction of the binary consensus
+algorithm, p must process messages of the form (ID,TAG, r, label , b) where TAG
+∈ {EST, AUX} and b ∈ {0, 1} to reach a decision. By Lemma 5, p must have
+AARB-delivered the corresponding message (m, σ) such that label = H(m || σ)
+before deciding. That is, proposals must have been populated with the corresponding message (m, σ) at line 12, and valid() must be true for (m, σ), checked
+previously at line 11. By Lemma 6, p eventually decides 1 in n − t instances
+of binary consensus. Upon each decision, the corresponding message is added to
+V = decided ones (at line 16). For the latter component of the definition, we note
+that ARB-Unicity ensures that each value in V contains a signature produced
+by a different process. So, given V is decided, at most t of the corresponding
+signatures could have been produced by faulty processes.
+Lemma 7. Consider AVCP. Fix r ≥ 1. Given that a non-faulty process p invokes “broadcast (ID,EST, r, label , b)” or “broadcast (ID,AUX, r, label , b)” in all
+n instances of binary consensus, then all non-faulty processes interpret the corresponding messages sent by p as if p were executing the original binary consensus
+algorithm.
+Proof. Without loss of generality, suppose p invokes “broadcast
+(ID,EST, r, label , b)” in all n instances of binary consensus. For every instance inst such that b = 1, p broadcasts (ID,EST, r, label , b) (at line 20) which
+is identical to the behaviour in the original algorithm. Note that p does not
+broadcast (ID,EST, r, label , b) here when b = 0. By Lemma 4, p must have
+labelled inst with label . Thus, p adds label to ones[EST][r] (at line 21). Once n
+invocations of “broadcast (ID,EST, r, label , b)” have been executed, ones[EST][r]
+is sent to all non-faulty processes. By Lemma 5, all non-faulty processes deposit
+27
+
+0 in all instances not labelled by elements of ones[EST][r], corresponding to
+all broadcasts not performed by p previously. In this sense, this behaviour is
+equivalent to having broadcast all values (ID,EST, r, label , b) where b = 0.
+Theorem 2. AVCP ensures AVC-Termination. That is, every non-faulty process eventually invokes AVC-decide[ID](V ) for some vector V and a given ID.
+Proof. Consider a non-faulty process p. By Lemma 6, p reaches line 6 with n − t
+values in their local array decided ones. At this point, p invokes bin propose(0) in
+all other instances of binary consensus. Since all n instances are thus executed, p
+will eventually invoke “broadcast (ID,EST, r, label , b)” in all n instances of binary
+consensus. By Lemma 7, non-faulty processes interpret p’s corresponding messages as if p were executing the original binary consensus algorithm. Similarly,
+p will eventually invoke “broadcast (ID,AUX, r, label , b)” in all n instances.
+Note that DBFT [20] is guaranteed termination with n instances of binary
+consensus as each instance is guaranteed to terminate due to BBC-Termination.
+It remains to show that AVCP preserves BBC-Termination for all n instances of
+consensus. Lemma 11 in [20] states that, at some point after which the global stabilistation time (GST) is reached, any execution of the original binary consensus
+routine eventually executes in synchronous steps. Note that in our construction,
+the slowest binary consensus instance is no slower than if n instances of the
+original binary consensus routine were executing. For example, in AVCP, a message of the form (EST ONES , r, ones) is sent after n invocations of “broadcast
+(ID,EST, r, label , b)” are performed for a given r. Then, Lemma 7 implies that
+messages sent by non-faulty processes remain unchanged as in an execution of
+n instances of the original binary consensus routine. Thus, Lemma 11 holds for
+the slowest instance of consensus. Since all other instances are faster, they too
+are synchronised, and so Lemma 11 holds for them also. By Lemma 9 in [20],
+which asserts that BBC-Termination holds for an instance of binary consensus,
+it follows that each non-faulty process will decide a value in the n instances of
+consensus in AVCP. At this point, p immediately invokes AVC-decide with respect to ID and decided ones (at line 8). Since p was arbitrary (but non-faulty),
+it follows that AVC-Termination holds.
+Theorem 3. AVCP ensures AVC-Agreement. That is, all non-faulty processes
+that invoke AVC-decide[ID](V ) do so with respect to the same vector V for a
+given ID.
+Proof. Consider two non-faulty processes, pi and pj that have decided (AVCTermination). Suppose that pi has decided decided ones. Each value in
+decided ones must have been AARB-delivered to pi in order to decide 1 in
+the corresponding instances of binary consensus (Lemma 4). By AARB-Unicity
+and AARB-Termination-2, pj will AARB-deliver all values in decided ones. By
+Lemma 6, all non-faulty processes eventually decide 1 in n − t instances of binary consensus. Consequently, pi and pj participate in all n instances of binary
+consensus which by Lemma 7 is equivalent to participating in n instances of
+binary consensus as per the original algorithm. Then, by BBC-Agreement, pj
+28
+
+decides 1 in an instance of binary consensus if and only if pi decides 1 in that
+instance. Consequently, each corresponding value, which have all been AARBdelivered prior to deciding 1 in each instance of binary consensus (Lemma 4) will
+be added to pj ’s local array decided ones 0 . Thus, decided ones 0 = decided ones.
+Theorem 4. AVCP ensures AVC-Anonymity under the assumptions of our
+model (Section 2) and the three conditions described in Section 5. AVCAnonymity is stated as follows: Suppose that non-faulty process pi invokes
+AVCP[ID](m) for some m and given ID, and has previously invoked an arbitrary number of AVCP[IDj ](mj ) calls where ID 6= IDj for all such j. Suppose
+that the adversary A is required to output a guess g ∈ {1, . . . , n}, corresponding to
+the identity of pi after performing an arbitrary number of computations, allowed
+1
+.
+oracle calls and invocations of networking primitives. Then P r(i = g) = n−t
+Proof. We note that each process invokes AARBP exactly once at the beginning
+of any execution of AVCP. In the case all communication is performed over
+anonymous channels, it suffices to observe that no process sends more than one
+message of a given type across many executions of AVCP. Then, from the proof
+of correctness of traceable broadcast (Lemma 1), it follows that A is unable to
+1
+output a guess g s.t. g 6= n−t
+. In the case that all communication except for
+the initial broadcasting is performed over reliable channels, the proof of AVCAnonymity follows from the proof of AARB-Anonymity (Lemma 9).
+
+B
+
+Ensuring termination in binary consensus
+
+The terminating algorithm (Figure 2 in [20]) uses in each round an additional
+broadcast, which is performed by a rotating coordinator. This message contains
+the header COORD VALUE. Note that i ∈ {1, . . . , n} denotes the index of the
+process pi who is locally executing instructions, and that these instructions are
+executed after bin values[r] 6= ∅ (i.e. after line 6 of Algorithm 2).
+
+Algorithm 5 Additional broadcast in Figure 2 of [20]
+1: coord ← (r − 1) (mod n) + 1
+2: if i = coord then
+3:
+w = bin values[r]
+4:
+broadcast (COORD VALUE, r, w)
+
+This broadcast call can be handled exactly as in the logic beginning at lines
+18 and 25 of the handler (Algorithm 4), provided that for a given round r, the
+coordinator is common across all n instances of consensus. No other communication steps are added in the terminating algorithm.
+In the non-terminating binary consensus algorithm, a process executes indefinitely after invoking decide(). The terminating variant, by contrast, imposes
+29
+
+certain conditions upon termination, which are checked at the end of each round
+r. In the context of the following algorithm excerpt, a process that invokes the
+instruction halt discontinues executing instructions in the binary consensus instance that halt was called in, and drops all related messages.
+
+Algorithm 6 Termination conditions in Figure 2 of [20]
+1: if decide() invoked in round r then
+2:
+wait until bin values[r ] = {0, 1}
+3: else
+4:
+if decide() invoked in round r − 2 then halt
+
+It is shown in [20] that, given that some non-faulty process decides in round
+r, all non-faulty processes will decide by round r + 2. Note that a process may
+invoke decide() in different rounds in different instances of binary consensus.
+Thus, a process may invoke halt in some, but not all, instances of binary consensus. Suppose that a process has invoked halt in k instances of binary consensus, where 1 < k < n, in some round r. Then, broadcasting a message with
+header EST ONES in the handler (Algorithm 4), say, will be impossible, since
+counts[EST][r] will never be incremented to n.
+To cope with this problem, we define a new termination condition. Let rmax
+be the largest round number of the n instances of binary consensus that a given
+process decides in. Then, that process can invoke halt at the end of round rmax +
+2.
+
+C
+
+AARBP
+
+In this appendix, we first present Anonymised All-to-all Reliable Broadcast Protocol. Notably, the protocol as presented terminates in after single anonymous
+message step and two regular message steps. We then show that it satisfies each
+property of the anonymity-preserving all-to-all reliable broadcast problem described in Section 3.
+C.1
+
+Protocol
+
+State and messages. Each process tracks ID, which identifies an instance
+of AARB-broadcast. For each ID, each process tracks two buffers: m buffer ,
+corresponding to messages that they may AARB-deliver, and m delivered , corresponding to all messages that they have AARB-delivered; both are initially
+set to ∅. For a given instance of AARBP identified by ID, all messages sent by
+non-faulty processes must contain ID. Similarly, messages must contain one of
+three headers: INIT, corresponding to the initial broadcast of a process’ proposal,
+ECHO, corresponding to an acknowledgement of the INIT message, or READY,
+30
+
+corresponding to an acknowledgement that enough processes have received the
+message to ensure eventual, safe AARB-delivery.
+Protocol. We now present AARBP (Algorithm 7).
+
+Algorithm 7 AARBP
+1: AARBP[ID](m0 ):
+2:
+σ 0 ← Sign(i, ID, m0 )
+3:
+anon broadcast (ID,INIT, m0 , σ 0 )
+4: upon initial receipt of (ID,INIT, m, σ)
+5:
+valid ← (VerifySig(ID, m, σ) = 1)
+6:
+if valid then
+7:
+for each (m∗ , σ ∗ ) ∈ m buffer ∪ m delivered do
+8:
+if Trace(ID, m, σ, m∗ , σ ∗ ) 6= “indep” then
+9:
+valid ← false
+10:
+break
+11:
+m buffer ← m buffer ∪ {(m, σ)}
+12:
+if valid then
+13:
+broadcast (ID,ECHO, m, σ)
+
+B Double-signing detected
+
+14: upon receipt (ID,ECHO, m, σ) from b n+t
+c + 1 proc.
+2
+15:
+if (ID,READY, m, σ) not yet broadcast then
+16:
+broadcast (ID,READY, m, σ)
+17: upon receipt (ID,READY, m, σ) from (t + 1) proc.
+18:
+if (ID,READY, m, σ) not yet broadcast then
+19:
+broadcast (ID,READY, m, σ)
+20: upon receipt (ID,READY, m, σ) from (2t + 1) proc.
+21:
+if (m, σ) ∈
+/ m delivered then
+22:
+m delivered ← m delivered ∪ {(m, σ)}
+23:
+m buffer ← m buffer \ {(m, σ)}
+24:
+AARB-deliver[ID](m, σ)
+
+To begin, each process pi broadcasts (ID,INIT, m0 , σ 0 ) over anonymous channels (line 3), where σ 0 ← Sign(i, ID, m0 ). Upon first receipt of each message of
+the form (ID,INIT, m, σ), a process checks the following (line 4):
+– Whether the signature σ is well-formed as per VerifySig, verifying the
+signer’s membership in P (line 5).
+– Whether any message in m buffer ∪ m delivered is not independent from
+m via Trace, ensuring AARB-Unicity as m is discarded if double-signing is
+detected (lines 7 to 10).
+31
+
+Then, given that (m, σ) passes the above checks, (ID,ECHO, m, σ) is broadcast
+(line 13). Note that this broadcast, and all subsequent broadcasts with respect to
+(m, σ), are performed over regular (reliable, non-anonymous) channels of communication. To mitigate de-anonymisation, the signer of m performs the same
+message processing and message propagation as all other non-faulty processes.
+The rest of the protocol proceeds as per Bracha’s reliable broaddiffercast [7]: If processes receive (ID,ECHO, m, σ) from more than n+t
+2
+ent processes, they broadcast (ID,READY, m, σ) (lines 14–16). If processes
+receive (ID,READY, m, σ) from t + 1 different processes, they broadcast
+(ID,READY, m, σ) if not yet done (lines 17–19). This ensures convergence and
+implies that at least one non-faulty process must have sent (ID,READY, m, σ)
+to the receiving process. Once processes have received (ID,READY, m, σ) from
+2t+1 different processes, they AARB-deliver (m, σ) with respect to ID if not yet
+done (line 24). At this point, at least t + 1 non-faulty processes must have broadcast (ID,READY, m, σ). Thus, all non-faulty processes will eventually broadcast
+(ID,READY, m, σ) at line 19 if not yet done.
+Complexity. Whilst Bracha’s protocol [7] requires three message steps to converge, AARBP requires an initial, anonymous message step and two (regular)
+message steps. Both AARBP and n invocations of Bracha’s protocol have a message complexity of O(n3 ). If we consider unsigned messages to be of size O(1),
+then each message propagated in AARBP is of size O(kn), the size of a TRS
+as in [32] where k is a security parameter. Thus, the bit complexity of all-to-all
+AARBP is O(kn4 ) (as opposed to O(n3 ) in all-to-all reliable broadcast [7]). To
+reduce the bit complexity when some messages are delivered in order, we can
+hash ECHO and READY messages [12]. Consequently, communication complexity can be reduced to O((c + k)n3 ).
+We consider cryptographic overhead as if Fujisaki and Suzuki’s TRS
+scheme [32] were used. In AARBP, each process signs one message (O(n) work),
+verifies up to n messages (O(n2 ) work), and perform tracing upon receipt of
+each INIT message (up to n). Tracing requires O(n3 ) work naively and O(n2 )
+expected work if signatures are stored in and accessed using hash tables.
+C.2
+
+Proof of correctness
+
+We now prove that AARBP satisfies each property of the anonymity-preserving
+all-to-all reliable broadcast problem.
+Remark 1. Let m, n, t be positive integers s.t. n > 3t. We have:
+m>
+
+n−t
+n−t
+⇔m≥b
++ 1c.
+2
+2
+
+n−t
+Thus, we refer to “b n−t
+2 c + 1 processes” and “more than 2 processes” interchangeably.
+
+Lemma 8. AARBP ensures AARB-Signing. That is, if a non-faulty process pi
+AARB-delivers a message with respect to ID, then it must be of the form (m, σ),
+where a process pi ∈ P invoked Sign(i, ID, m) and obtained σ as output.
+32
+
+Proof. Suppose p is non-faulty and AARB-delivers a message msg. We aim to
+show that msg = (m, σ), where σ ← Sign(i, ID, m) was called by some process pi .
+For a non-faulty process to broadcast (ID,READY, msg), they must have either
+received (ID,READY, msg) from t + 1 different processes or (ID,ECHO, msg)
+from b n+t
+2 c+1 different processes. Since t+1 > t, there exists a non-faulty process
+p0 that must have broadcast (ID,READY, msg) on receipt of (ID,ECHO, msg)
+from b n+t
+2 c+1 different processes to ensure that msg was AARB-delivered to any
+00
+process. Similarly, since b n+t
+2 c + 1 > t, there exists a non-faulty process p that
+must have broadcast (ID,ECHO, msg) to ensure (ID,READY, msg) was broadcast by a non-faulty process. Process p00 must have checked that msg = (m, σ)
+(implicitly) and that VerifySig(ID, m, σ) = 1 holds (at line 5). By signature unforgeability, VerifySig(ID, m, σ) = 1 implies that σ ← Sign(i, ID, m) was called
+by some process pi . Thus, the property holds.
+Lemma 9. AARBP ensures AARB-Anonymity under the assumptions of the
+model (Section 2) and those made in Section 5. AARB-Anonymity is stated
+as follows. Suppose that non-faulty process pi invokes AARBP[ID](m) for
+some m and given ID, and has previously invoked an arbitrary number of
+AARBP[IDj ](mj ) calls where ID 6= IDj for all such j. Suppose that the adversary
+A is required to output a guess g ∈ {1, . . . , n}, corresponding to the identity of pi
+after performing an arbitrary number of computations, allowed oracle calls and
+1
+invocations of networking primitives. Then P r(i = g) = n−t
+.
+Proof. We proceed by contradiction. Let pi be a non-faulty process that participates in the scenario described in the definition of AARB-Anonymity. Suppose
+1
+. Now, in AARBP, process
+that A is able to output g such that P r(i = g) 6= n−t
+pi invokes Sign(i, ID, m), producing the signature σ (line 2). Then, pi invokes
+“anon broadcast (ID,INIT, m, σ)” (line 3). By Lemma 1 (Section 3) and the symmetry between Algorithm 1 and AARBP, A must utilise some combination of
+regular communication, its message history and previous computation to output
+1
+g s.t. P r(i = g) 6= n−t
+.
+Firstly, we remark that A cannot view the local state or computations of nonfaulty processes by assumption, and so cannot, for example, view their calls to
+Sign. Note that (non-faulty) processes propagate messages over regular (reliable)
+channels after their initial invocation of anon broadcast (such as at line 13). By
+assumption, A has no inherent knowledge of when anon send or anon receive calls
+are made by non-faulty processes. Indeed, A may observe when non-faulty processes respond to anon receive calls via messages they send over regular channels,
+and when A’s corrupted processes invoke any message passing primitive. Thus,
+under the assumptions of Section 2 alone, it is conceivable that an adversary
+could correlate timing information regarding message passing over regular channels and anonymous channels in a given protocol execution to de-anonymise pi .
+As the network is asynchronous, the timing and relative order in which messages
+are sent and received by processes in AARBP[ID] could be arbitrary. The independence assumption (Section 5) assumes, however, that the order and timing
+of message delivery over anonymous channels is statistically independent from
+33
+
+that of regular channels in a particular protocol execution. Note that this independence holds for the timing and ordering of messages sent of any number of
+processes during any stage of the protocol. In particular, this accounts for the
+behaviour of non-faulty processes in response to messages received from Byzantine processes of whom A is free to control. Consequently, A gains no information
+about the identity of pi through correlation, and so A could not have produced g
+1
+using this strategy. Since the independence assumpsuch that P r(i = g) 6= n−t
+tion also considers timing and message ordering between instances of AARBP,
+it follows that A cannot de-anonymise pi by considering many executions. This
+exhausts A’s conceivable strategies to de-anonymise pi under our model.
+Lemma 10. AARBP ensure AARB-Termination-1. That is, if a process pi
+is non-faulty and invokes AARBP[ID](m), all the non-faulty processes eventually AARB-deliver (m, σ) with respect to ID, where σ is the output of the call
+Sign(i, ID, m).
+Proof. Suppose that the non-faulty process pi invokes AARBP with respect to
+identifier ID and message m. So, pi anonymously broadcasts (ID,INIT, m, σ),
+where σ = Sign(i, ID, m). Since the network is reliable, all non-faulty processes
+eventually receive (ID,INIT, m, σ) (and indeed all messages broadcast by nonfaulty processes). At line 5, VerifySig is queried with respect to (m, σ). By
+signature correctness, VerifySig(ID, m, σ) = 1 is guaranteed, since pi invoked
+σ ← Sign(i, ID, m). So, all non-faulty processes proceed to line 7. By traceability and entrapment-freeness, no non-faulty process could have received a
+message (m0 , σ 0 ) such that Trace(ID, m, σ, m0 , σ 0 ) 6= “indep”. Consequently, all
+non-faulty processes reach line 11 with value valid s.t. valid = true. Thus, all
+non-faulty processes (of which there are at least n − t) reach line 13, broadcasting (ID,ECHO, m, σ). Since n − t > n+t
+2 , every non-faulty process will eventually receive more than n+t
+2 (ID,ECHO, m, σ) messages, fulfilling the predicate
+at line 14. More than n+t
+> t + 1 non-faulty processes will not have broad2
+cast (ID,READY, m, σ), and so will do so (at line 16). Thus, all honest processes will eventually receive t + 1 (ID,READY, m, σ) messages, broadcasting
+(ID,READY, m, σ) there if not yet done. Then, since n − t ≥ 2t + 1, line 20
+will eventually be fulfilled for each non-faulty process. Thus, every non-faulty
+process will AARB-deliver (m, σ) at line 24, as required.
+Lemma 11. AARBP ensures AARB-Validity, which is stated as follows. Suppose that a non-faulty process AARB-delivers (m, σ) with respect to ID. Let
+i = FindIndex(ID, m, σ) denote the output of an idealised call to FindIndex. Then
+if pi is non-faulty, pi must have anonymously broadcast (m, σ).
+Proof. Let pi be non-faulty. From the protocol specification, pi must have invoked σ ← Sign(i, ID, m). By definition of Sign, no other process could have
+produced such a value of σ. By traceability and entrapment-freeness, no other
+process can produce a tuple (m0 , σ 0 ) such that Trace(ID, m, σ, m0 , σ 0 ) 6= “indep”.
+Consequently, no process can produce a message that prevents non-faulty processes from propagating (ID,ECHO, m, σ) messages. Thus, since pi is non-faulty,
+and therefore followed the protocol, pi must have anonymously broadcast (m, σ).
+34
+
+Remark 2. No non-faulty process will broadcast more than one message of the
+form (ID,ECHO, m0 , σ 0 ) where σ 0 is such that σ 0 = Sign(x, ID, m0 ) for any message m0 .
+Proof. This follows from the proof of Lemma 10: if non-faulty process p
+receives another message (m, σ) s.t. σ ← Sign(x, ID, m) for any m, then
+Trace(ID, m, σ, m0 , σ 0 ) 6= “indep”, and so p will not reach line 13.
+Lemma 12. In AARBP, if pi AARB-delivers (m, σ) with respect to ID, where
+σ ← Sign(x, ID, m), and pj AARB-delivers (m0 , σ 0 ) with respect to ID, where
+σ 0 ← Sign(x, ID, m0 ), then (m, σ) = (m0 , σ).
+Proof. For pi (resp. pj ) to have AARB-delivered (m, σ) (resp. (m0 , σ 0 )), pi (resp.
+pj ) must have broadcast (ID,READY, m, σ) (resp. (ID,READY, m0 , σ 0 )). Then,
+one of two predicates (at lines 14 and 17) must have been true for each process.
+That is, pi (resp. pj ) must have received either:
+1. (ID,ECHO, m, σ) (resp. (ID,ECHO, m0 , σ 0 )) from b n+t
+2 c different processes,
+or
+2. (ID,READY, m, σ) (resp. (ID,READY, m0 , σ 0 )) from (t + 1) different processes.
+We first prove the following claim: if (ID,READY, m, σ) is broadcast by pi ,
+and (ID,READY, m0 , σ 0 ) is broadcast by pj , then (m, σ) = (m0 , σ 0 ). Suppose
+that both processes fulfill condition (1), receiving ECHO messages from sets of
+processes P and P 0 respectively, where pi broadcasts (ID,READY, m, σ) and pj
+broadcasts (ID,READY, m0 , σ 0 ). Assume that (m, σ) 6= (m0 , σ 0 ). Then:
+|P ∩ P 0 | = |P | + |P 0 | − |P ∪ P 0 |,
+≥ |P | + |P 0 | − n,
+
+
+n+t
+>2
+− n = t,
+2
+⇒ |P ∩ P 0 | ≥ t + 1.
+Therefore, P ∩P 0 must contain at least one correct process, say pc . By Remark 2,
+pc must have sent the same ECHO message for some message to both processes,
+and so pi and pj must have received the same message (ID,ECHO, m, σ) =
+(ID,ECHO, m0 , σ 0 ), contradicting the assumption that (m, σ) 6= (m0 , σ 0 ). Thus,
+they must broadcast the same READY message.
+Suppose now that at least one process broadcasts READY due to condition (2) being fulfilled. Without loss of generality, assume exactly one process p
+broadcasts READY on this basis. Then, p must have received a READY message from at least one correct process (since out of t + 1 processes, at least 1
+must be non-faulty), say pa . Either pa received READY from at least one correct
+process, say pb , or it satisfied condition (1). By continuing the logic (and since
+|P | is finite), there must exist a process p(1) that fulfilled condition (1). Then,
+35
+
+by the correctness of processes p(1) , . . . , pb , pa , READY messages sent by pi and
+pj must be the same, completing the proof.
+Therefore, pi broadcasting (ID,READY, m, σ), and pj broadcasting
+(ID,READY, m0 , σ 0 ) implies (m, σ) = (m0 , σ 0 ) given that pi and pj are nonfaulty.
+We now directly prove the lemma. If pi AARB-delivers (m, σ), it received (ID,READY, m, σ) from (2t + 1) different processes, and thus received
+(ID,READY, m, σ) from at least one non-faulty process. Similarly, if pj AARBdelivers (m0 , σ 0 ), it must have received (ID,READY, m0 , σ 0 ) from at least one
+non-faulty process. It follows from the previous claim that all non-faulty processes broadcast the same READY message. Thus, pi and pj AARB-deliver the
+same tuple.
+Lemma 13. AARBP ensures AARB-Termination-2. That is, if a non-faulty
+process AARB-delivers (m, σ) with respect to ID, then all the non-faulty processes eventually AARB-deliver (m, σ) with respect to ID.
+Proof. By Lemma 12, all non-faulty processes that AARB-deliver a message
+(m0 , σ 0 ) s.t. σ 0 ← Sign(x, ID, m0 ) AARB-deliver (m, σ). Then, pi must have received the message (ID,READY, m, σ) from (2t + 1) processes (line 20), at least
+t + 1 of which must be non-faulty. These t + 1 processes must have broadcast (ID,READY, m, σ) (at line 16 or 19), and so every non-faulty process
+will eventually receive (t + 1) (ID,READY, m, σ) messages, and thus broadcast (ID,READY, m, σ) at some point. Given there are n − t ≥ 2t + 1 non-faulty
+processes, each non-faulty process eventually receives (ID,READY, m, σ) from
+at least 2t + 1 processes. Therefore, every non-faulty process will AARB-deliver
+(m, σ).
+Lemma 14. AARBP ensures AARB-Unicity, which is stated as follows. Consider any point of time in which a non-faulty process p has AARB-delivered
+more than one tuple with respect to ID. Let delivered = {(m1 , σ1 ), . . . , (ml , σl )},
+where |delivered| = l, denote the set of these tuples. For each i ∈ {1, . . . , l}, let
+outi = FindIndex(ID, mi , σi ) denote the output of an idealised call to FindIndex.
+Then for all distinct pairs of tuples {(mi , σi ), (mj , σj )}, outi 6= outj .
+Proof. We proceed by contradiction. Without loss of generality, suppose that p
+AARB-delivers two tuples (m, σ) and (m0 , σ 0 ) such that FindIndex(ID, m, σ) =
+FindIndex(ID, m0 , σ 0 ). Then, AARB-Termination-2 implies that all non-faulty
+processes will eventually AARB-deliver (m, σ) and (m0 , σ 0 ). But, Lemma 12 asserts that FindIndex(ID, m, σ) = FindIndex(ID, m0 , σ 0 ), a contradiction. Thus,
+for each i ∈ {1..n}, p AARB-delivers at most one tuple (m, σ) such that
+FindIndex(ID, m, σ) = i.
+Theorem 5. AARBP (Algorithm 7 in Section 3) satisfies the properties of
+AARB-Broadcast.
+Proof. From Lemmas 8, 9, 11, 14, 10 and 13, it follows that all properties of
+AARB-Broadcast are satisfied.
+36
+
+D
+
+Composing threshold encryption and AVCP
+
+Threshold encryption [23, 57] typically involves a set of processes who have
+a common encryption key and an individual share of the decryption key who
+must collaborate to decrypt any message. A k-out-of-n threshold encryption
+scheme requires the joint collaboration of k processes to decrypt any encrypted
+value. Importantly, k −1 or less processes are unable to determine any additional
+information about a given encrypted value in collaboration. Generally, the keying
+material can be reused in the sense that many values can be decrypted without
+compromising the security of the scheme.
+AVCP assumes that t processes may be Byzantine faulty. Thus, by setting
+the decryption threshold to t + 1, a coalition of t malicious processes are unable
+to deduce the contents of encrypted values until a non-faulty process initiates
+threshold decryption. Consequently, a protocol that ensures that the contents of
+all non-faulty process’ proposals to an instance of AVCP is not revealed until
+after termination can be designed as follows:
+1. All processes encrypt their proposal under a pre-determined public key.
+2. All processes invoke AVCP with input as their encrypted value.
+3. Upon termination, all processes initiate threshold decryption.
+In this appendix, we realise and analyse this protocol.
+D.1
+
+Preliminaries
+
+We assume that the assumptions made by AVCP, including those made in our
+model (Section 2), hold true. In particular, the dealer generates the initial state,
+including the values of n and t. As such, the decryption threshold for the instance
+of threshold encryption is set to k = t + 1. As done in characterising traceable
+ring signatures in Section 2, we assume processes have access to a distributed
+oracle which handles cryptographic operations, rather than explicitly referring
+to keying material as is done in practice. In addition to the queries described in
+Section 2, we assume that the distributed oracle handles queries of the following
+functions:
+1. c ← Enc(ID, m), which takes identifier ID ∈ {0, 1}∗ and message m ∈ {0, 1}∗
+as input, and outputs the ciphertext c ∈ {0, 1}∗ . All parties (even those not
+in P ) may query Enc.
+2. b ← VerifyEnc(ID, c), which takes identifier ID and ciphertext c as input,
+and outputs a bit b ∈ {0, 1}. All parties may query VerifyEnc.
+3. σ ← ShareGen(i, ID, c), which takes integer i ∈ {1..n}, identifier ID and
+ciphertext c as input, and outputs the decryption share σ ∈ {0, 1}∗ . We
+restrict the interface ShareGen such that only process pi ∈ P may invoke
+ShareGen with first argument i.
+4. b ← VerifyShare(ID, c, σ), which takes identifier ID, ciphertext c and decryption share σ as input, and outputs a bit b ∈ {0, 1}. All parties may query
+VerifyShare.
+37
+
+5. m ← Dec(ID, c, Σ), which takes the identifier ID, ciphertext c and set Σ =
+{σ1 , . . . , σk } of k decryption shares, and outputs the plaintext m ∈ {0, 1}∗ .
+All parties may query Dec.
+These definitions are inspired by those used in defining Shoup and Gennaro’s
+non-interactive threshold encryption scheme [57]. The behaviour of calls to the
+above functions satisfies the following properties:
+– Encryption correctness and non-malleability: VerifyEnc(ID, c) = 1
+⇐⇒ there exists a party which previously invoked Enc(ID, m) and obtained c
+as a response. Non-malleability is captured by the “⇒” claim, which ensures
+that any correct encryption was produced by a call to Enc. In particular,
+non-malleability implies that combining any value and an encryption (e.g.
+via concatenation) will not produce another valid encryption.
+– Share correctness and unforgeability: VerifyShare(ID, c, σ) = 1 ⇐⇒
+there exists process pi ∈ P that previously invoked ShareGen(i, ID, c) and
+obtained σ as a result.
+– Decryption correctness and decryption security: Dec(ID, c, Σ) = m,
+where m was the input to a previous call to Enc(ID, m) ⇐⇒ the following
+conditions are met:
+1. c ← Enc(ID, m) was called by some party.
+2. Σ = {σ1 , . . . , σk } (|Σ| = k), where for each distinct pair σi , σj ∈ Σ,
+distinct processes pi , pj ∈ P respectively called σi ← ShareGen(i, ID, c)
+and σj ← ShareGen(j, ID, c).
+The “⇐” claim captures decryption correctness. The “⇒” claim captures
+security, ensuring that k valid shares produced by distinct processes are
+required for decryption.
+– Encryption hiding: Suppose c ← Enc(ID, m) is called by a party p.
+Then, m can only be obtained by either p revealing m or a valid call
+m ← Dec(ID, c, Σ) being made.
+D.2
+
+Arbitrary Ballot Election (ABE)
+
+At a high level, processes first perform AVCP with respect to their proposal
+which is encrypted under the threshold encryption scheme. Then, processes
+perform threshold decryption, which requires an additional message delay for
+termination. We call this algorithm an Arbitrary Ballot Election (ABE), since
+processes can propose arbitrary values and are ensured of certain properties that
+are defined in the context of electronic voting. We describe and prove these hold
+in the next subsection.
+Functions. Each process has access to the distributed oracle and in addition to
+all functions invoked AVCP (Section 4). For a given tuple (m, σ) we assume that
+the predicate valid() in AVCP returns true only if VerifyEnc(ID, m) = 1. That is,
+m was the result of a query to Enc(ID, msg) for some msg ∈ {0, 1}∗ .
+38
+
+State. Each process tracks the variables ID, a string uniquely identifying an
+instance of ABE, has-broadcast, a Boolean that is initially false, unique-encs and
+plaintexts, sets of messages m ∈ {0, 1}∗ that are initially empty, and partial-decs,
+which maps ciphertexts to sets of decryption shares, each of which are initially
+empty.
+Messages. In addition to messages propagated in AVCP (which includes messages from AARBP), messages of the form (DECS, ID, encs) are propagated,
+where encs is a map, each value of which is a singleton set.
+
+Algorithm 8 Arbitrary ballot election (ABE)
+1: ABE(m):
+2:
+c ← Enc(ID, m)
+3:
+encs ← AVCP[ID](m)
+4:
+for each (disjoint) set of values M = {(m1 , σ1 ), . . . , (mk , σl )} ⊆ encs s.t. m1 =
+· · · = ml do
+5:
+unique-encs ← unique-encs ∪ {m1 }
+6:
+return decryption(unique-encs)
+7: decryption(encs):
+8:
+for each c in encs do
+9:
+σ ← ShareGen(i, ID, c)
+10:
+partial-decs[c] ← {σ}
+11:
+broadcast (DECS, ID, partial-decs)
+12:
+has-broadcast ← true
+13: upon receipt of (DECS, ID, decs 0 )
+14:
+if (partial-decs.keys() = decs 0 .keys()) ∧ (VerifyShare(ID, c, decs 0 [c]) = 1 for all
+c ∈ decs 0 .keys()) then
+15:
+wait until has-broadcast = true
+16:
+for each (c, σ) ∈ partial-decs 0 do
+17:
+partial-decs[c] ← partial-decs[c] ∪ {σ}
+18:
+if |partial-decs[c]| = k for all c ∈ partial-decs.keys() then
+19:
+for each c ∈ partial-decs.keys() do
+20:
+plaintexts ← plaintexts ∪ {Dec(ID, c, partial-decs[c])}
+21:
+return plaintexts
+
+Protocol description. Each process begins with the plaintext m to propose to
+consensus. Processes encrypt m under Enc, producing the ciphertext c (line 2).
+Processes propose their encrypted value to an instance of AVCP identified by ID.
+Since valid() checks that VerifyEnc(ID, m) = 1 for a given tuple (m, σ), encs will
+thus contain well-formed encryptions (AVC-Validity) of processes’ proposals.
+Now, AVCP guarantees that signatures, rather than the contents of messages, are unique. So, it is conceivable that a process will mount a replay attack,
+39
+
+which aims to disrupt an election by mimicking the input of some process. Since
+values are encrypted under a common instantiation of threshold encryption, it
+is desirable to prevent this attack. Consequently, we require that non-faulty processes prepend a sufficiently large sequence of random bits to their plaintext. For
+simplicity, we assume that each sequence that a non-faulty proposes derives is
+unique. So, non-unique encrypted messages are discarded (lines 4 and 5), resulting in the set unique-encs. At this point, threshold decryption is performed with
+respect to each element of unique-encs (line 6). For each (encrypted) value that
+a process decided, a decryption share is produced. Then, processes broadcast
+each share and the corresponding ciphertext used to produce it.
+Processes do not process shares that they have received from other processes
+until they have broadcast their shares, ensuring termination for all non-faulty
+processes. In practice, processes can process shares provided they delay termination until after they have broadcast. Upon receipt of a (potential) set of shares,
+processes check that the ciphertexts received match theirs. Given this holds, they
+check that all shares are well-formed. At this point, processes store these shares
+in encs. Once a process has received k shares for every ciphertext in unique-encs,
+each ciphertext is decrypted, and the resulting plaintexts are returned.
+D.3
+
+Analysis
+
+We prove a number of properties hold:
+Lemma 15. ABE satisfies termination. That is, all non-faulty processes eventually complete protocol execution.
+Proof. At the protocol’s outset, all non-faulty processes produce a value c s.t.
+c ← Enc(ID, m) was called for some m ∈ {0, 1} (line 2). Then, processes execute
+AVCP with respect to the identifier ID, where every non-faulty process proposes a valid ciphertext c (line 3). On AARB-delivery of each value, a process’
+call to valid() will return true by encryption correctness, as it must be the case
+VerifyEnc(ID, c) = 1 for such a c. By AVC-Termination, AVC-Validity and AVCAgreement, all non-faulty processes eventually terminate AVCP with the same
+set of values, each of which satisfies valid(). By AVC-Agreement, all non-faulty
+processes will obtain the same set unique-encs (after line 5). Then, all non-faulty
+processes will produce decryption shares for each value in unique-encs via calls
+to ShareGen, which are guaranteed to be broadcast as no non-faulty process can
+terminate until the condition at line 15 is fulfilled. On receipt of a set of decryption shares (line 13) (with identical corresponding ciphertexts) from a non-faulty
+process, by share correctness each share σ will satisfy VerifyShare(ID, c, σ) = 1
+for the corresponding ciphertext c. Thus, a non-faulty process will eventually
+receive k = t + 1 valid decryption shares for each unique value that was decided
+by AVCP. Thus, they can call Dec with respect to each set of shares (line 20)
+which by decryption correctness will pass, and thus the process will return the
+corresponding plaintexts.
+40
+
+Comparable definitions to anonymity-preserving vector consensus (Section 4)
+regarding agreement, validity and anonymity follow straightforwardly from the
+fact that AVCP satisfies AVC-Agreement, AVC-Validity and AVC-Anonymity,
+respectively.
+Lemma 16. ABE satisfies public verifiability. That is, any third party can obtain the result of the election after termination.
+Proof. By termination and agreement, all non-faulty processes eventually agree
+on the same set of plaintext values. Then, a third party can request these values
+from all processes. On receipt of t + 1 identical sets of values, the third party
+can deduce that the set of values corresponds to the election result.
+Lemma 17. ABE satisfies weak privacy. That is, a value proposed by a nonfaulty process is only revealed after AVCP has terminated for a non-faulty process.
+Proof. Each non-faulty process p proposes a value c s.t. c ← Enc(ID, m) was
+invoked for some m ∈ {0, 1}∗ (line 2). Encryption hiding implies that m can
+only be revealed if either p reveals m, which p does not in the protocol, or if
+a valid call to Dec is made. By decryption security, Dec will only return m if
+provided k = t+1 valid decryption shares. Now, no non-faulty process broadcasts
+a decryption share until after it terminates AVCP. Thus, a coalition of t faulty
+processes cannot decrypt m via Dec, which is the only conceivable way for them
+to obtain m in the model.
+Lemma 18. ABE satisfies eligibility. That is, only processes in P may propose
+a ballot that is decided.
+Proof. By assumption, non-faulty processes only process messages sent over regular channels from processes in P . But, any party may anonymously broadcast
+a value v. AARBP satisfies AVC-Signing. That is, all AARB-delivered messages
+are of the form (m, σ), where σ ← Sign(i, ID, m). By assumption on the interface of Sign, only a process in P may call Sign. By construction of AVCP, only
+messages that are AARB-delivered are decided by non-faulty processes. Thus,
+no non-faulty process will decide a value v in AVCP from any party outside of
+P.
+Lemma 19. ABE satisfies non-reusability. That is, at most one encrypted ballot
+signed by a particular process can be decided in the election.
+Proof. By construction of AVCP, only messages that are AARB-delivered are
+decided by non-faulty processes. By AARB-Unicity, no non-faulty process will
+AARB-deliver more than one tuple (m, σ) such that a process pi invoked σ ←
+Sign(i, ID, m).
+41
+
+E
+
+Further experiments
+
+In this section, we present experimental results of our implementations of cryptographic and distributed protocols. To determine their influence in cost over
+our distributed protocols, we benchmark two cryptographic protocols which our
+distributed protocols rely on, namely Fujisaki’s traceable ring signature (TRS)
+scheme [32] and Shoup and Gennaro’s threshold encryption scheme [57]. With
+this information, we then benchmark and evaluate our three distributed protocols: Anonymised All-to-all Reliable Broadcast Protocol (AARBP), Anonymised
+Vector Consensus Protocol (AVCP), and our election scheme, Arbitrary Ballot
+Election (ABE).
+E.1
+
+Cryptography
+
+Benchmarks of standalone cryptographic constructions were performed on a laptop with an Intel i5-7200U (quad-core) processor clocked at 3.1GHz and 8GB
+of memory. The operating system used was Ubuntu 18.04. Each cryptosystem
+was implemented in golang. All cryptographic schemes were implemented using
+Curve25519 [6]. To simulate a prime-order group we use the Ristretto technique
+[1], derived from the Decaf approach [40], via go-ristretto3 . All cryptographic
+operations rely on constant-time arithmetic operations to prevent side-channel
+attacks [11]. Each data point represents a minimum of 100 and a maximum of
+10000 iterations.
+Ring signatures To confirm that the implementation is competitive, we compare it to an implementation of Lui et al.’s linkable ring signature scheme [45].
+The particular implementation we compare to was produced by EPFL’s DEDIS
+group as part of kyber4 . We note that the ring signature schemes naturally lend
+themselves towards parallelism. To this end, we provide an extension of our TRS
+implementation that takes advantage of concurrency.
+We compared the two major operations. Firstly, the Sign() operation (“Sign”
+in Section 2) is that which forms a ring signature. Secondly, Verify() (“VerifySig”
+in Section 2) takes a ring signature as input, and verifies the well-formedness of
+the signature, and (in implementation) outputs a tag which is used for linking/tracing.
+Figure 2a represents the normalised speedup, as a percentage, afforded to
+the Sign() and Verify() operations in the TRS scheme. We note that Figure
+2a involves purely sequential implementations. We vary n, the size of the ring.
+Performance of Sign() and Verify() in both schemes scales linearly with respect
+to n.
+Let TLRS be the time an operation (signing or verification) takes in the TRS
+implementation, and similarly define TT RS . Then, normalised speedup is given
+3
+4
+
+https://github.com/bwesterb/go-ristretto
+https://godoc.org/github.com/dedis/kyber/sign/anon
+
+42
+
+Normalised speedup of TRS operations
+
+Verification and iterative linking/tracing of n signatures
+
+75
+time to execute (s)
+
+normalised speedup (%)
+
+76
+
+74
+73
+72
+71
+0
+
+Verify
+Sign
+50
+100 150 200
+number of nodes (n)
+
+250
+
+300
+
+7
+6
+5
+4
+3
+2
+1
+0
+
+TRS (Parallel)
+TRS (Sequential)
+LRS (Sequential)
+
+20
+
+30
+
+40
+
+50 60 70 80
+number of nodes (n)
+
+90
+
+100
+
+(a) Normalised speedup, as a percentage, (b) Comparing the performance of iteraof TRS operations over LRS operations tive verification and linking/tracing
+
+Fig. 2: Comparing TRS and LRS operations
+
+by:
+normalised speedup =
+
+TLRS − TT RS
+TT RS
+
+Indeed, this value hovers above 70 percent for all values of n tested. In the LRS
+implementation, the Sign() operation took between 7.5 and 230.4ms to execute
+(for values n = 10 and n = 310 respectively). Sign() in the TRS implementation
+took between 4.3 and 132.0ms to execute. Similarly, Verify() took between 7.7
+and 230.3ms to execute in the LRS implementation, and took between 4.4 and
+134.6ms to execute in the TRS implementation.
+To understand the performance increase, we count cryptographic operations.
+We use the notation presented in [62], adapted to represent elliptic curve operations. Let E denote the cost of performing point multiplication, and M denote
+the number of operations of the form (aP + bQ), where a, b are scalars, and P, Q
+are points. Then, in the LRS scheme, Sign() requires 2(n − 1)M + 3E operations,
+and Verify() requires 2nM operations [62]. In the TRS scheme, Sign() requires
+the same 2(n − 1)M and 3E operations, in addition to nM other operations.
+Similarly, the TRS Verify() call requires 2nM + nM = 3nM operations. With
+the same elliptic curve implementation, we should see a performance increase
+from an efficient LRS implementation, as the TRS scheme requires 1.5x M
+operations by comparison to the LRS scheme. But, in the library we use for
+ECC, go-ristretto, base point multiplication is 2.8x faster, point multiplication
+is 2.3x faster, and point addition is 2.6x faster. Thus, we see an overall increase
+in performance in our TRS implementation by comparison.
+Recall that in AARBP (and thus AVCP), ring signature tracing is performed
+iteratively. Suppose that some process has x correct ring signatures that they
+have verified at some point in time. Then, upon receipt of another signature,
+they first execute Verify(), and then perform the Trace() operation between the
+new signature and each of the x stored signatures. To model this behaviour, we
+perform a benchmark where signatures are processed one-by-one with a ring of
+size n that is varied from 20 to 100 in increments of 20. As the linkable ring
+43
+
+signature scheme admits very similar functionality, except it performs a linking
+operation, rather than a tracing operation, we benchmark similarly.
+Figure 2b compares the average time taken to perform the aforementioned
+procedure, between a sequential implementation of the TRS scheme, the corresponding concurrent implementation (utilising four cores), and the (sequential)
+LRS implementation. Now, the time taken to perform Verify() is proportional
+to the size of the ring n. In addition, we perform more (n) Verify() operations
+as we increase n. Consequently, execution time grows quadratically in Figure
+2b for each implementation. In addition to the previously outlined speedup, we
+roughly halve execution time of TRS operations by exploiting concurrency in our
+implementation. With n = 100, our concurrent implementation is 2.25x faster
+than our sequential implementation, and is 3.86x faster than the sequential LRS
+implementation.
+To perform Trace() between two signatures, O(n) comparisons are performed
+in a naive implementation, whereas a single comparison is need to link in the
+TRS scheme. In implementation, we used a hash table, so each new signature
+required O(n) lookups in the TRS scheme, and one lookup in the LRS scheme.
+As expected, we observe that the increased overhead of tracing is dominated by
+the time taken performing Verify() operations, and so speedup does not appear
+to be affected.
+Threshold encryption Our arbitrary ballot voting scheme, ABE, presented in
+Appendix D, can be instantiated with Shoup and Gennaro’s threshold encryption
+scheme [57]. To this end, we present results corresponding to our implementation
+of their construction.
+Operation
+Time to execute (ms)
+Encryption
+0.407
+Encryption verification 0.358
+Share decryption
+0.247
+Share verification
+0.339
+
+Table 2: Threshold encryption operations
+
+Table 2 shows the performance of all operations in the threshold encryption
+scheme [57] as executed by one process, bar decryption itself. As can be seen,
+all operations can be executed in a reasonable amount of time (less than a
+millisecond). In our electronic voting protocol, each process performs a single
+encryption operation, but may perform O(n) operations of the other forms over
+the protocol’s execution. Even when n is relatively large (> 100), we can expect
+to see acceptable levels of performance.
+Let P be a group of n processes. Then, the final operation, share combination,
+combines a group of k valid decryption shares, where k is the threshold required
+44
+
+to reconstruct the secret. In our electronic voting protocols, for interoperability
+with our consensus algorithms, we set k = t + 1, where t is, at most, the largest
+value such that t < n3 .
+Combining k shares with varying levels of concurrency
+time to execute (ms)
+
+400
+300
+
+Sequential
+2-core
+3-core
+4-core
+
+200
+100
+0
+
+20
+
+40
+60
+80
+number of nodes (n)
+
+100
+
+Fig. 3: Time taken for k partial decryptions (shares) to be combined to decrypt
+a given message
+Figure 3 represents the time taken to decrypt a message, varying k, the
+number of shares needed to reconstruct the message in increments of 10. As
+some steps of the reconstruction process can be performed concurrently, e.g. in
+the derivation of Lagrange coefficients [56], we provide an extension that takes
+advantage of a multi-core processor. To this end, Figure 3 graphs the time taken
+to perform share combination with both our sequential implementation, and the
+corresponding concurrent implementation utilising two to four cores.
+Indeed, producing Lagrange coefficients requires a quadratic amount of work
+(with respect to k), and subsequently decrypting a message takes O(k) effort,
+which dominates execution time. Both the quadratic and linear components of
+the share combination can be made concurrent. Consequently, we roughly double
+our performance with two to four cores running. It is worth noting that the effort
+required to spawn additional threads in the three and four core case does not
+translate to a very noticeable improvement in performance for our values of k.
+E.2
+
+Elections with arbitrary ballots
+
+Arbitrary Ballot Election (ABE) essentially combines AVCP with a threshold
+encryption scheme. To perform our benchmarks for the election scheme, we used
+pre-generated keying material for threshold encryption. We use Shoup and Gennaro’s threshold encryption scheme [57], which was benchmarked in the previous section. Our experiment differs from experiments with AVCP in that ring
+signatures must also contain valid encryptions as per the threshold encryption
+scheme, and because all processes perform threshold decryption with respect to
+all decided ballots.
+Figure 4 compares the performance of AVCP with ABE as described above.
+As can be seen, there is some, but not a considerable amount, of overhead from
+45
+
+time to decide (ms)
+
+AVCP vs ABE
+9000
+8000
+7000
+6000
+5000
+4000
+3000
+2000
+
+AVCP (t = max)
+ABE (t = max)
+AVCP (t = 6)
+ABE (t = 6)
+
+20
+
+30
+
+40
+
+50 60 70 80
+number of nodes (n)
+
+90 100
+
+Fig. 4: Comparing the performance of AVCP and ABE
+
+introducing the election’s necessary cryptographic machinery. The main factors
+here are an additional message step, additional message verifications, and, requiring the most additional effort, performing threshold decryption.
+As can be seen (and was explored in Section 6), AVCP performance degrades
+when t is non-optimal. Despite this, the election still takes longer to perform
+when t is increased. Consider the case where (n, t) = (100, 33). As shown in
+Figure 3, combining k = t + 1 = 34 (valid) partial decryptions together takes
+roughly 30ms. Since each run of the experiment decides on at least n − t = 67
+values, processes have to spend almost two seconds combining shares together.
+In the best case, each process has to verify that (n − t)t = 2211 shares are wellformed, which takes roughly 750ms. Thus, in addition to other cryptographic
+overhead, it is clear that increasing t affects election performance.
+Notwithstanding, the election protocol performs well for reasonable values of
+n. At n = 100, the election roughly takes between 7.5 and 9 seconds to execute
+from start to finish. Given that the latency provided by the anonymous channels
+used by processes is sufficiently low, we can expect to see comparable results in
+practice.
+
+46
+
+

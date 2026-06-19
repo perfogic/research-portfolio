@@ -1,0 +1,1654 @@
+
+--- PAGE 1 ---
+1
+SBFT: a Scalable and Decentralized Trust
+Infrastructure
+Guy Golan Gueta (VMware Research) Ittai Abraham (VMware Research) Shelly Grossman (TAU)
+Dahlia Malkhi (VMware Research) Benny Pinkas (BIU) Michael K. Reiter (UNC-Chapel Hill)
+Dragos-Adrian Seredinschi (EPFL) Orr Tamir (TAU) Alin Tomescu (MIT)
+Abstract—SBFT is a state of the art Byzantine fault tolerant
+permissioned blockchain system that addresses the challenges
+of scalability, decentralization and world-scale geo-replication.
+SBFT is optimized for decentralization and can easily handle
+more than 200 active replicas in a real world-scale deployment.
+We evaluate SBFT in a world-scale geo-replicated deployment
+with 209 replicas withstanding f=64 Byzantine failures. We
+provide experiments that show how the different algorithmic
+ingredients of SBFT increase its performance and scalability.
+The results show that SBFT simultaneously provides almost 2x
+better throughput and about 1.5x better latency relative to a
+highly optimized system that implements the PBFT protocol.
+To achieve this performance improvement, SBFT uses a
+combination of four ingredients: using collectors and threshold
+signatures to reduce communication to linear, using an optimistic
+fast path, reducing client communication and utilizing redundant
+servers for the fast path.
+I. I NTRODUCTION
+Centralization often provides good performance, but has the
+drawback of posing a single point of failure [72] and econom-
+ically, often creates monopoly rents and hampers innovation
+[33]. The success of decentralization as in Bitcoin [61] and
+Ethereum [75] have spurred the imagination of many as to the
+potential beneﬁts and signiﬁcant potential value to society of
+a scalable decentralized trust infrastructure.
+While fundamentally permissionless, the economic friction
+of buying and then running a Bitcoin or Ethereum mining
+rig has inherent economies of scale and unfair advantages
+to certain geographical and political regions. This means that
+miners are strongly incentivized to join a small set of large
+mining coalitions [55].
+In a 2018 study, Gencer et al. [38] show that contrary to
+popular belief, Bitcoin and Ethereum are less decentralized
+than previously thought. Their study concludes that for both
+Bitcoin and Ethereum, the top < 20 mining coalitions control
+over 90% of the mining power. The authors comment “These
+results show that a Byzantine quorum system of size 20 could
+achieve better decentralization than Proof-of-Work mining at a
+much lower resource cost”. This comment motivates the study
+of BFT replication systems that can scale to many replicas and
+are optimized for world scale wide area networks.
+BFT replication is a key ingredient in consortium
+blockchains [7], [15]. In addition, large scale BFT de-
+ployments are becoming an important component of public
+blockchains [26]. There is a growing interest in replacing
+or combining the current Proof-of-Work mechanisms with
+Byzantine fault tolerant replication [3], [4], [24], [69], [74].
+Several recent proposals [11], [39], [43], [59], [63] explore
+the idea of building distributed ledgers that elect a committee
+(potentially of a few tens or hundreds of nodes) from a large
+pool of nodes (potentially thousands or more) and have this
+smaller committee run a Byzantine fault tolerant replication
+protocol. In all these protocols, it seems that to get a high
+security guarantee the size of the committee needs to be such
+that it can tolerate at least tens of malicious nodes.
+Scaling BFT replication to tolerate tens of malicious nodes
+requires to re-think BFT algorithms and re-engineer them for
+high scale. This is the starting point of our work.
+A. SBFT: a Scalable Decentralized Trust Infrastructure for
+Blockchains.
+The main contribution of this paper is a BFT system that
+is optimized to work over a group of hundreds of replicas
+in a world-scale deployment. We evaluate our system, SBFT,
+in a world-scale geo-replicated deployment with 209 replicas
+withstanding f=64 Byzantine failures. We provide experiments
+that show how the different algorithmic ingredients of SBFT
+increase its performance and scalability. The results show that
+SBFT simultaneously provides almost 2x better throughput
+and about 1.5x better latency relative to a highly optimized
+system that implements the PBFT [27] protocol.
+Indeed SBFT design starts with the PBFT [27] protocol
+and then proceeds to add four key design ingredients. Brieﬂy,
+these ingredients are: (1) going from PBFT to linear PBFT; (2)
+adding a fast path; (3) using cryptography to allow a single
+message acknowledgement; (4) adding redundant servers to
+improve resilience and performance. We show how each of
+the four ingredients improves the performance of SBFT. As
+we will discuss in detail, each ingredient is related to some
+previous work. The main contribution of SBFT is in the novel
+combination of these ingredients into a robust system.
+Ingredient 1: from PBFT to linear PBFT. Many previ-
+ous systems, including PBFT [27], use an all-to-all message
+pattern to commit a decision block. A simple way to reduce
+an all-to-all communication pattern to a linear communication
+pattern is to use a collector. Instead of sending to everyone,
+each replica sends to the collector and this collector broadcasts
+to everyone. We call this versionlinear PBFT. When messages
+are cryptographically signed, then using threshold signatures
+[25], [67] one can reduce the outgoing collector message size
+from linear to constant.
+Zyzzyva [46] used this pattern to reduce all-to-all commu-
+nication by pushing the collector duty to the clients. SBFT
+arXiv:1804.01626v3  [cs.DC]  2 Jan 2019
+
+--- PAGE 2 ---
+2
+pushes the collector duty to the replicas in a round-robin
+manner. We believe that moving the coordination burden to
+the replicas is more suited to a blockchain setting where
+there are many light-weight clients with limited connectivity.
+In addition, SBFT uses threshold signatures to reduce the
+collector message size and the total computational overhead of
+verifying signatures. SBFT also uses a round-robin revolving
+collector to reduce the load. SBFT uses c+1 collectors (instead
+of one) to improve fault tolerance and handle c slow or faulty
+collectors (where c is typically a small constant).
+Ingredient 2: Adding a fast path. As in Zyzzyva [46],
+SBFT allows for a faster agreement path in optimistic execu-
+tions: where all replicas are non-faulty and synchronous. No
+system we are aware of correctly incorporates a dual mode
+that allows to efﬁciently run either a fast path or a slow
+path. Previous systems tried to get a dual mode protocol to
+do the right thing, especially in the view-change protocol,
+but proved trickier than one thinks [9], [10]. We believe
+SBFT implements the ﬁrst correct and practical dual mode
+view change. We rigorously analyzed and tested our view
+change protocol. We note that Reﬁned-Quorum-Systems [40],
+a fast single shot Byzantine consensus protocol, does provide
+a correct dual model but its protocol for obtaining liveness
+seems to require exponential time computation in the worst
+case (and is just single-shot). Azyzzyva [18], provides a fast
+path State-Machine-Replication protocol and allows to switch
+to a slow path, but avoids running both a fast path and a slow
+path concurrently. So switching between modes in Azyzzyva
+requires a lengthy view change each time for each switch,
+while SBFT can seamlessly switch between paths (without a
+view change).
+Ingredient 3: reducing client communication from f+1 to
+1. Once threshold signatures are used then an obvious next step
+is to use them to reduce the number of messages a client needs
+to receive and verify. In all previous solutions, including [20],
+[27], [46], each client needs to receive at least f +1=O(n)
+messages, each requiring a different signature veriﬁcation for
+request acknowledgement (where f is the number of faulty
+replicas in a system with n = 3 f + 1 replicas). When there
+are many replicas and many clients, this may add signiﬁcant
+overhead. In SBFT, in the common case, each client needs
+only one message, containing a single public-key signature for
+request acknowledgement. This single message improvement
+means that SBFT can scale to support many extremely thin
+clients.
+SBFT reduces the per-client linear cost to just one message
+by adding a phase that uses an execution collector to aggregate
+the execution threshold signatures and send each client a single
+message carrying one signature. Just like public blockchains
+(Bitcoin and Ethereum), SBFT uses a Merkle tree to efﬁciently
+authenticate information that is read from just one replica.
+SBFT uses Boneh–Lynn–Shacham (BLS) signatures [23]
+which have security that is comparable to 2048-bit RSA
+signatures but are just 33 bytes long. Threshold signatures [22]
+are much faster when implemented over BLS (see Section III).
+Ingredient 4: adding redundant servers to improve
+resilience and performance. SBFT is safe even if there are
+f Byzantine failures, but the standard fast path works only if
+all replicas are non-faulty and the system is synchronous. So
+even a single slow replica may tilt the system from the fast
+path to the slower path. To make the fast path more prevalent,
+SBFT allows the fast path to tolerate up to a small number c
+(parameter) of crashed or straggler nodes out of n = 3 f +2c+1
+replicas. This approach follows the theoretical results that has
+been suggested before in the context of single-shot consensus
+algorithms [54]. So SBFT only falls back to the slower path
+if there are more than c (and for safety fewer than f ) faulty
+replicas. In our experiments we found that setting c≤ f/8 is
+a good heuristic for up to a few hundreds of replicas.
+B. Evaluating SBFT’s scalability.
+We implemented SBFT as a scalable BFT engine and
+a blockchain that executes EVM smart contracts [75] (see
+Section VIII).
+All our experimental evaluation is done in a setting that
+withstands f = 64 Byzantine failures in a real Wide Area
+Network deployment.
+We ﬁrst conduct standard key-value benchmark experiments
+with synthetic workloads. We start with a scale optimized
+PBFT and then show how adding each ingredient helps
+improve performance.
+While standard key-value benchmark experiments with syn-
+thetic workloads are a good way to compare the BFT engine
+internals, we realize that real world blockchains like Ethereum
+have a very different type of execution workload based on
+smart contracts.
+We conduct experiments on real world workloads for our
+blockchain in order to measure the perfomance of a more
+realisic workload. Our goal is not to do a comparison of a
+permissioned BFT system against a permissionless proof-of-
+work system, this is clearly not a fair comparison.
+We take 500,000 smart contract executions that were pro-
+cessed by Ethereum during a 2 months period. Our experi-
+ments show that in a world-scale geo-replicated deployment
+with 209 replicas withstanding f=64 Byzantine failures, we
+obtain throughput of over 170 smart contract transactions
+per second with average latency of 620 milliseconds. Our
+Experiments show that SBFT simultaneously provides almost
+2x better throughput and about 1.5x better latency relative to a
+highly optimized system that implements the PBFT protocol.
+We conclude that SBFT is more scalable and decentralized
+relative to previous BFT solutions. Relative to state-of-art
+proof-of-work systems like Ethereum, SBFT can run the same
+smart contracts at a higher throughput, better ﬁnality and
+latency, and can withstand f = 64 colluding members out
+of more than 200 replicas. Clearly, Ethereum and other proof-
+of-work systems beneﬁt from being an open permissionless
+system, while SBFT is a permissioned blockchain system. We
+leave the integration of SBFT in a permissionless system for
+future work.
+We are not aware of any other permissioned blockchain
+system that can be freely used and can be deployed in a
+world scale W AN that can scale to over 200 replicas and
+can withstand f = 64 Byzantine failures. We therefore spent
+several months signiﬁcantly improving, ﬁxing and hardening
+
+--- PAGE 3 ---
+3
+an existing PBFT code-base in order to make it reliably work
+in our experimental setting. We call this implementation scale
+optimized PBFT and experimentally compare it to SBFT.
+Contributions. The main contribution of this paper is a
+BFT system that is optimized to work over a group of hun-
+dreds of replicas and supports the execution of modern EVM
+smart contract executions in a world-scale geo-distributed
+deployment. SBFT obtains its scalability via a combination
+of 4 algorithmic ingredients: (1) using a collector to obtain
+linear communication, (2) adding a fast path with a correct
+view change protocol, (3) reducing client communication
+using collectors and threshold signatures, (4) adding redundant
+servers for resilience and performance. While our view change
+protocol is new, one could argue that the other ingredients
+mentioned have appeared in some form in previous work.
+Nevertheless, SBFT is the ﬁrst to careful weave and implement
+all these ingredients into a highly efﬁcient and scalable BFT
+system.
+II. S YSTEM MODEL
+We assume a standard asynchronous BFT system model
+where an adversary can control up to f Byzantine nodes
+and can delay any message in the network by any ﬁnite
+amount (in particular we assume a re-transmit layer and allow
+the adversary to drop any given packet a ﬁnite number of
+times). To obtain liveness and our improved results we also
+distinguish two special conditions. We say that the system is
+in the synchronous mode, when the adversary can control up
+to f Byzantine nodes, but messages between any two non-
+faulty nodes have a known bounded delay. Finally we say
+that the system is in the common mode , when the adversary
+only controls c≤ f nodes that can only crash or act slow,
+and messages between any two non-faulty nodes have a
+known bounded delay. This three-mode model follows that
+of Parameterized FaB Paxos [54].
+For n = 3 f + 2c + 1 replicas SBFT obtains the following
+properties:
+(1) Safety in the standard asynchronous model (adversary
+controlling at most f Byzantine nodes and all network delays).
+This means that any two replicas that execute a decision block
+for a given sequence number, execute the same decision block.
+(2) Liveness in the synchronous mode (adversary controlling
+at most f Byzantine nodes). Roughly speaking, liveness means
+that client requests return a response.
+(3) Linearity in the common mode (adversary controlling at
+most a constant c slow/crashed nodes). Linearity means that in
+an abstract model where we assume the number of operations
+in a block is O(n) and we assume the number of clients is
+also O(n), then the amortized cost to commit an operation is a
+constant number of constant size messages. In more practical
+terms, Linearity means that committing each block takes a
+linear number of constant size messages and that each client
+sends and receives receives just one message per operation.
+III. M ODERN CRYPTOGRAPHY
+We use threshold signatures, where for a threshold pa-
+rameter k, any subset of k from a total of n signers can
+collaborate to produce a valid signature on any given message,
+but no subset of less than k can do so. Threshold signatures
+have proved useful in previous BFT algorithms and systems
+(e.g., [13], [14], [25], [67]). Each signer holds a distinct private
+signing key that it can use to generate a signature share. We
+denote by xi(d) the signature share on digest d by signer i.
+Any k valid signature shares {xj(d)| j∈ J,|J|= k} on the
+same digest d can be combined into a single signature x(d)
+using a public function, yielding a digital signature x(d). A
+veriﬁer can verify this signature using a single public key. We
+use threshold signature schemes which are robust, meaning
+signers can efﬁciently ﬁlter out invalid signature shares from
+malicious participants.
+We use a robust threshold signature scheme based on
+Boneh–Lynn–Shacham (BLS) signatures [23]. While RSA
+signatures are built in a group of hidden order, BLS are
+built using pairings [41] over elliptic curve groups of known
+order. Compared to RSA signatures with the same security
+level, BLS signatures are substantially shorter. BLS requires
+33 bytes compared to 256 bytes for 2048-bit RSA. Creating
+and combining RSA signature shares via interpolation in
+the exponent requires several expensive operations [67]. In
+contrast, BLS threshold signatures [22] allow straightforward
+interpolation in the exponent with no additional overhead.
+Unlike RSA, BLS signature shares support batch veriﬁcation,
+allowing multiple signature shares (even of different messages)
+to be validated at nearly the same cost of validating only one
+signature [22].
+We assume a computationally bounded adversary that can-
+not do better than known attacks as of 2018 on the crypto-
+graphic hash function SHA256 and on BLS BN-P254 [21]
+based signatures. We use a PKI setup between clients and
+replicas for authentication.
+IV. S ERVICE PROPERTIES
+SBFT provides a scalable fault tolerant implementation of
+a generic replicated service (i.e., a state machine replication
+service). On top of this we implement an authenticated key-
+value store that uses a Merkle tree interface [58] for data
+authentication. On top of this we implement a smart con-
+tract layer capable of running EVM byte-code. This layered
+architecture allows us in the future to integrate other smart
+contract languages by simply connecting them to the generic
+authenticated key-value store and allow for better software
+reuse.
+Generic service. As a generic replication library, SBFT
+requires an implementation of the following service interface
+to be received as an initialization parameter. The interface
+implements any deterministic replicated service with state,
+deterministic operations and read-only queries. An execution
+val = execute(D, o) modiﬁes stateD according to the oper-
+ation o and returns an output val. A query val = quer y(D, q)
+returns the value of the query q given stateD (but does not
+change state D). These operations and queries can perform
+arbitrary deterministic computations on the state.
+The state of the service moves in discrete blocks. Each block
+contains a series of requests. We denote by Dj the state of
+
+--- PAGE 4 ---
+4
+the service at the end of sequence number j. We denote by
+req j the series of operations of block j, that changes the state
+from stateDj−1 to stateDj.
+An authenticated key-value store. For our blockchain
+implementation we use a key-value store. In order to support
+efﬁcient client acknowledgement from one replica we augment
+our key-value store with a data authentication interface. As in
+public permissionless blockchains, we use a Merkle trees inter-
+face [58] to authenticate data. To provide data authentication
+we require an implementation of the following interface: (1)
+d = digest(D) returns the Merkle hash root of D as digest.
+(2) P = proof(o, l, s,D, val) returns a proof that operation o
+was executed as the lth operation in the series of requests in
+the decision block whose sequence number is s, whose state
+isD and the output of this operation was val. For a key-
+value store, proof for a put operation is a Merkle tree proof
+that the put operation was conducted as the lth operation in
+the requests of sequence number s. For a read only-query q,
+we write P = proof(q, s,D, val) and assume all such queries
+are executed with respect to Ds (the stateD after completing
+sequence number s). For a key-value store, proof for a get
+operation is a Merkle tree proof that at the state with sequence
+number s the required variable has the desired value. (3)
+verify(d, o, val, s, l, P) returns true iff P is a valid proof that
+o was executed as the lth operation in sequence number s and
+the resulting state after this decision block was executed has
+a digest of d and val is the return value for operation o (and
+similarly verify(d, q, val, s, P) when q is a query). For a key-
+value store and a put operation above, the veriﬁcation is the
+Merkle proof veriﬁcation [58] rooted at the digest d (Merkle
+hash root).
+A Smart contract engine. We build upon the replicated
+key-value store a layer capable of executing Ethereum smart
+contracts. This layered architecture allows us in the future to
+integrate other smart contract languages by simply connecting
+them to the generic authenticated key-value store and allow
+for better software reuse. The EVM layer consists of two main
+components: (1) An implementation of the Ethereum Virtual
+Machine (EVM), which is the runtime engine of contracts; (2)
+An interface for modeling the two main Ethereum transaction
+types (contract creation and contract execution) as operations
+in our replicated service. Ethereum contracts are written in a
+language called EVM bytecode [75], a Turing-complete stack-
+based low-level language, with special commands designed for
+the Ethereum platform. The key-value store keeps the state
+of the ledger service. In particular, it saves the code of the
+contracts and the contracts’ state. The fact that EVM bytecode
+is deterministic ensures that the new state digest will be equal
+in all non-faulty replicas.
+V. SBFT R EPLICATION PROTOCOL
+We maintain n = 3 f +2c +1 replicas where each replica has
+a unique identiﬁer in {1,..., 3 f + 2c + 1}. This identiﬁer is
+used to determine the threshold signature in the three threshold
+signatures: σ with threshold ( 3 f + c + 1), τ with threshold
+(2 f + c + 1), and π with threshold ( f + 1).
+We adopt the approach of [27], [62] where replicas move
+from one view to another using a view change protocol. In a
+view, one replica is a primary and others are backups. The
+primary is responsible for initiating decisions on a sequence
+of decisions. Unlike PBFT [27], some backup replicas can
+have additional roles as Commit collectors and/or Execution
+collectors. In a given view and sequence number, c + 1 non-
+primary replicas are designated to be C-collectors (Commit
+collectors) and c + 1 non-primary replicas are designated
+to be E-collectors (Execution collectors). These replicas are
+responsible for collecting threshold signatures, combining
+them and disseminating the resulting signature. For liveness,
+a single correct collector is needed. We use c + 1 collectors
+for redundancy in the fast path (inspired by RBFT [17]). This
+increases the worst case message complexity to O(cn) = O(n)
+when we assume c is a small constant (for n ≈ 200 we
+set c = 0, 1, 2, 8 with f = 64). In practice we stagger the
+collectors, so in most executions just one collector is active
+and the others just monitor in idle.
+Roughly speaking the algorithm works as follows in the fast
+path (see Figure 1 for n = 4, f = 1, c = 0):
+(1) Clients send operation request to the primary.
+(2) The primary gathers client requests, creates a decision
+block and forwards this block to the replicas as a pre-prepare
+message.
+(3) Replicas sign the decision block using their σ (3 f + c +
+1)-threshold signature and send a sign-share message to the
+C-collectors.
+(4) Each C-collector gathers the signature shares, creates a
+succinct full-commit-proof for the decision block and sends
+it back to the replicas. This single message commit proof
+has a ﬁxed-size overhead, contains a single signature and is
+sufﬁcient for replicas to commit.
+Steps (2), (3) and (4) require linear message complex-
+ity (when c is constant) and replace the quadratic message
+exchange of previous solutions. By choosing a different C-
+collector group for each decision block, we balance the load
+over all replicas.
+Once a replica receives a commit proof it commits the
+decision block. The replica then starts the execution protocol:
+(1) When a replica has ﬁnished executing the sequence of
+blocks preceding the committed decision block, it executes
+the requests in the decision block and signs a digest of the
+new state using its π( f + 1) threshold signature, and sends a
+sign-state message to the E-collectors.
+(2) Each E-collector gathers the signature shares, and creates
+a succinct full-execute-proof for the decision block. It then
+sends a certiﬁcate back to the replicas indicating the state is
+durable and a certiﬁcate back to the client indicating that its
+operation was executed.
+This single message has ﬁxed-size overhead, contains a
+single signature and is sufﬁcient for acknowledging individual
+clients requests.
+Steps (1) and (2) provide single-message per-request ac-
+knowledgement for each client. All previous solutions required
+a linear number of messages per-request acknowledgement
+for each client. When the number of clients is large this is
+a signiﬁcant advantage.
+Once again, by choosing a different E-collector group for
+each decision block, we spread the overall load of primary
+
+--- PAGE 5 ---
+5
+leadership, C-collection, and E-collection, among all the repli-
+cas.
+Primary
+C-Collector
+E-Collector
+Replica
+ClientRequest
+Pre-prepareSign-shareFull-commit-ProofSign-state
+Execute-ack
+Full-execute-proof
+Fig. 1. Schematic message ﬂow for n=4, f =1, c=0.
+A. The Client
+Each client k maintains a strictly monotone timestamp t
+and requests an operation o by sending a message ⟨“request”,
+o, t, k⟩ to what it believes is the primary. The primary then
+sends the message to all replicas and replicas then engage in
+an agreement algorithm.
+Previous systems required clients to wait for f + 1 replies
+to accept an execution acknowledgment. In our algorithm the
+client waits for just a single reply ⟨“execute-ack”, s, val,
+o, π(d), proof(o, l, s,D, val)⟩ from one of the replicas, and
+accepts val as the response from executing o by verifying
+that proof(o, l, s,D, val) is a proof that o was executed as the
+lth operation of the decision block that resulted in the state
+whose sequence number is s, the return value of o was val,
+the digest of Ds is d. This is done by checking the Merkle
+proof verify(d, o, val, s, l, proof(o, l, s,D, val)) = true and that
+π(d) is a valid signature for Ds (when o is long we just send
+the digest of o).
+Upon accepting an execute-ack message the client marks o
+as executed and sets val as its return value.
+As in previous protocols, if a client timer expires before
+receiving an execute-ack, the client resends the request to all
+replicas (and requests a PBFT style f + 1 acknowledgement
+path).
+B. The Replicas
+The state of each replica includes a log of accepted mes-
+sages sorted by sequence number, view number and message
+type. The state also includes the current view number, the last
+stable sequence number ls (see Section V-F), the state of the
+serviceD after applying all the committed requests. We also
+use a known constant win that limits the number of outstanding
+blocks.
+Each replica has an identity i∈{ 1,..., n} used to determine
+the value of the three threshold key shares: σi for a 3 f + c + 1
+threshold scheme, τi for a 2 f + c + 1 threshold scheme, and πi
+for a f +1 threshold scheme. All messages between replicas are
+done using authenticated point-to-point channels (in practice
+using TLS 1.2).
+As detailed below, replicas can have additional roles of
+being a primary (Leader), a C-collector (Commit collector)
+or an E-collector (Execution collector).
+The primary for a given view is chosen in a round robin
+way as a function of view. It also stores a current sequence
+number
+The C-collectors and E-collector for a given view and
+sequence number are chosen as a pseudo-random group from
+all non-primary replicas, as a function of the sequence number
+and view1. For the fall back Linear-PBFT protocol we always
+choose the primary as the last collector.
+The role of a C-collector is to collect commit messages and
+send a combined signature back to replicas to conﬁrm commit.
+The role of an E-collector is to collect execution messages and
+send a combined signature back to replicas and clients so they
+all have a certiﬁcate that their request is executed.
+C. Fast Path
+The fast path protocol is the default mode of execution. It is
+guaranteed to make progress when the system is synchronous
+and there are at most c crashed/slow replicas.
+To commit a new decision block the primary starts a three
+phase protocol: pre-prepare, sign-share, commit-proof. In the
+pre-prepare phase the primary forwards its decision block
+to all replicas. In the sign-share phase, each replica signs
+the requests using its threshold signature and sends it to
+the C-collectors. In the commit-proof phase, each C-collector
+generates a succinct signature of the decision and sends it to
+all replicas.
+Pre-prepare phase: The primary accepts⟨“request”, o, t, k⟩
+from client k if the operation o passes the static service
+authentication and access control rules. Note that this is a state
+independent test which can be changed via a reconﬁguration
+view change.
+Upon accepting at least b ≥ batch client messages (or
+reaching a timeout) it sets r = (r1,..., rb) and broadcasts
+⟨“pre-prepare”, s, v, r⟩ to all 3 f + 2c + 1 replicas where s is
+the current sequence number, and v is the view number.
+The parameter batch is set via an adaptive algorithm.
+Roughly speaking the value of batch is set to be the average
+number of pending requests divided by the half the maximum
+amount of allowed concurrent blocks (this number number was
+to 4 in the experiments).
+Sign-share phase: A replica accepts ⟨“pre-prepare”, s, v, r⟩
+from the primary if (1) its view equals v; (2) no previous
+“pre-prepare” with the sequence s was accepted for view v;
+(3) the sequence number s is between ls and ls + win; (4) r
+is a valid series of operations that pass the authentication and
+access control requirements.
+Upon accepting a pre-prepare message, replica i computes
+h = H(s||v||r) where H is a cryptographic hash function
+(SHA256) then signs h by computing a veriﬁable threshold
+signature σi(h) and sends ⟨“sign-share”, s, v,σ i(h)⟩ to the set
+of C-collectors C-collector s(s, v).
+1Randomly choosing the primary and the collectors to provide resilience
+against a more adaptive adversary is doable, but not is part of the current
+implementation
+
+--- PAGE 6 ---
+6
+Commit-proof phase: a C-collector for (s, v) accepts a
+⟨“sign-share”, s, v,σ i(h)⟩ from a replica i if (1) its view equals
+view; (2) no previous “sign-share” with the same sequence s
+has been accepted for this view from replicai; (3) the veriﬁable
+threshold signature σi(h) passes the veriﬁcation.
+Upon a C-collector accepting 3 f + c + 1 distinct sign-share
+messages it forms a combined signature σ(h), and then sends
+⟨“full-commit-proof”, s, v,σ(h)⟩ to all replicas.
+Commit trigger: a replica accepts
+⟨“full-commit-proof”, s, v,σ(h)⟩ if it accepted
+⟨“pre-prepare”, s, v, r, h⟩, h = H(s||v||r) and σ(h) is a
+valid signature for h. Upon accepting a full-commit-proof
+message, the replica commits r as the requests for sequence
+s.
+D. Execution and Acknowledgement
+The main difference of our execution algorithm from pre-
+vious work is the use of threshold signatures and single
+client responses. Once a replica has a consecutive sequence
+of committed decision blocks it participates in a two phase
+protocol: sign-state, execute-proof.
+Roughly speaking, in the sign-state phase each replica signs
+its state using its f + 1 threshold signature and sends it to
+the E-collectors. In the execute-proof phase, each E-collector
+generates a succinct execution certiﬁcate. It then sends this
+certiﬁcate back to the replicas and also sends each client a
+certiﬁcate indicating its operation(s) were executed.
+Execute trigger and sign state: when all decisions up
+to sequence s are executed, and r is the committed request
+block for sequence s, then replica i updates its state to Ds by
+executing the requests r sequentially on the state Ds−1.
+Replica i then updates its digest on the state to
+d = digest(Ds), signs d by computing πi(d) and
+sends ⟨“sign-state”, s,π i(d)⟩ to the set of E-collectors
+E-collector s(s).
+Execute-proof phase: an E-collector for s accepts a
+⟨“sign-state”, s,π i(d)⟩ from a replica i if πi(d) passes the
+veriﬁcation test.
+Upon accepting f + 1 sign-state messages, it com-
+bines them into a single signature π(d) and sends
+⟨“full-execute-proof”, s,π(d)⟩ to all replicas. Replicas that
+receive full-execute-proof messages verify the signature to
+accept.
+Then the E-collector, for each request o∈ r at position l
+sends to the client k that issued o an execution acknowledge-
+ment, ⟨“execute-ack”, s, l, val, o,π(d), proof(o, l, s,D, val)⟩,
+where val is the response to o, proof(o, l, s,D, val) is a proof
+that o was executed and val is the response at the state whose
+digest is from Ds and π(d) is a signature that the digest of
+Ds is d.
+The client, accepts ⟨“execute-ack”, s, l, val, o,π(d), P⟩ if
+π(d) is a valid signature and verify(d, o, val, s, l, P) = true .
+Upon accepting an execute-ack message the client marks o
+as executed and sets val as its return value. If the client timer
+expires then the client re-tries requests and asks for a regular
+PBFT style acknowledgement from f + 1.
+E. Linear-PBFT
+This is a fall-back protocol that can provide progress when
+the fast path cannot make progress. This protocol is an adapta-
+tion of PBFT that is optimized to use threshold signatures and
+linear communication, avoiding all-to-all communication by
+using the primary as collector in the intermediate stage and as
+a fallback collector for commitment collection and execution
+collection. To guarantee progress when the primary is non-
+faulty, we use c + 1 collectors and stagger the collectors so
+that the c + 1st collector to activate is always the primary. The
+worst case communication is O(cn) which is O(n) when c is a
+constant (say c = 2). In particular choosing c = 0 for the fall
+back protocol would guarantee O(n) messages (one can still
+have more collectors in the fast path).
+In linear-PBFT, instead of broadcasting messages to all
+replicas, we use the primary as a single collector (or use
+c + 1 collectors for a small constant c ≤ 2) that composes
+the threshold signatures into a single signature message. This
+reduces the number of messages and public key operations to
+linear, and makes each message contain just one public-key
+signature. We call this operation broadcast-via-collector: each
+replica sends its message only to the c + 1 collectors, each
+collector waits to aggregate a threshold signature and then
+sends it to all replicas.
+Sign-share phase: we modify the sign-share message of
+replica i to include both σi(h) (needed for the fast path) and
+τi(h) (needed for the Linear PBFT path).
+Trigger for Linear-PBFT: A C-collector (including the
+primary) that received enough threshold shares (via sign-share
+messages) to create τ(h) but not to create σ(h) waits for a
+timeout to expire before sending a prepare message to all:
+⟨“prepare”, s, v,τ(h)⟩. This timer controls how long to wait
+for the fast path before reverting to the PBFT path, we use an
+adaptive protocol based on past network proﬁling to control
+this timer.
+Prepare phase: Replica i accepts⟨“prepare”, s, v,τ(h)⟩ if
+(1) its view equals v; (2) no previous “prepare” with sequence
+s has been accepted for this view by i; (3) τ(h) passes its
+veriﬁcation. Replicai sends⟨“commit”, s, v,τ i(τ(h))⟩ to all the
+collectors.
+PBFT commit-proof phase: A C-collector (including
+the primary) that received enough threshold shares to cre-
+ate τ(τ(h)) sends a full-commit-proof-slow message to all:
+⟨“full-commit-proof-slow”, s, v,τ(τ(h))⟩.
+Commit trigger for Linear-PBFT: If a replica
+receives ⟨“full-commit-proof-slow”, s, v,τ(τ(h))⟩ and
+⟨“pre-prepare”, s, v, r, h⟩ it veriﬁes that h = H(s||v||r)
+then commits r as the decision block at sequence s.
+F . Garbage Collection and Checkpoint Protocol
+A decision block at sequence s can have three states:
+(1) Committed - when at least one non-faulty replica has
+committed s; (2) Executed - when at least one non-faulty
+replica has committed all blocks from 1 to s; (3) Stable -
+when at least f + 1 non-faulty replicas have executed s.
+When a decision block at sequence s is stable we can
+garbage collect all previous decisions. As in PBFT we peri-
+
+--- PAGE 7 ---
+7
+odically (every win/2) execute a checkpoint protocol in order
+to update ls the last stable sequence number.
+To avoid the overhead of the quadratic PBFT checkpoint
+protocol, the second way to update ls is to add the following re-
+striction. A replica only participates in a fast path of sequence
+s if s is between le and le +(win/4) where le is the last exe-
+cuted sequence number. With this restriction, when a replica
+commits in the fast path on s it sets ls := max{ls, s−( win/4)}.
+G. View Change Protocol
+The view change protocol handles the non-trivial com-
+plexity of having two commit modes: Fast-Path and Linear-
+PBFT. Protocols having two modes like [18], [40], [46], [54]
+have to carefully handle cases where both modes provide
+a value to adopt and must explicitly choose the right one.
+SBFT implements a new view change protocol that maintains
+both safety and liveness while handling the challenges of two
+concurrent modes. SBFT’s view change has been carefully
+implemented 2, rigorously analyzed and tested 3.
+View change trigger: a replica triggers a view change when
+a timer expires or if it receives a proof that the primary is faulty
+(either via a publicly veriﬁable contradiction or when f + 1
+replicas complain).
+View-change phase: Each replica i maintains a variable ls
+which is the last stable sequence number. It prepares values
+xls, xls+1,..., xls+win as follows. Set xls =π(dls) to be the signed
+digest on the state whose sequence is ls. For each ls < j≤
+ls + win set xj =(lm j, f mj) to be a pair of values as follows:
+Set lm j to be τ(τ(hj)) if a full-commit-proof-slow was
+accepted for sequence j; otherwise set lm j to be (τ(hj), vj)
+where vj is the highest view for sequence j for which 2 f +c+1
+prepares were accepted with hash hj in view vj; otherwise set
+lm j := “no commit“.
+Set f mj to be σ(hj) if a full-commit-proof was accepted
+for sequence j; otherwise set f mj to be(σi(hj), vj) where vj
+is the highest view for sequence j for which a pre-prepare
+was accepted with hash hj at view vj; otherwise set f mj :=
+“no pre-prepare”.
+Replica i sends to the new primary of view v + 1 the
+message⟨“view-change”, v, ls, xls, xls+1,..., xls+win⟩ where v is
+the current view number and xls,..., xls+win as deﬁned above.
+New-view phase: The new primary gathers 2 f +2c+1 view
+change messages from replicas. The new primary initiates a
+new view by sending a set of 2 f +2c+1 view change messages.
+Accepting a New-view: When a replica receives a set I of
+|I|= 2 f +2c+1 view change message it processes slots one by
+one. It starts with ls, the highest valid stable sequence number
+in all view-change messages, and goes up to ls + win. For each
+such slot, a replica either decides it can commit a value, or
+it adopts it as a pre-prepare by the new primary, according to
+the algorithm below.
+If a replica receives σ(⋆) or τ(τ(⋆))), it decides it. Else, it
+adopts a safe value:
+2SBFT has been actively developed and hardened for over 2 years.
+3We ran experiments with hundreds of replicas, doing tens of thousands
+of view changes, and have tests for Primaries sending partial, equivocating
+and/or stale information.
+Safe values: A value y is safe for sequence slot if the only
+safe thing for the new primary to do is to propose y for the
+sequence slot in the new view.
+Roughly speaking, y will be the value that is induced by
+the highest view for which there is a potential value that could
+have been committed in a previous view. Deﬁning this requires
+carefully deﬁning the highest view for which there is a value in
+each of the two commit paths and then taking the highest view
+between the two paths. If there is no value that needs to be
+adopted, we ﬁll the sequence with a special no-op operation.
+More precisely, computing y given I is done as follows:
+Set ls to be the highest last stable value lsi sent in I such
+that i sent π(dlsi) which is correct (this is a proof that lsi is a
+valid checkpoint). Fix a slot j within the range[ls..(ls + win)].
+Let X ={xi}i∈I be the set of values by the members I for
+the slot. Since each x ∈ X is a pair we split into two sets
+X =(LX, FX). If a member in I sent values only up to a lower
+sequence position, then we can simulate as if these missing
+values are x =(“no commit“ , “no pre prepare“ ).
+If FX contains σ(h) or LX contains τ(τ(h)) then let y be h
+and commit once the message is known; otherwise
+(1) If LX contains at least one τ(h) then let τ(h∗) be the
+τ signature with the highest view v∗ in LX and let req∗ be
+the corresponding value. Formally: v∗ = max{v|∃(τ(h), v)∈
+LX, h = H( j||v||req)}, req∗ ={req | ∃(τ(h), v∗)∈ LX, h =
+H( j||v∗||req)}. Otherwise, if LX contains no(τ(h), v) then set
+v∗ :=−1.
+(2) We say that a value req′ is fast for v if there exists
+f +c+1 messages in FX and for each such message(σi(h), v)∈
+FX it is the case that h = H( j||v′||req′) and v′≥ v. Let ˆv be
+the highest view such that there exists a value req′ that is fast
+for v. If its unique, let ˆreq the corresponding fast value for
+ˆv. Formally: f ast(req′, v) = 1 iff ∃M⊂ FX,|M|= f + c +
+1, ∀(σi(h), v′)∈ M, h = H( j||v′||req′)∧ v′≥ v, ˆv = max{v|
+∃req′| f ast(req′, v) = 1}, ˆreq ={req′| f ast(req′, ˆv) = 1}.
+If no such ˆv exists or if for ˆv there is more than one potential
+value ˆreq then set ˆv :=−1 .
+(3) If v∗≥ ˆv and v∗ >−1 then set y :=⟨“pre-prepare”, j, v +
+1, req∗, H( j||v + 1||req∗)⟩.
+Otherwise if ˆv > v∗ then set y := ⟨“pre-prepare”, j, v +
+1, ˆreq, H( j||v + 1)||ˆreq)⟩.
+Otherwise set y :=⟨“pre-prepare”, j, v + 1, “null”, H( j||v +
+1||“null”)⟩, where “null” is the no-op operation.
+1) Efﬁcient view change via pipelining: Currently SBFT
+allows committing a sequence number x before the pre-prepare
+information for sequence numbers < x have arrived. This
+allows SBFT a high degree of parallelism. This also means
+that like PBFT, during a view change SBFT needs to suggest
+a value for each sequence number between ls and ls + win.
+An alternative approach is to commit sequence number
+x only after all the pre-prepare messages of all sequences
+≤ x have arrived and x’s hash is a commitment to the
+whole history. Concretely, hx is a hash not of (r||s||v) but
+of(r||s||v||hx−1). This means that when a primary commits
+sequence number x it is implicitly committing all the sequence
+numbers≤ x in the same decision.
+With these changes, we can have a more efﬁcient view
+change. Instead of sending pre-prepare values (with proof) for
+
+--- PAGE 8 ---
+8
+each sequence number from ls to ls + win, it is sufﬁcient for
+the new primary to gather from each replica just two pairs (1)
+the ﬁrst pair is (hj, v) where v is the highest view for which
+the replica has τ(hj) and j is the slot number (assume v :=−1
+if no such view exists); (2) the second pair is (h′
+j, v′) where
+v′ is the highest view for which the replica has f + c + 1
+pre-prepare messages with hj where j is the slot number.
+As before, the primary gathers 2 f +2c+1 such messages and
+chooses the highest view from (v, h) and(v′, h′) (preferring
+(v, h) if there is a tie).
+The advantage of this view change is that just two values
+are sent irrespective of the size of the window.
+VI. S AFETY
+Safety is captured in the following Theorem:
+Theorem VI.1. If any two non-faulty replicas commit on a
+decision block for a given sequence number then they both
+commit on the same decision block.
+Fix a sequence number j and let v′ be smallest view number
+at which some non-faulty replica commits on a decision block.
+Let the hash of this decision block on sequence number j be
+h where h = H( j||v′||req). There are two cases to consider:
+(1) at least one of the non-faulty that committed at view v′
+committed due to a signature τ(τ(h)) or (2) all the committing
+non-faulty at v′ committed due to a signature σ(h). We will
+now prove Theorem VI.1 by looking at each cases separately.
+Lemma VI.2. If a non-faulty commits to req on sequence j
+due to τ(τ(h)) at view v′ then there exists a set SC of f + c + 1
+non-faulty replicas such that for any view v≥ v′:
+1) For each replica r∈ SC, at view v, replica r’s highest
+commit proof lm j =τ(τ(h)) is for hash h = H( j||v′′||req)
+such that v≥ v′′≥ v′.
+2) Any valid signature τ(h′) where h′ = H( j||v′′||req′′)
+generated by the adversary has the property that either
+req′′ = req or v′′ < v′.
+3) If v = v′ then there are at most f + c non-faulty that
+accepted a pre-prepare with some req′ , req at view v′.
+4) If v > v′ then there are no non-faulty replicas that
+accepted a pre-prepare with some req′ , req at view
+v′.
+Proof. The proof is by induction on v for all v≥ v′. We start
+with the base case of v = v′. Property 1 holds since some non-
+faulty committed after seeing 2 f + c + 1 commit messages on
+h = H( j||v′||req), of which at least f + c + 1 came from
+non-faulty. Fix SC to be this set of non-faulty. Property 2 and
+3 hold since in view v′ at least f + c + 1 non-faulty send a
+pre-prepare for h and a non-faulty will send at most one pre-
+prepare per view, so there can be at most f + c non-faulty that
+sent a pre-prepare for req′ , req at view v = v′. Finally, note
+that property 4 is vacuously true.
+Assume the properties hold by induction on all views
+smaller than v and consider view v. From property 1 of the
+induction hypothesis on view v−1, any view change to view v
+must include at least one message τ(h) with h = H( j||v′′||req)
+from SC. This is true because any view change set is of size
+2 f + 2c + 1 and so it must intersect the set SC from property
+1. From property 2, v′′ is larger than any other τ(h′) for
+req′ , req included in any view change set. From properties
+3 and 4 it must be the case that if there are f + c + 1 replicas
+that send pre-prepare for for req′ , req then at least c + 1 of
+them are honest and hence must be of view at most v′.
+Recall that in the view change protocol we deﬁne that req′
+is fast for view u if there exists f + c + 1 messages in FX
+and for each such message (σi(z), u)∈ FX it is the case that
+z = H( j||v′||req′) and v′≥ u. Therefore it must be the case
+that if req′ is fast for view u then u≤ v′. Also recall that in the
+view change protocol v∗ is deﬁned to be the highest view with
+a prepare message τ(h∗) in L X, so we have v∗≥ v′. Note that
+even if v∗ = v′ then the outcome of the view change protocl
+(the value yj) will use req over req′ (this is where our view
+change algorithm prefers the slow path proof over the fast path
+proof).
+Together this means that the only possible outcome of the
+view change will be to set yj for view v to have the value req .
+This is true because property 1 shows that req will be seen in a
+prepare message, property 2 that it will be associated with the
+maximal prepare, and property 3+4 that if ˆreq is chosen then
+it must be that ˆreq = req . This proves property 4 (property 3
+is vacuously true).
+Given property 4 on view v we now prove properties 1 and 2
+for view v. Since the only safe value for view v is req then the
+only change in SC is that a replica may update its highest view
+to v (if the Primary in v manages to send a prepare message
+in view v) but this must be for the same block content req
+so property 1 holds. Similarly property 2 holds because no
+non-faulty we accept in v a pre-prepare for req′ , req and
+hence no such τ(h′) can be generated. □
+We now do a similar analysis for the case that all committing
+non-faulty at v′ do it due to a signature σ(h). Importantly,
+property 3 below is slightly stronger than property 3 above.
+Lemma VI.3. If a non-faulty commits to req on sequence j
+due to σ(h) in view v′ then there exists a set FC of 2 f + c + 1
+non-faulty replicas such that for any view v≥ v′:
+1) For each replica r ∈ FC, in view v, the highest view
+v′′ for which a pre-prepare was accepted with hash h =
+H( j||v′′||req′′) has the property that v′′≥ v′ and req′′ =
+req .
+2) Any valid signature τ(h′) where h′ = H( j||v′′||req′′)
+generated by the adversary has the property that either
+req′′ = req or v′′ < v′.
+3) If v = v′ then there are at most c non-faulty that accepted
+a pre-prepare with some req′ , req at view v′.
+4) If v > v′ then there are no non-faulty that accepted a
+pre-prepare with some req′ , req at view v′.
+Proof. The proof is by induction on v for all v≥ v′. We start
+with the base case of v = v′. Property 1 holds since some non-
+faulty committed after seeing 3 f + c + 1 pre-prepare messages
+on h = H( j||v′||req), of which at least 2 f + c + 1 came from
+non-faulty. Property 2 and 3 hold since in view v = v′ at least
+2 f + c + 1 non-faulty send a pre-prepare for h and a non-faulty
+will send at most one pre-prepare per view, so there can be at
+
+--- PAGE 9 ---
+9
+most c non-faulty that sent a pre-prepare for some req′ , req
+(property 4 is vacuously true).
+Assume the properties hold by induction on all views
+smaller than v and consider view v. From the induction
+hypothesis property 1 on view v− 1 we have that any view
+change to v must include at least f + c + 1 messages of the
+form σi(h) with h = H( j||v′′||req) from i∈ FC. This is true
+because any view change set is of size 2 f + 2c + 1 and so
+it must intersect FC with at least f + c + 1 members. From
+the induction hypothesis on property 3 and 4 it follows that if
+there are f +c+1 replicas that send pre-prepare for req′ , req
+then it must be the case that at least one of the c + 1 honest
+must be of view that is strictly smaller than v′. This implies
+that if some req′ , req is a fast for u then u < v′. Hence req
+will be the unique value that is fast at view at least v′ and
+hence the view change protocol will set ˆreq = req .
+We still need to show that ˆreq = req will be chosen over
+any req∗ , req . From the induction hypothesis on property 2
+it follows that for req∗ , req it must be that v∗ < v′ and hence
+in the view change ˆv will cause ˆreq = req to be selected.
+Together this means that the only outcome of the view
+change will be to set yj for view v to have the value req .
+This is true because property 1 shows that req will be seen at
+fast for at least v′, property 2 that v∗ will be strictly smaller if
+req∗ , req , and property 3+4 imply that if ˆreq is chosen then
+it must be that ˆreq = req . This proves property 4 (property 3
+is vacuously true).
+Given property 4 on v we now prove properties 1 and 2.
+Since the only safe value for v is req then the only change
+in SC is that replicas may update their highest view of a pre-
+prepare to view v but this must be for req so property 1 holds.
+Similarly property 2 holds because no non-faulty we accept in
+v a pre-prepare for req′ , req and hence no such τ(h′) can
+be generated. □
+Theorem VI.1 follows directly from the the two lemma
+above.
+VII. L IVENESS
+SBFT is deterministic so lacks liveness in the asynchronous
+mode, due to FLP [37]. As in PBFT [27], liveness is obtained
+by striking a balance between making progress in the current
+view and moving to a new view. SBFT uses the techniques
+of PBFT [27] tailored to a larger deployment: (1) exponential
+back-off view change timer; (2) replica issues a view change
+if it hears f + 1 replicas issue a view change; (3) a view can
+continue making progress even if f or less replicas send a view
+change. Finally SBFT uses c + 1 collectors to make progress
+in the fast path and in the common path we ensure that one
+of the collectors is the primary.
+Unlike some protocols, our protocol can always wait for at
+most n− f messages to make progress both in the common path
+and in the view change (for example in PBFT journal version
+you may need to wait for more messages in the view change
+protocol). Hence not only is our protocol clearly deadlock free,
+it is also reactive, meaning that after GST it makes progress
+at the speed of the fastest n− f replicas and does not need to
+wait for the maximum network delay.
+We still need to show that progress is made after GST with
+a non-faulty primary. Again this is quite strait forward and
+follows from the fact that in the common mode the Primary
+is also a collector.
+Finally we note that the liveness of the view change protocol
+follows from the following pattern: the primary makes a deci-
+sion based on signed messages (its proof) and then forwards
+both the decision and the signed messages (its proof) so all
+replicas can repeat exactly the same computation.
+VIII. SBFT I MPLEMENTATION
+SBFT is implemented in C++ and follows some parts of the
+design of the original PBFT code [1], [27], [28], in particular
+PBFT’s state transfer mechanism. SBFT has been in active
+development for over two years.
+Cryptography implementation Cryptographic primitives
+(RSA 2048, SHA256, HMAC) are implemented using the
+Crypto++ library [6]. To implement threshold BLS, we use
+RELIC [16], a cryptographic library with support for pairings.
+We use the BN-P254 [21] elliptic curve, which provides the
+same security as 2048-bit RSA (i.e., 110-bit security) even
+with recent developments on discrete-log attacks [19], [57].
+To reduce latency associated with combining threshold BLS
+based shares (in the collectors) we parallelized the independent
+exponentiations and use a background thread. In the fast path,
+as long as no failure is detected, we use a BLS group signature
+(n-out-of-n threshold) which provides smaller latency than
+BLS threshold signatures. We implemented a mechanism
+to automatically switch to and from group signatures and
+threshold signatures based on recent history.
+SBFT batching and parallelism parameters We use an
+adaptive leaning algorithm that dynamically modiﬁes the size
+of the parameter batch based on the number of currently
+running concurrent sequence numbers. The batch size is the
+minimum number of client operations in each block. The
+number of decision blocks that can be committed in parallel
+is win = 256. The value acti ve-windo w =⌊(n− 1)/(c + 1)⌋
+is the actual number of decision blocks that are committed in
+parallel by the primary.
+Blockchain smart contract implementation The EVM
+implementation we used is based on cpp-ethereum [2]. We
+integrated storage-related commands with our key-value store
+interface and use RocksDB [5] as its backend.
+IX. P ERFORMANCE EVALUATION
+We evaluate SBFT by deploying 200 replicas over a wide
+area geo-distributed network. All experiments are conﬁgured
+to withstand f = 64 Byzantine failures. Following, [31] SBFT
+uses public-key signed client requests and server messages.
+At the time of the experiments, we could not ﬁnd other
+BFT implementations that (1) was freely available online; and
+(2) could reliably work on a real (not simulated) world scale
+W AN and withstand f = 64 failures. The freely available
+code for PBFT could not scale and was not updated in the
+last 10 years. The code for Zyzzyva [46] contains a serious
+safety violation [9] and did not contain a state transfer module.
+Both BizCoin [43], [71] and Omniledger [44] have GitHub
+
+--- PAGE 10 ---
+10
+Throughput (operations/second)
+4 32 64 128 192 256
+0
+0.2
+0.4
+0.6
+0.8
+1
+1.2
+1.4
+1.6
+1.8
+2
+2.2
+2.4
+2.6
+2.8
+3
+3.2
+3.4
+· 104
+batch=64
+no failures
+4 32 64 128 192 256
+0
+0.2
+0.4
+0.6
+0.8
+1
+1.2
+1.4
+1.6
+1.8
+2
+2.2
+2.4
+2.6
+2.8
+· 104 8 failures
+4 32 64 128 192 256
+0
+0.2
+0.4
+0.6
+0.8
+1
+1.2
+1.4
+· 104 64 failures
+4 32 64 128 192 256
+0
+100
+200
+300
+400
+500
+600
+700
+800
+no batch
+4 32 64 128 192 256
+0
+100
+200
+300
+400
+500
+600
+700
+4 32 64 128 192 256
+0
+50
+100
+150
+200
+250
+300
+350
+Number of clients
+PBFT Linear-PBFT Linear-PBFT+Fast Path SBFT (c=0) SBFT (c=8)
+Fig. 2. Throughput per clientsLatency (milliseconds)
+0 10,000 20,000 30,000
+200
+300
+400
+500
+batch=64
+no failures
+0 10,000 20,000 30,000
+200
+400
+600
+8 failures
+0 5,000 10,000 15,000
+1,000
+2,000
+64 failures
+0 200 400 600 800
+200
+300
+400
+no batch
+0 200 400 600 800
+300
+400
+500
+0 200 400
+500
+600
+700
+Throughput (operations/second)
+PBFT Linear-PBFT Linear-PBFT+Fast Path SBFT (c=0) SBFT (c=8)
+Fig. 3. Latency vs Throughput.
+repositories but have only reported simulation results. Other
+projects like Algorand [39] have only simulations and no
+open source code. Moreover the focus on these systems is
+on permisionless models using proof-of-work or proof-of-
+stake not the standard permissioned model. Comparing to
+these systems is left as future work (once there is a freely
+accessible version that is robust enough to be readily deployed
+and support EVM smart contracts).
+Our goal is to report and compare in a real world deploy-
+ment on a Wide Area Network that actually persists transac-
+tions to disk and executes real world EVM smart contracts.
+We therefore spent several months signiﬁcantly improving,
+
+--- PAGE 11 ---
+11
+ﬁxing and hardening an existing PBFT code-base in order to
+make it reliably work in our experimental setting. We call this
+implementation scale optimized PBFT .
+We note that Souse et al [68] use an implementation of
+PBFT called BFT-SMaRt [20]. However, it seems that the
+W AN deployment reported in [68] scales to only f ≤ 3 in
+a LAN and f = 1 for W AN. Our baseline scale optimized
+PBFT is tuned to provide better scalability. Moreover it was
+not clear to us how to run EVM contracts on top of this system.
+In our experiments we start with a scale optimized PBFT
+implementation and then show how each of the 4 ingredients
+improves performance as follows: (1) linear PBFT reduces
+communication and improves throughput at the cost of latency;
+(2) adding a fast path reduces latency; (3) using cryptography
+to allow a single message acknowledgement improves per-
+formance when there are many clients; (4) adding redundant
+servers to improve resilience improves the latency-throughput
+trade-off.
+For micro-benchmarks we run a simple Key-Value ser-
+vice. For our main evaluation we use real transactions from
+Ethereum that are executed and committed to disk (via
+RocksDB). We take half a Million Ethereum transactions,
+spanning a time of 2 months, which included∼ 5000 contracts
+created.
+We compare the following replication protocols:
+(1) PBFT (the baseline): A scale optimized implementation
+of PBFT.
+(2) Linear-PBFT (adding ingredient 1): A modiﬁcation of
+PBFT that avoids quadratic communication by using a collec-
+tor.
+(3) Fast Path + Linear PBFT (adding ingredients 1 and 2):
+Linear-PBFT with an added fast-path.
+(4) SBFT with c=0 (adding ingredients 1,2, and 3): Linear-
+PBFT with an added fast-path and an execution collector that
+allows clients to receive signed message acknowledgements.
+(5) SBFT with c=8 (adding all 4 ingredients): Adding redun-
+dant servers to better adapt to network variance and failures.
+Continent scale W AN. In this scenario we spread the
+replicas and clients across 5 different regions in the same
+continent. In each region we use two availability zones and
+in each zone we deploy one machine with 32 VCPUs, Intel
+Broadwell E5-2686v4 processors with clock speed 2.3 GHz
+and connected via a 10 Gigabit network.
+We deployed more than one replica or client into a sin-
+gle machine. This was done due to economic and logistic
+constraints. One may wonder if the fact that we packed
+multiple replicas into a single machine signiﬁcantly modiﬁed
+our performance measurements. To assess this we repeated our
+experiments once with 10 machines (1 per availability zone,
+each machine had about 20 replica VMs) and then with 20
+machines (2 per availability zone, each machine had about 10
+replica VMs). The results of these experiments were almost the
+same. We conclude that the effects of communication delays
+between having 10 or 20 machines have marginal impact in
+a world scale W AN. Not surprisingly, our experiments show
+that in a world scale W AN, performance depends at least on
+the median latency and that having 10−20% of replicas with a
+much lower latency does not modify or increase performance.
+World scale W AN. In this scenario we spread the replicas
+and clients across 15 regions spread over all continents. In
+each region we deploy one machine (we also tested running
+two machines per region with similar results).
+Measurements Key-Value store benchmark: each client se-
+quentially sends 1000 requests. In the no batching mode each
+request is a single put operation for writing a random value to a
+random key in the Key-Value store. In the batching mode each
+request contains 64 operations. This models a reasonable smart
+contract workload. Replicas execute operations by changing
+their state and does a re-sync using the state transfer protocol
+(see Section VIII and [28]) if it falls behind. We ran these
+experiments on a continent scale W AN.
+Smart-Contract benchmark: we used 500,000 real transac-
+tions from Ethereum to test the SBFT ledger protocol. Replicas
+execute each contract by running the EVM byte-code and
+persisting the state on-disk. Each client sends operations by
+batching transactions into chunks of 12KB (on average about
+50 transactions per batch). We ran these experiments on both
+a continent scale W AN and a world scale W AN.
+Key-Value benchmark evaluation. The results of the Key-
+Value benchmark are shown in Figures 2 and 3. We ﬁrst
+observe that compared to our scale optimized PBFT, the linear-
+PBFT protocol provides better throughput (2k per sec vs 1.5k
+per sec) when the system is under load (128 to 256 clients)
+with batching. Smaller effects appear also in the no batching
+case. We conclude that reducing the communication from
+quadratic to linear by using a collector signiﬁcantly improves
+throughput at some cost in latency.
+To improve latency we then add a fast path to linear-PBFT.
+This signiﬁcantly increases throughput to 2.8k per sec. As
+expected, in the no failure executions the fast path seems to
+improve both latency and throughput, but does not help when
+there are failures.
+We then see that adding an execution collector that allows
+clients to receive just one message (instead of f + 1) for
+acknowledgment signiﬁcantly improves performance (latency
+throughput trade-off) in all scenarios (no failures and with
+failures). This shows that the communication from servers to
+clients is a signiﬁcant performance bottleneck.
+Finally, by parameterizing SBFT for c = 8 we show the
+effect of adding redundant servers. Not surprisingly, this makes
+a big impact when there are f = 8 failures. In addition, we see
+signiﬁcant advantages in the f = 0 and f = 64 cases. This is
+probably because adding redundancy reduces the variance and
+effects of slightly slow servers or staggering network links.
+Smart-Contract benchmark evaluation. In the continent
+scale W AN experiment SBFT measured 378 transaction per
+second with a median latency of 254 milliseconds. In the same
+setting our scale optimized PBFT obtained just 204 transac-
+tion per second with a median latency of 538 milliseconds.
+We conclude that in the content-scale SBFT simultaneously
+provides 2x better latency and almost 2x better throughput.
+In the world scale W AN experiments SBFT obtained 172
+transaction per second with a median latency of 622 millisec-
+onds. Scale optimized PBFT obtained 98 transaction per sec-
+ond with a median latency of 934 milliseconds. We conclude
+
+--- PAGE 12 ---
+12
+that in a world-scale SBFT simultaneously provides almost 2x
+better throughput and about 1.5x better latency.
+We note that just executing these smart contracts on a single
+computer (and committing the results to disk) without running
+any replication provides a 840 transaction per second base line.
+We conclude that adding a continent scale W AN 200 node
+replication, SBFT obtains a 2x slowdown relative to the base
+line. Adding a world-scale W AN 200 node replication, SBFT
+obtains a 5x slowdown relative to the base line.
+X. R ELATED WORK
+Byzantine fault tolerance was ﬁrst suggested by Lamport
+et al. [48]. Rampart [65] was one of pioneering systems to
+consider Byzantine fault tolerance for state machine replica-
+tion [47].
+SBFT is based on many advances aimed at making Byzan-
+tine fault tolerance practical. PBFT [27], [28] and the extended
+framework of BASE [66] provided many of the foundations,
+frameworks, optimizations and techniques on which SBFT is
+built. SBFT uses the conceptual approach of separating com-
+mitment from execution that is based on Yin et al. [76]. Our
+linear message complexity fast path is based on the techniques
+of Zyzzyva [45], [46] and its theoretical foundations [54].
+Our use of a hybrid model that provides better properties
+for c ≤ f failures is inspired by the parameterized model
+of Martin and Alvisi [54]. Up-Right [30] studied a different
+model that assumes many omission failures and just a few
+Byzantine failures. Visigoth [64] further advocates exploiting
+data center performance predictability and relative synchrony.
+XFT [52] focuses on a model that limits the adversaries ability
+to control both asynchrony and malicious replicas. In contrast,
+SBFT provides safety even in the fully asynchronous model
+when less than a third of replicas are malicious. Prime [12]
+adds additional pre-rounds so that clients can be guaranteed a
+high degree of fairness. Our protocol provides the same type
+of weak fairness guarantees as in PBFT; we leave for further
+work the question of adding stronger fairness properties to
+SBFT.
+A2M [29], TrInc [49] and Veronese et al. [73] use secure
+hardware to obtain non-equivocation. They present a Byzan-
+tine fault tolerant replication that is safe in asynchronous
+models even when n = 2 f + 1. CheapBFT [42] relies on
+an FPGA-based trusted subsystem to improve fault tolerance.
+SBFT is a software solution and as such is bounded by the
+n≥ 3 f + 1 lower bound [36].
+Our use of public key cryptography (as opposed to MAC
+vectors) and threshold signatures follows the approach of [25]
+(also see [13], [14], [31]). We heavily rely on threshold BLS
+signatures [22], [23]. Several recent systems mention they plan
+to use BLS threshold signatures [44], [56], [70], [71]. To the
+best of our knowledge we are the ﬁrst to deploy threshold BLS
+in a real system.
+An alternative to the primary-backup based state machine
+replication approach is to use Byzantine quorum systems [53]
+and make each client a proposer. This approach was taken by
+QU [8] and HQ [32] and provides very good scalability when
+write contention is low. SBFT follows the primary-backup
+paradigm that funnels multiple requests though a designated
+primary leader. This allows SBFT to beneﬁt from batching
+which is crucial for throughput performance in large-scale
+multi-client scenarios.
+Recent work is aimed at providing even better liveness
+guarantees. Honeybadger [60] is the ﬁrst practical Byzantine
+fault tolerance replication system that leverages randomization
+to circumvent the FLP [37] impossibility. Honeybadger and
+more recently BEAT [34] provide liveness even when the
+network is fully asynchronous and controlled by an adver-
+sarial scheduler. SPBT follows the DLS/Paxos/viewstamp-
+replication paradigm [35], [47], [50] extended to Byzantine
+faults that guarantees liveness only when the network is
+synchronous.
+Algorand [39] provides a permissionless system that can
+support thousands of users and implements a BFT engine
+that chooses a random dynamic committee of roughly 2000
+users. However, Algorand’s scalability was only evaluated in
+a simulation of a wide area network. Even under best case
+no-failure simulation conditions, Algorand seems to provide
+almost 100x slower latency (60 seconds) relative to SBFT
+(600 milliseconds). SBFT is experimentally evaluated in a
+real world-scale geo-replicated wide area network deployment,
+executing real smart contracts, persisting their output to disk
+and testing scenarios with failures.
+FastBFT [51] shares many of the properties of SBFT.
+It also focuses on a linear version of PBFT and a single
+message client acknowledgement. FastBFT decentralizes trust
+in a scalable way, but it relies on secure hardware and es-
+sentially centralizes its security assumptions by relying on the
+security of a single hardware vendor: Intel’s SGX. FastBFT’s
+performance is evaluated only on a local area network. SBFT
+assumes commodity hardware that does not rely on any single
+hardware vendor. SBFT is extensively evaluated in a real
+world-scale geo-distributed deployment.
+XI. C ONCLUSION
+We implemented SBFT, a state-of-the-art Byzantine fault
+tolerant replication library and experimentally validated that
+it provides signiﬁcantly better performance for large deploy-
+ments over a wide-area geo-distributed deployment. SBFT
+performs well when there are tens of malicious replicas, its
+performance advantage increases as the number of clients
+increases.
+We have learned that measuring real executions (not sim-
+ulations) on hundreds of replicas over a world scale W AN
+and persisting real world smart contracts on disk is non-
+trivial and requires careful system tuning and engineering. Our
+experiments show that each one of our algorithmic ingredients
+improves the measured performance. For about two hundred
+replicas, the overall performance advantage show that SBFT
+simultaneously provides almost 2x better throughput and about
+1.5x better latency relative to a highly optimized system that
+implements the PBFT protocol.
+We have shown that SBFT can be robustly deployed for
+hundreds of replicas and withstand tens of Byzantine failures.
+We believe that the advantage of linear protocols (like SBFT)
+
+--- PAGE 13 ---
+13
+over quadratic protocols will be even more profound at higher
+scales. Measuring real deployments of thousands of replicas
+that withstand hundreds of Byzantine failures is beyond the
+scope of this work.
+REFERENCES
+[1] BFT - Practical Byzantine Fault Tolerance. http://www.pmg.csail.mit.
+edu/bft/.
+[2] cpp-ethereum. http://www.ethdocs.org/en/latest/ethereum-clients/
+cpp-ethereum/.
+[3] Ethereum Enterprise Alliance. https://entethalliance.org/.
+[4] Hyperledger. https://www.hyperledger.org/.
+[5] Rocksdb. http://rocksdb.org/.
+[6] Crypto++ library 5.6.4. http://www.cryptopp.com/, 2016.
+[7] Istanbul bft (ibft), 2017.
+[8] Michael Abd-El-Malek, Gregory R. Ganger, Garth R. Goodson,
+Michael K. Reiter, and Jay J. Wylie. Fault-scalable Byzantine fault-
+tolerant services. In Proceedings of the Twentieth ACM Symposium on
+Operating Systems Principles , SOSP ’05, pages 59–74, New York, NY ,
+USA, 2005. ACM.
+[9] Ittai Abraham, Guy Gueta, Dahlia Malkhi, Lorenzo Alvisi, Ramakrishna
+Kotla, and Jean-Philippe Martin. Revisiting fast practical byzantine fault
+tolerance. CoRR, abs/1712.01367, 2017.
+[10] Ittai Abraham, Guy Gueta, Dahlia Malkhi, and Jean-Philippe Martin.
+Revisiting fast practical byzantine fault tolerance: Thelma, velma, and
+zelma. CoRR, abs/1801.10022, 2018.
+[11] Ittai Abraham, Dahlia Malkhi, Kartik Nayak, Ling Ren, and Alexander
+Spiegelman. Solidus: An incentive-compatible cryptocurrency based on
+permissionless Byzantine consensus. CoRR, abs/1612.02916, 2016.
+[12] Yair Amir, Brian A. Coan, Jonathan Kirsch, and John Lane. Prime:
+Byzantine replication under attack. IEEE Trans. Dependable Sec.
+Comput., 8(4):564–577, 2011.
+[13] Yair Amir, Claudiu Danilov, Danny Dolev, Jonathan Kirsch, John Lane,
+Cristina Nita-Rotaru, Josh Olsen, and David Zage. Steward: Scaling
+Byzantine fault-tolerant replication to wide area networks. IEEE Trans.
+Dependable Sec. Comput. , 7(1):80–93, 2010.
+[14] Yair Amir, Claudiu Danilov, Jonathan Kirsch, John Lane, Danny Dolev,
+Cristina Nita-Rotaru, Josh Olsen, and David John Zage. Scaling
+Byzantine fault-tolerant replication to wide area networks. In 2006
+International Conference on Dependable Systems and Networks (DSN
+2006), 25-28 June 2006, Philadelphia, Pennsylvania, USA, Proceedings,
+pages 105–114. IEEE Computer Society, 2006.
+[15] Elli Androulaki, Artem Barger, Vita Bortnikov, Christian Cachin, Kon-
+stantinos Christidis, Angelo De Caro, David Enyeart, Christopher Ferris,
+Gennady Laventman, Yacov Manevich, Srinivasan Muralidharan, Chet
+Murthy, Binh Nguyen, Manish Sethi, Gari Singh, Keith Smith, Alessan-
+dro Sorniotti, Chrysoula Stathakopoulou, Marko Vukolic, Sharon Weed
+Cocco, and Jason Yellick. Hyperledger fabric: a distributed operating
+system for permissioned blockchains. In EuroSys, pages 30:1–30:15.
+ACM, 2018.
+[16] D. F. Aranha and C. P. L. Gouv ˆea. RELIC is an Efﬁcient Library for
+Cryptography. https://github.com/relic-toolkit/relic.
+[17] Pierre-Louis Aublin, Sonia Ben Mokhtar, and Vivien Quema. RBFT:
+Redundant Byzantine Fault Tolerance. In The 33rd International
+Conference on Distributed Computing Systems (ICDCS) , 2013.
+[18] Pierre-Louis Aublin, Rachid Guerraoui, Nikola Kne ˇzevi´c, Vivien
+Qu´ema, and Marko Vukoli ´c. The next 700 bft protocols. ACM Trans.
+Comput. Syst., 32(4):12:1–12:45, January 2015.
+[19] Razvan Barbulescu and Sylvain Duquesne. Updating key size estima-
+tions for pairings. Cryptology ePrint Archive, Report 2017/334, 2017.
+http://eprint.iacr.org/2017/334.
+[20] Alysson Bessani, Jo ˜ao Sousa, and Eduardo E. P. Alchieri. State
+machine replication for the masses with bft-smart. In Proceedings of the
+2014 44th Annual IEEE/IFIP International Conference on Dependable
+Systems and Networks , DSN ’14, pages 355–362, Washington, DC,
+USA, 2014. IEEE Computer Society.
+[21] Jean-Luc Beuchat, Jorge E. Gonz ´alez-D´ıaz, Shigeo Mitsunari, Eiji
+Okamoto, Francisco Rodr ´ıguez-Henr´ıquez, and Tadanori Teruya. High-
+Speed Software Implementation of the Optimal Ate Pairing over Barreto–
+Naehrig Curves , pages 21–39. Springer Berlin Heidelberg, Berlin,
+Heidelberg, 2010.
+[22] Alexandra Boldyreva. Threshold signatures, multisignatures and blind
+signatures based on the gap-Difﬁe-Hellman-group signature scheme.
+In Yvo G. Desmedt, editor, Public Key Cryptography — PKC 2003:
+6th International Workshop on Practice and Theory in Public Key
+Cryptography Miami, FL, USA, January 6–8, 2003 Proceedings , pages
+31–46, Berlin, Heidelberg, 2002. Springer Berlin Heidelberg.
+[23] Dan Boneh, Ben Lynn, and Hovav Shacham. Short signatures from the
+weil pairing. J. Cryptol., 17(4):297–319, September 2004.
+[24] Vitalik Buterin. Minimal slashing conditions. https://medium.com/
+@VitalikButerin/minimal-slashing-conditions-20f0b500fc6c, 2017.
+[25] Christian Cachin, Klaus Kursawe, and Victor Shoup. Random oracles
+in Constantinople: Practical asynchronous Byzantine agreement using
+cryptography (extended abstract). In Proceedings of the Nineteenth
+Annual ACM Symposium on Principles of Distributed Computing, PODC
+’00, pages 123–132, New York, NY , USA, 2000. ACM.
+[26] Christian Cachin and Marko Vukolic. Blockchain consensus protocols
+in the wild. CoRR, abs/1707.01873, 2017.
+[27] Miguel Castro and Barbara Liskov. Practical Byzantine fault tolerance.
+In Proceedings of the Third Symposium on Operating Systems Design
+and Implementation , OSDI ’99, pages 173–186, Berkeley, CA, USA,
+1999. USENIX Association.
+[28] Miguel Castro and Barbara Liskov. Practical Byzantine fault tolerance
+and proactive recovery. ACM Trans. Comput. Syst. , 20(4):398–461,
+November 2002.
+[29] Byung-Gon Chun, Petros Maniatis, Scott Shenker, and John Kubiatow-
+icz. Attested append-only memory: Making adversaries stick to their
+word. In Proceedings of Twenty-ﬁrst ACM SIGOPS Symposium on
+Operating Systems Principles , SOSP ’07, pages 189–204, New York,
+NY , USA, 2007. ACM.
+[30] Allen Clement, Manos Kapritsos, Sangmin Lee, Yang Wang, Lorenzo
+Alvisi, Mike Dahlin, and Taylor Riche. Upright cluster services.
+In Proceedings of the ACM SIGOPS 22Nd Symposium on Operating
+Systems Principles , SOSP ’09, pages 277–290, New York, NY , USA,
+2009. ACM.
+[31] Allen Clement, Edmund Wong, Lorenzo Alvisi, Mike Dahlin, and
+Mirco Marchetti. Making Byzantine fault tolerant systems tolerate
+Byzantine faults. In Proceedings of the 6th USENIX Symposium on
+Networked Systems Design and Implementation , NSDI’09, pages 153–
+168, Berkeley, CA, USA, 2009. USENIX Association.
+[32] James Cowling, Daniel Myers, Barbara Liskov, Rodrigo Rodrigues,
+and Liuba Shrira. HQ replication: A hybrid quorum protocol for
+Byzantine fault tolerance. In Proceedings of the 7th Symposium on
+Operating Systems Design and Implementation , OSDI ’06, pages 177–
+190, Berkeley, CA, USA, 2006. USENIX Association.
+[33] Chris Dixon. Why decentralization matters. https://medium.com/
+@cdixon/why-decentralization-matters-5e3f79f7638e, 2018.
+[34] Sisi Duan, Michael K. Reiter, and Haibin Zhang. Beat: Asynchronous bft
+made practical. In Proceedings of the 2018 ACM SIGSAC Conference on
+Computer and Communications Security , CCS ’18, pages 2028–2041,
+New York, NY , USA, 2018. ACM.
+[35] Cynthia Dwork, Nancy Lynch, and Larry Stockmeyer. Consensus in the
+presence of partial synchrony. J. ACM, 35(2):288–323, April 1988.
+[36] Michael J. Fischer, Nancy A. Lynch, and Michael Merritt. Easy im-
+possibility proofs for distributed consensus problems. Distrib. Comput.,
+1(1):26–39, January 1986.
+[37] Michael J. Fischer, Nancy A. Lynch, and Michael S. Paterson. Im-
+possibility of distributed consensus with one faulty process. J. ACM,
+32(2):374–382, April 1985.
+[38] Adem Efe Gencer, Soumya Basu, Ittay Eyal, Robbert van Renesse, and
+Emin G ¨un Sirer. Decentralization in bitcoin and ethereum networks.
+Financial Crypto, 2018.
+[39] Yossi Gilad, Rotem Hemo, Silvio Micali, Georgios Vlachos, and Nick-
+olai Zeldovich. Algorand: Scaling byzantine agreements for cryptocur-
+rencies. In Proceedings of the 26th Symposium on Operating Systems
+Principles, SOSP ’17, pages 51–68, New York, NY , USA, 2017. ACM.
+[40] Rachid Guerraoui and Marko Vukolic. Reﬁned quorum systems.
+Distributed Computing, 23(1):1–42, 2010.
+[41] Antoine Joux. A one round protocol for tripartite Difﬁe-Hellman. In
+Proceedings of the 4th International Symposium on Algorithmic Number
+Theory, ANTS-IV , pages 385–394, London, UK, UK, 2000. Springer-
+Verlag.
+[42] R ¨udiger Kapitza, Johannes Behl, Christian Cachin, Tobias Distler, Simon
+Kuhnle, Seyed Vahid Mohammadi, Wolfgang Schr ¨oder-Preikschat, and
+Klaus Stengel. Cheapbft: Resource-efﬁcient byzantine fault tolerance.
+In Proceedings of the 7th ACM European Conference on Computer
+Systems, EuroSys ’12, pages 295–308, New York, NY , USA, 2012.
+ACM.
+
+--- PAGE 14 ---
+14
+[43] Eleftherios Kokoris-Kogias, Philipp Jovanovic, Nicolas Gailly, Ismail
+Khofﬁ, Linus Gasser, and Bryan Ford. Enhancing bitcoin security and
+performance with strong consistency via collective signing. CoRR,
+abs/1602.06997, 2016.
+[44] Eleftherios Kokoris-Kogias, Philipp Jovanovic, Linus Gasser, Nicolas
+Gailly, Ewa Syta, and Bryan Ford. Omniledger: A secure, scale-out,
+decentralized ledger via sharding. In 2018 IEEE Symposium on Security
+and Privacy, SP 2018, Proceedings, 21-23 May 2018, San Francisco,
+California, USA, pages 583–598. IEEE, 2018.
+[45] Ramakrishna Kotla, Lorenzo Alvisi, Mike Dahlin, Allen Clement, and
+Edmund Wong. Zyzzyva: Speculative Byzantine fault tolerance. In
+Proceedings of Twenty-ﬁrst ACM SIGOPS Symposium on Operating
+Systems Principles, SOSP ’07, pages 45–58, New York, NY , USA, 2007.
+ACM.
+[46] Ramakrishna Kotla, Lorenzo Alvisi, Mike Dahlin, Allen Clement, and
+Edmund Wong. Zyzzyva: Speculative Byzantine fault tolerance. ACM
+Trans. Comput. Syst. , 27(4):7:1–7:39, January 2010.
+[47] Leslie Lamport. The part-time parliament. ACM Trans. Comput. Syst. ,
+16(2):133–169, May 1998.
+[48] Leslie Lamport, Robert Shostak, and Marshall Pease. The Byzantine
+generals problem. ACM Trans. Program. Lang. Syst. , 4(3):382–401,
+July 1982.
+[49] Dave Levin, John R. Douceur, Jacob R. Lorch, and Thomas Moscibroda.
+TrInc: Small trusted hardware for large distributed systems. In Pro-
+ceedings of the 6th USENIX Symposium on Networked Systems Design
+and Implementation, NSDI’09, pages 1–14, Berkeley, CA, USA, 2009.
+USENIX Association.
+[50] Barbara Liskov and James Cowling. Viewstamped replication revisited.
+Technical Report MIT-CSAIL-TR-2012-021, MIT, July 2012.
+[51] Jian Liu, Wenting Li, Ghassan O. Karame, and N. Asokan. Scal-
+able byzantine consensus via hardware-assisted secret sharing. CoRR,
+abs/1612.04997, 2016.
+[52] Shengyun Liu, Paolo Viotti, Christian Cachin, Vivien Qu ´ema, and Marko
+Vukolic. XFT: Practical fault tolerance beyond crashes. In Proceedings
+of the 12th USENIX Conference on Operating Systems Design and
+Implementation, OSDI’16, pages 485–500, Berkeley, CA, USA, 2016.
+USENIX Association.
+[53] Dahlia Malkhi and Michael Reiter. Byzantine quorum systems. In
+Proceedings of the Twenty-ninth Annual ACM Symposium on Theory
+of Computing, STOC ’97, pages 569–578, New York, NY , USA, 1997.
+ACM.
+[54] Jean-Philippe Martin and Lorenzo Alvisi. Fast Byzantine consensus.
+IEEE Trans. Dependable Secur. Comput. , 3(3):202–215, July 2006.
+[55] Jon Matonis. The bitcoin mining arms race: Ghash.io and the 51% issue.
+http://www.coindesk.com/bitcoin-mining-detente-ghash-io-51-issue/,
+2014.
+[56] Marcela S. Melara, Aaron Blankstein, Joseph Bonneau, Edward W.
+Felten, and Michael J. Freedman. CONIKS: Bringing key transparency
+to end users. In 24th USENIX Security Symposium (USENIX Security
+15), pages 383–398, Washington, D.C., 2015. USENIX Association.
+[57] Alfred Menezes, Palash Sarkar, and Shashank Singh. Challenges with
+Assessing the Impact of NFS Advances on the Security of Pairing-Based
+Cryptography, pages 83–108. Springer International Publishing, Cham,
+2017.
+[58] Ralph C. Merkle. A digital signature based on a conventional encryption
+function. In A Conference on the Theory and Applications of Crypto-
+graphic Techniques on Advances in Cryptology , CRYPTO ’87, pages
+369–378, London, UK, UK, 1988. Springer-Verlag.
+[59] Silvio Micali. ALGORAND: The efﬁcient and democratic ledger. CoRR,
+abs/1607.01341, 2016.
+[60] Andrew Miller, Yu Xia, Kyle Croman, Elaine Shi, and Dawn Song. The
+honey badger of bft protocols. In Proceedings of the 2016 ACM SIGSAC
+Conference on Computer and Communications Security, CCS ’16, pages
+31–42, New York, NY , USA, 2016. ACM.
+[61] Satoshi Nakamoto. Bitcoin: A peer-to-peer electronic cash system. http:
+//www.bitcoin.org/bitcoin.pdf/, 2009.
+[62] Brian M. Oki and Barbara H. Liskov. Viewstamped replication: A new
+primary copy method to support highly-available distributed systems. In
+Proceedings of the Seventh Annual ACM Symposium on Principles of
+Distributed Computing, PODC ’88, pages 8–17, New York, NY , USA,
+1988. ACM.
+[63] Rafael Pass and Elaine Shi. Hybrid consensus: Efﬁcient consensus in
+the permissionless model. IACR Cryptology ePrint Archive , 2016:917,
+2016.
+[64] Daniel Porto, Jo ˜ao Leit ˜ao, Cheng Li, Allen Clement, Aniket Kate,
+Flavio Junqueira, and Rodrigo Rodrigues. Visigoth fault tolerance. In
+Proceedings of the Tenth European Conference on Computer Systems ,
+EuroSys ’15, pages 8:1–8:14, New York, NY , USA, 2015. ACM.
+[65] Michael K. Reiter. The rampart toolkit for building high-integrity
+services. In Selected Papers from the International Workshop on Theory
+and Practice in Distributed Systems , pages 99–110, London, UK, UK,
+1995. Springer-Verlag.
+[66] Rodrigo Rodrigues, Miguel Castro, and Barbara Liskov. BASE: Using
+abstraction to improve fault tolerance. In Proceedings of the Eighteenth
+ACM Symposium on Operating Systems Principles , SOSP ’01, pages
+15–28, New York, NY , USA, 2001. ACM.
+[67] Victor Shoup. Practical threshold signatures. In Proceedings of the 19th
+International Conference on Theory and Application of Cryptographic
+Techniques, EUROCRYPT’00, pages 207–220, Berlin, Heidelberg, 2000.
+Springer-Verlag.
+[68] J. Sousa, A. Bessani, and M. Vukolic. A byzantine fault-tolerant ordering
+service for the hyperledger fabric blockchain platform. In 2018 48th
+Annual IEEE/IFIP International Conference on Dependable Systems and
+Networks (DSN), pages 51–58, June 2018.
+[69] Jo ˜ao Sousa, Alysson Bessani, and Marko Vukolic. A Byzantine fault-
+tolerant ordering service for the hyperledger fabric blockchain platform.
+CoRR, abs/1709.06921, 2017.
+[70] E. Syta, P. Jovanovic, E. K. Kogias, N. Gailly, L. Gasser, I. Khofﬁ, M. J.
+Fischer, and B. Ford. Scalable bias-resistant distributed randomness. In
+2017 IEEE Symposium on Security and Privacy , pages 444–460, May
+2017.
+[71] E. Syta, I. Tamas, D. Visher, D. I. Wolinsky, P. Jovanovic, L. Gasser,
+N. Gailly, I. Khofﬁ, and B. Ford. Keeping authorities ”honest or bust”
+with decentralized witness cosigning. In 2016 IEEE Symposium on
+Security and Privacy (SP) , pages 526–545, May 2016.
+[72] Nick Szabo. Trusted third parties are security holes. http://
+nakamotoinstitute.org/trusted-third-parties/, 2001.
+[73] Giuliana Santos Veronese, Miguel Correia, Alysson Neves Bessani,
+Lau Cheuk Lung, and Paulo Verissimo. Efﬁcient Byzantine fault-
+tolerance. IEEE Trans. Comput. , 62(1):16–30, January 2013.
+[74] Marko Vukolic. The quest for scalable blockchain fabric: Proof-of-work
+vs. bft replication. In Jan Camenisch and Dogan Kesdogan, editors,
+iNetSeC, volume 9591 of Lecture Notes in Computer Science , pages
+112–125. Springer, 2015.
+[75] Gavin Wood. Ethereum: A secure decentralized generalized transaction
+ledger. http://bitcoinafﬁliatelist.com/wp-content/uploads/ethereum.pdf,
+2014. Accessed: 2016-08-22.
+[76] Jian Yin, Jean-Philippe Martin, Arun Venkataramani, Lorenzo Alvisi,
+and Mike Dahlin. Separating agreement from execution for Byzantine
+fault tolerant services. In Proceedings of the Nineteenth ACM Sympo-
+sium on Operating Systems Principles , SOSP ’03, pages 253–267, New
+York, NY , USA, 2003. ACM.

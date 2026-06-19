@@ -1,0 +1,1640 @@
+
+--- PAGE 1 ---
+Minimmit: Fast Finality with Even Faster Blocks
+BRENDAN KOBAYASHI CHOU1, ANDREW LEWIS-PYE 1,2, and PATRICK O’GRADY1,
+1 Commonware, USA and 2 London School of Economics, UK
+Achieving low-latency consensus in geographically distributed systems remains a key challenge for blockchain
+and distributed database applications. To this end, there has been significant recent interest in State-Machine-
+Replication (SMR) protocols that achieve2-round finalityunder the assumption that5 𝑓+ 1 ≤𝑛 , where 𝑛 is
+the number of processors and 𝑓 bounds the number of processors that may exhibit Byzantine faults. In these
+protocols, instructions are organised intoviews, each led by a different designated leader, and 2-round finality
+means that a leader’s proposal can be finalised after just a single round of voting, meaning two rounds overall
+(one round for the proposal and one for voting).
+We introduce Minimmit, a Byzantine-fault-tolerant SMR protocol with lower latency than previous 2-
+round finality approaches. Our key insight is that view progression and transaction finality can operate on
+different quorum thresholds without compromising consistency or liveness. Experiments simulating a globally
+distributed network of 50 processors, uniformly assigned across ten virtual regions, show that the approach
+leads to a 23.1% reduction in view latency and a 10.7% reduction in transaction latency compared to the
+state-of-the-art.
+1 Introduction
+Protocols for State-Machine-Replication (‘blockchain’ protocols) are commonly designed to tolerate
+periods of unreliable message delivery. Formally, this means that protocols are required to satisfy
+consistency(all correct processors agree on the sequence of finalised transactions) andliveness
+(transactions are eventually finalised by correct processors) in thepartially synchronoussetting. In
+this setting, it is known [13] that satisfying both liveness and consistency is possible precisely if
+𝑛≥ 3𝑓+ 1, where 𝑛 is the number of processors and 𝑓 bounds the number of processors that may
+exhibit Byzantine faults.
+A key metric when considering the efficiency of State-Machine-Replication (SMR) protocols is
+transaction latency, i.e., the time it takes for transactions to befinalised. Most protocols organise
+operations intoviews, led by designatedleaders, making the number of communication rounds per
+view a crucial consideration in analysing latency. Under the standard assumption that𝑛≥ 3𝑓+ 1, it
+is known [3] that ‘3-round’ finality is optimal: here 3-round finality means that a leader’s proposal
+can be finalised after two further rounds of voting (this gives three communication rounds overall:
+round 1 for the proposal and rounds 2 and 3 for voting). Accordingly, standard protocols such as
+PBFT [10] and Tendermint [7, 8] have 3-round finality. On the other hand, it has been known for
+some time [27] that 2-round finality (one round for the proposal and one further round of voting)
+is possible under the assumption that 𝑛≥ 5𝑓+ 1. Recent research has seen a significant renewed
+interest in approaches to 2-round finality: In the last year, Matter Labs released ChonkyBFT [14],
+Offchain Labs released Kudzu [ 31], Anza Labs and Solana released Alpenglow [ 18], and Supra
+Research and Espresso Systems released Hydrangea [ 32]. In part, the motivation for this focus
+on the 𝑛≥ 5𝑓+ 1assumption is driven by the scale of modern blockchain systems. When SMR
+protocols were first deployed in the 1980s, 𝑛 was small. Today, a typical blockchain system may
+consist of thousands of processors, meaning that Byzantine attacks on a significant fraction of
+participants would be extremely costly, and are deemed unlikely. This makes it appropriate to shift
+the resilience requirement from 𝑛≥ 3𝑓+ 1to 𝑛≥ 5𝑓+ 1, since doing so allows for a significant
+reduction in latency.
+This paper describes Minimmit, which differs from previous protocols with 2-round finality by
+foregoing theslow paththat is used by most previous protocols when 2-round finality fails, and by
+allowing processors to proceed to the next view after receiving only2 𝑓+ 1votes. The idea behind
+arXiv:2508.10862v7  [cs.DC]  27 Jan 2026
+
+--- PAGE 2 ---
+Chou et al.2
+this tradeoff is that, in a globally distributed network of processors with a range of connection
+speeds, receiving a smaller quorum of votes will often take significantly less time than waiting for
+a larger quorum of votes. Requiring the smallest possible quorum for view progression therefore
+reduces view latency (time between views). This also reduces transaction latency, i.e., the time it
+takes to finalise transactions, since transactions wait for less time before being included in a block.
+1.1 Evidence for reduced latency
+To evaluate the performance of Minimmit, we implemented a network simulator1 that runs custom
+workloads over configurable network topologies. This simulator provides each participant the
+opportunity to drive the simulation (i.e. propose a block) while collecting telemetry by region and
+role. To model realistic network conditions, we apply latency and jitter to message broadcasts using
+empirical measurements of AWS inter-region performance over the public internet from the past
+year.
+We distinguishview latency(time between views),block latency(time to finalise blocks), and
+transaction latency(time to finalise transactions). To analyse how different protocols compare across
+these metrics, we tested Simplex [11], Kudzu [31], and Minimmit on a globally distributed network
+of 50 processors uniformly assigned across ten “virtual” regions: us-west-1, us-east-1, eu-west-1,
+ap-northeast-1, eu-north-1, ap-south-1, sa-east-1, eu-central-1, ap-northeast-2, and ap-southeast-2.
+While we implemented Simplex specifically, finalisation times will be similar for other standard
+3-round finality protocols that employ ‘all-to-all’ message sending, such as PBFT and Tendermint,
+since they use the same structure of leader proposal, followed by two rounds of voting. Likewise,
+Kudzu is representative of other 2-round finality protocols that employ ‘all-to-all’ message sending
+and a fast path mechanism, such as Alpenglow2 and Hydrangea. Under these conditions, Simplex
+achieves view latency 194ms (with standard deviation 𝜎=30ms) and block latency 299ms (𝜎=26ms).
+Kudzu achieves view latency 190ms and block latency 220ms (𝜎=29ms). Minimmit achieves view
+latency 146ms (𝜎=21ms) and block latency 220ms (𝜎=28ms). Minimmit reduces view latency by
+25% compared to Simplex and 23% compared to Kudzu. Minimmit reduces block latency by 26%
+compared to Simplex, equivalent to Kudzu.
+For fixed sized blocks, decreased view latency clearly translates into increased throughput.
+However, it also produces reduced transaction latency for users. Consider a transaction submitted
+immediately after block construction at ‘height’3 ℎ. This transaction must await inclusion in a
+block of height ℎ+ 1and for that block’s subsequent finalisation. In recently proposed protocols
+operating under the 𝑛≥ 5𝑓+ 1assumption – such as Kudzu, Alpenglow, and Hydrangea – view
+progression requires 𝑛− 2𝑓 votes. Consequently, transaction finalisation requires waiting for both
+the completion of the current view (190ms) and the finalisation of the subsequent block containing
+the transaction (220ms), totalling 410ms in this model. In contrast, Minimmit’s view progression
+threshold of2 𝑓+ 1enables the same transaction to achieve finalisation in 146ms + 220ms = 366ms,
+representing a 10.7% reduction in end-to-end latency.
+1.2 Our contributions
+Our contributions are as follows:
+(1) We describe a novel view-change mechanism to reduce view latency;
+1https://github.com/commonwarexyz/monorepo/tree/19f19d32760daf1d497295726ec92a1e6b84959f/examples/estimator
+2As discussed in Section 7, direct comparisons with Alpenglow are complicated by the fact that Alpenglow incorporates a
+scheme for disseminating erasure-coded block data during fixed 400ms slots, and so is non-responsive. The fixed 400ms
+window causes significantly increased view latency for Alpenglow for the parameters considered in our experiments.
+3Theheightof a block is its number of ancestors. Ancestors are formally defined in Section 2.
+
+--- PAGE 3 ---
+Chou et al.3
+(2) We give formal proofs of safety, liveness and optimistic responsiveness,4 under the 𝑛≥ 5𝑓+ 1
+assumption;
+(3) We carry out experimental evaluations, showing roughly a 23% reduction in view latency
+and an 11% reduction in transaction latency compared to the state-of-the-art.
+(4) In Section 6, we describe (along with other optimisations) a mechanism that uses aggregate
+signatures to bound the communication required to achieve liveness after periods of asyn-
+chrony. This approach may also be applied to improve efficiency for other protocols in the
+‘Simplex mould’.
+(5) In Appendices B–E we show how to implement a version of Minimmit that uses erasure
+coding with adata expansionrate of 2.5. If blocks are of size 𝐵, this means that the total
+amount of block data sent by each leader (to all processors combined) is roughly2.5𝐵.
+1.3 Dropping the slow path
+Many 2-round finality protocols implement a ‘slow path’ to be used when 2-round finality fails:
+generally, this slow path just requires an extra round of voting. Since Minimmit achieves improved
+latency by foregoing the ‘slow path’, it is interesting to analyse any resulting sacrifice in resilience,
+when compared to other leading protocols.
+Alpenglow. Alpenglow is formally analysed under the same assumption that 𝑛≥ 5𝑓+ 1. While
+there is some consideration of circumstances in which the protocol can tolerate a further 𝑓 crash
+failures, the required assumptions for this case (essentially that Byzantine leaders cannot carry out
+a form of proposal equivocation) do not hold under partial synchrony.
+Kudzu. Kudzu makes the more general assumption that 𝑛≥ 3𝑓+ 2𝑝+ 1for a tunable parameter 𝑝.
+Of course, in the case that 𝑝=𝑓 , this corresponds to the same assumption that 𝑛≥ 5𝑓+ 1. The
+protocol guarantees liveness and consistency so long as at most 𝑓 processors display Byzantine
+faults. It also guarantees that, during synchrony, a correct leader can finalise a block after a single
+round of voting, so long as the number of faulty processors is ≤𝑝 . For a correct leader during
+synchrony, the ‘slow path’ (requiring two rounds of voting) is therefore only relevant if the number
+of faulty processors is strictly between 𝑝 and 𝑓 . In this case, the quorum required for finality after
+a single round of voting is also larger than for Minimmit (𝑛−𝑝 rather than 𝑛−𝑓 ). Kudzu therefore
+gives no strict ‘like-for-like’ improvement in resilience compared to Minimmit, although the tunable
+parameter that Kudzu provides is beneficial.
+Hydrangea. Compared to Minimmit, Alpenglow, and Kudzu, Hydrangea has improved resilience
+to crash failures. As before, consider the case of a correct leader during synchrony. For a parameter
+𝑘≥ 0, and for a system of 𝑛= 3𝑓+ 2𝑐+𝑘+ 1processors, Hydrangea achieves finality after 1 round
+of voting, so long as the number of faulty processors (Byzantine or crash) is at most 𝑝=⌊ 𝑐+𝑘
+2 ⌋. In
+the case that 𝑐= 0, this aligns precisely with the bounds provided by Kudzu. However, in more
+adversarial settings with up to 𝑓 Byzantine faults and 𝑐 crash faults, Hydrangea also obtains finality
+after two rounds of voting. Of course, the benefit of Minimmit is that it achieves reduced transaction
+latency in the case that𝑛≥5𝑓+1.
+1.4 Paper structure
+The remainder of the paper is structured as follows:
+•Section 2 describes the formal setup.
+•Section 3 describes the intuition behind Minimmit.
+•Section 4 formally specifies the Minimmit protocol.
+4Optimistic responsiveness will be defined in Section 5.3.
+
+--- PAGE 4 ---
+Chou et al.4
+•Section 5 gives formal proofs of consistency and liveness.
+• Section 6 describes a number of optimisations, such as the use of threshold signatures, erasure
+coding, and the use of aggregate signatures to speed up message dissemination and fast
+recovery after periods of asynchrony.
+•Section 7 describes our experiments and results.
+•Section 8 describes related work.
+•Section 9 contains some final comments and conclusions.
+• Appendix A describes how to reproduce our experiments using thecommonware-estimator.5
+•Appendix B describes the setup required for erasure coding.
+•Appendix C gives the intuition behind our efficient integration of erasure codes.
+•Appendix D gives a formal specification of E-Minimmit (Minimmit with erasure codes).
+•Appendix E establishes consistency and liveness for E-Minimmit.
+2 The Setup
+We consider a set Π={𝑝 1, . . . , 𝑝𝑛 } of 𝑛 processors. For 𝑓 such that5 𝑓+ 1 ≤𝑛 , at most 𝑓 processors
+may become corrupted by the adversary during the course of the execution, and may then display
+Byzantine(arbitrary) behaviour. Processors that never become corrupted by the adversary are
+referred to ascorrect.
+Cryptographic assumptions. Our cryptographic assumptions are standard for papers on this
+topic. Processors communicate by point-to-point authenticated channels. We use a cryptographic
+signature scheme, a public key infrastructure (PKI) to validate signatures, and a collision resistant
+hash function 𝐻.6 We assume a computationally bounded adversary. Following a common standard
+in distributed computing and for simplicity of presentation (to avoid the analysis of negligible error
+probabilities), we assume these cryptographic schemes are perfect, i.e., we restrict attention to
+executions in which the adversary is unable to break these cryptographic schemes.
+The partial synchrony model. As noted above, processors communicate using point-to-point
+authenticated channels. We consider the standard partial synchrony model, whereby the execution
+is divided into discrete timeslots 𝑡∈N ≥0 and a message sent at time 𝑡 must arrive at time 𝑡 ′ >𝑡
+with 𝑡 ′ ≤max{GST, 𝑡} +Δ . While Δ is known, the value of GST is unknown to the protocol.
+The adversary chooses GST and also message delivery times, subject to the constraints already
+defined. Correct processors begin the protocol execution before GST and are not assumed to have
+synchronised clocks. For simplicity, we do assume that the clocks of correct processors all proceed
+in real time, meaning that if 𝑡 ′ >𝑡 then the local clock of correct 𝑝 at time 𝑡 ′ is 𝑡 ′ −𝑡 in advance
+of its value at time 𝑡. Using standard arguments, our protocol and analysis can be extended in a
+straightforward way to the case in which there is a known upper bound on the difference between
+the clock speeds of correct processors.
+Transactions. Transactions are messages of a distinguished form, signed by theenvironment. Each
+timeslot, each processor may receive some finite set of transactions directly from the environment.
+We make the standard assumption that transactions are unique (repeat transactions can be produced
+using an increasing ‘ticker’ or timestamps [10]).
+State machine replication. If 𝜎 and 𝜏 are sequences, we write 𝜎⪯𝜏 to denote that 𝜎 is a prefix of
+𝜏. We say 𝜎 and 𝜏 arecompatibleif 𝜎⪯𝜏 or 𝜏⪯𝜎 . If two sequences are not compatible, they are
+incompatible. If 𝜎 is a sequence of transactions, we write tr∈𝜎 to denote that the transaction tr
+5https://github.com/commonwarexyz/monorepo/tree/19f19d32760daf1d497295726ec92a1e6b84959f/examples/estimator
+6In Section 6 and the appendices, we will also consider optimisations of the protocol that use threshold signatures, aggregate
+signatures, and erasure codes.
+
+--- PAGE 5 ---
+Chou et al.5
+belongs to the sequence 𝜎. Each processor 𝑝𝑖 is required to maintain an append-only log, denoted
+log𝑖, which at any timeslot is a sequence of distinct transactions. We also writelog𝑖 (𝑡) to denote the
+value log𝑖 at the end of timeslot𝑡. The log being append-only means that for𝑡 ′ >𝑡 , log𝑖 (𝑡) ⪯log 𝑖 (𝑡 ′).
+We require the following conditions to hold in every execution:
+Consistency. If 𝑝𝑖 and 𝑝 𝑗 are correct, then for any timeslots 𝑡 and 𝑡 ′, log𝑖 (𝑡) and log𝑗 (𝑡 ′) are
+compatible.
+Liveness. If𝑝 𝑖 and𝑝 𝑗 are correct and if𝑝 𝑖 receives the transaction tr then, for some𝑡, tr∈log 𝑗 (𝑡).
+Blocks, parents, ancestors, and finalisation. We specify a protocol that producesblocksof
+transactions. Among other values, each block 𝑏 specifies a value 𝑏.Tr, which is a sequence of
+transactions. There is a uniquegenesisblock 𝑏gen, which is consideredfinalisedat the start of the
+protocol execution. Each block 𝑏 other than the genesis block has a uniqueparent. Theancestors
+of 𝑏 are 𝑏 and all ancestors of its parent (while the genesis block has only itself as ancestor), and
+each block has the genesis block as an ancestor. Each block 𝑏 thus naturally specifies an extended
+sequence of transactions, denoted 𝑏.Tr ∗, given by concatenating the values𝑏′.Tr for all ancestors 𝑏′
+of 𝑏, removing any duplicate transactions. When a processor 𝑝𝑖 finalises 𝑏 at timeslot 𝑡, this means
+that, upon obtaining all ancestors of 𝑏, it sets log𝑖 (𝑡) to extend 𝑏.Tr ∗. Two blocks areinconsistentif
+neither is an ancestor of the other.
+3 The intuition
+In this section, we give an informal account of the intuition behind the protocol design.
+One round of voting. We aim to specify a standard form ofview-basedprotocol, in which each
+view has a designatedleader. If a view has a correct leader and begins after GST, the leader should
+send a block 𝑏 to all other processors, who will then send a signedvotefor 𝑏 to all others. Upon
+receipt of 𝑛−𝑓 votes for 𝑏 (by distinct processors), our intention is that processors should then be
+able to immediately finalise 𝑏: this is called2-round finality[ 27] (one round to send the block and
+one round for voting).5 𝑓− 1 ≤𝑛 is necessary and sufficient7 for 2-round finality: we make the
+assumption that5 𝑓+ 1 ≤𝑛 for simplicity. We’ll call a set of𝑛−𝑓 votes for a block anL-notarisation
+(where ‘L’ stands for ‘large’).
+When to enter the next view?We specified above that a single L-notarisation should suffice for
+finality. However, as well as achieving 2-round finality, we also wish processors to proceed to the
+next view immediately upon seeing a smaller set of votes, which we’ll call anM-notarisation(where
+the ‘M’ stands for ‘mini’). As explained in Section 1, the rationale behind this is that, in realistic
+scenarios, receiving 𝑛−𝑓 votes will generally take much longer than receiving a significantly
+smaller set of votes (of size2 𝑓+ 1, say). Proceeding to view 𝑣+ 1immediately upon seeing an
+M-notarisation for 𝑏 in view 𝑣 therefore speeds up the process of block formation: processors can
+begin view𝑣+1earlier, and then finalise𝑏upon later receiving the larger notarisation.
+How many votes should we require for an M-notarisation? Note that, so long as correct processors
+don’t vote for more than one block in a view, the following will hold:
+(X1) If 𝑏 for view 𝑣 receives an L-notarisation, then no block 𝑏′ ≠𝑏 for view 𝑣 receives2 𝑓+ 1
+votes.
+To see this, suppose towards a contradiction that 𝑏 for view 𝑣 receives an L-notarisation and 𝑏′ ≠𝑏
+for view 𝑣 receives2 𝑓+ 1votes. Let 𝑃 be the set of processors that contribute to the L-notarisation
+for 𝑏, and let 𝑃 ′ be the set of processors that vote for𝑏′. Then |𝑃∩𝑃 ′ | ≥ (𝑛−𝑓) + ( 2𝑓+ 1) −𝑛=𝑓+ 1.
+7See [21] and https://decentralizedthoughts.github.io/2021-03-03-2-round-bft-smr-with-n-equals-4-f-equals-1/
+
+--- PAGE 6 ---
+Chou et al.6
+So, 𝑃∩𝑃 ′ contains a correct processor, which contradicts the claim that correct processors don’t
+vote for two blocks in one view.
+So, if we set an M-notarisation to be a set of2 𝑓+ 1votes for 𝑏, and allow processors to proceed
+to view 𝑣+ 1upon seeing an M-notarisation for 𝑏 in view 𝑣, then any processor receiving an
+M-notarisation for 𝑏 knows that no block 𝑏′ ≠𝑏 for view 𝑣 can receive an L-notarisation. In
+particular, it is useful to see things from the perspective of the leader, 𝑝𝑖 say, of view 𝑣+ 1. If 𝑝𝑖 has
+seen an M-notarisation for 𝑏 in view 𝑣, and so long as 𝑝𝑖 resends this to other processors,8 𝑝𝑖 can
+be sure that all processors have proof that no block other than 𝑏 could have been finalised in view
+𝑣. So, 𝑝𝑖 can propose a block with 𝑏 as parent, and all correct processors will have evidence that it
+is safe to vote for𝑝 𝑖’s proposal.
+Nullifications. Since it may be the case that no block for view 𝑣 receives an M-notarisation (e.g.,
+if the leader is Byzantine), processors must sometimes produce signed messages indicating that
+they wish to move to view 𝑣+ 1because of a lack of progress in view 𝑣: we’ll call these nullify(𝑣)
+messages.9 We do not yet specify precisely when processors send nullify(𝑣) messages (we will do
+so shortly). For now, we promise only that a statement analogous to (X1) will hold fornullify(𝑣)
+messages:
+(X2) If some block 𝑏 for view 𝑣 receives an L-notarisation, then it is not the case that2 𝑓+ 1
+processors send nullify(𝑣)messages.
+With the promise of (X2) in place, let’s define anullificationto be a set of2 𝑓+ 1nullify (𝑣) messages
+(signed by distinct processors). We specify that a processor should enter view 𝑣+ 1upon receiving
+either:
+•An M-notarisation for view𝑣, or;
+•A nullification for view𝑣.
+So long as (X2) holds, any processor receiving a nullification for view 𝑣 knows that no block for
+view𝑣can receive an L-notarisation.
+Defining valid proposals so as to maintain consistency. Suppose𝑝 𝑖 is the leader of view𝑣:
+(i) Upon entering view 𝑣, 𝑝𝑖 finds the greatest 𝑣 ′ <𝑣 such that it has received an M-notarisation
+for some block 𝑏 for view 𝑣 ′: since 𝑝𝑖 has entered view 𝑣, it must have received nullifications
+for all views in(𝑣 ′, 𝑣). Processor𝑝 𝑖 then proposes a block𝑏 ′ with𝑏as parent.
+(ii) Other processors will vote for 𝑏′, so long as they see nullifications for all views in (𝑣 ′, 𝑣)
+and an M-notarisation for 𝑏: since all processors (including 𝑝𝑖) will resend notarisations and
+nullifications upon first receiving them, if view 𝑣 begins after GST, 𝑝𝑖 can therefore be sure
+that all correct processors will receive the messages they need in order to vote for𝑏 ′.
+It should also not be difficult to see that this will guarantee consistency (see Section 5 for the full
+proof). Towards a contradiction, suppose that 𝑏1 for view 𝑣1 receives an L-notarisation, and that
+there is a least view 𝑣2 ≥𝑣 1 such that some block 𝑏2 for view 𝑣2 that does not have 𝑏1 as an ancestor
+receives an M-notarisation. From (X1) it follows that 𝑣2 >𝑣 1. By our choice of 𝑣2, and since correct
+processors will not vote for blocks until they see an M-notarisation for the parent, it follows that
+the parent of 𝑏2 must be for a view <𝑣 1. This gives a contradiction, because correct processors
+would not vote for 𝑏2 in view 𝑣2 without seeing a nullification for view 𝑣1. Such a nullification
+cannot exist, by(𝑋2).
+8To reduce communication complexity, this could be done using a threshold signature scheme, but we defer such considera-
+tions to Section 6.
+9Our approach here is somewhat similar to Simplex [11], but the reader need not have familiarity with that protocol to
+follow the discussion.
+
+--- PAGE 7 ---
+Chou et al.7
+Ensuring liveness. To ensure liveness, we must first guarantee that if all correct processors enter
+a view, then they all eventually leave the view. To this end we allow that, while correct processors
+will not vote in any view 𝑣 after sending a nullify(𝑣) message, theymaysend nullify (𝑣) messages
+after voting. More precisely, correct𝑝 𝑖 will send a nullify(𝑣)message while in view𝑣if either:
+(a) Their ‘timer’ for view𝑣expires (time2Δpasses after entering the view)before voting, or;
+(b) They receive messages from2𝑓+1processors, each of which is either:
+•A nullify(𝑣)message, or;
+•A vote for a view𝑣block different than a view𝑣block that𝑝 𝑖 has already voted for.
+Combined with the fact that correct processors will forward on nullifications and notarisations
+upon receiving them, the conditions above achieve two things. First, they suffice to ensure that
+(X2) is satisfied. If 𝑏 for view 𝑣 receives an L-notarisation, then let 𝑃 be the correct processors that
+vote for 𝑏, let 𝑃 ′ =Π\𝑃 , and note that |𝑃 ′ | ≤ 2𝑓 . No processor in 𝑃 can send a nullify(𝑣) message
+via (a) or vote for a view 𝑣 block other than 𝑏. It follows that no processor in 𝑃 can be caused to
+send a nullify(𝑣)message via (b). So, at most2𝑓processors can send nullify(𝑣)messages.
+The conditions above also suffice to ensure that if all correct processors enter a view𝑣, then they
+all eventually leave the view. Towards a contradiction, suppose all correct processors enter view 𝑣,
+but it is not the case that they all leave the view. Since correct processors forward nullifications
+and notarisations upon receiving them, this means that no correct processor leaves view 𝑣. Each
+correct processor eventually receives, from at least 𝑛−𝑓 processors, either a vote for some block
+for view 𝑣 or a nullify (𝑣) message. If any correct processor receives an M-notarisation for the
+block they voted for, then we reach an immediate contradiction. So, suppose otherwise. If 𝑝𝑖 is a
+correct processor that votes for a view 𝑣 block, it follows that 𝑝𝑖 receives messages from at least
+(𝑛−𝑓) − ( 2𝑓)=𝑛− 3𝑓≥ 2𝑓+ 1processors, each of which is either a nullify (𝑣) message or a vote
+for a view 𝑣 block different than the view 𝑣 block that 𝑝𝑖 votes for. So, 𝑝𝑖 sends a nullify(𝑣) message
+via (b). Any correct processor that does not vote for a view 𝑣 block also sends a nullify(𝑣) message,
+so all correct processors send nullify(𝑣)messages, giving the required contradiction.
+Adding an extra instruction to send votes. Once we have ensured that correct processors progress
+through the views, establishing liveness amounts to showing that each correct leader after GST
+finalises a new block. This now follows quite easily, using the reasoning outlined in (i) and (ii)
+above, where we explained that (after GST) processors are guaranteed to receive all the messages
+they need to verify the validity of a block proposed by a correct leader. However, a subtle issue
+does require us to stipulate one further context in which correct processors should vote for a block.
+Suppose view 𝑣 begins after GST and that the leader for view 𝑣 is correct. Since a correct processor
+𝑝𝑖 proceeds to view 𝑣+ 1immediately upon seeing an M-notarisation for a view 𝑣 block 𝑏, and
+since it is possible that this is receivedbefore 𝑝𝑖 receives all nullifications required to verify that 𝑝𝑖
+should vote for 𝑏, the possibility apparently remains that correct processors will proceed to view
+𝑣+ 1without 𝑏 receiving an L-notarisation, i.e., we do not yet have any guarantee that all correct
+processors will vote for 𝑏. To avoid this, we stipulate that, if 𝑝𝑖 receives an M-notarisation for 𝑏
+and has not previously sent a nullify(𝑣) message or voted during view 𝑣, then 𝑝𝑖 should vote for
+𝑏 before entering view 𝑣+ 1. In this case, the fact that 𝑏 has already received an M-notarisation
+means that some correct processors have already voted for 𝑏, so it is safe for 𝑝𝑖 to do the same. The
+formal proof appears in Section 5.
+Intuition summary (informal):
+• In each view, the leader proposes a block and all processors then vote (one round of voting).
+Correct processors vote for at most one block in each view, which ensures (X1).
+
+--- PAGE 8 ---
+Chou et al.8
+• An L-notarisation suffices for finalization, while an M-notarisation or a nullification suffices
+to move to the next view.
+• Processors only vote for the block 𝑏 for view 𝑣, with parent 𝑏′ for view 𝑣 ′, if they have seen a
+notarisation for 𝑏′ and nullifications for all views in (𝑣 ′, 𝑣). Using (X1) and (X2), this suffices
+for safety.
+• To ensure progression through the views, processors send nullify(𝑣) messages upon timing
+out (2Δ after entering the view) before voting, or upon receiving proof that no block for view
+𝑣will receive an L-notarisation. This ensures (X2) is satisfied.
+• Once we are given that processors progress through views, liveness follows from the fact
+that each correct leader after GST will finalise a new block: correct processors will vote for
+the leader’s proposal because the leader themself will have sent all messages required to
+verify the validity of the block. Since correct processors also vote for the leader’s block in
+view 𝑣 upon seeing an M-notarisation for it (if they have not already voted in view 𝑣, or sent
+a nullify(𝑣) message), this ensures all correct processors vote for the block before leaving
+view𝑣, and it receives an L-notarisation.
+4 The formal specification
+We initially give a specification aimed at simplicity. In Section 6, we will describe optimisations,
+such as the use of threshold signatures to reduce communication complexity. In what follows,
+we suppose that all messages are signed by the sender. We say ‘disseminate’ to mean ‘send to
+all processors’. When a correct processor is instructed to send a message to itself, it regards that
+message as immediately received. For the sake of simplicity, we also initially assume (without
+explicit mention in the pseudocode) that correct processors automatically send new transactions to
+all others upon first receiving them - we will revisit this assumption in Section 6. The pseudocode
+uses a number of message types, local variables, functions and procedures, detailed below.
+The function lead(𝑣) . The value lead(𝑣) specifies the leader for view 𝑣. To be concrete, we set10
+lead(𝑣):=𝑝 𝑗+1, where𝑗=𝑣mod𝑛.
+Blocks. Thegenesis blockis the tuple 𝑏gen :=( 0, 𝜆, 𝜆), where 𝜆 denotes the empty sequence (of
+length 0). A block other than the genesis block is a tuple𝑏=(𝑣,Tr, ℎ), signed bylead(𝑣), where:
+•𝑣∈N ≥1 (thought of as the view corresponding to𝑏);
+•Tr is a sequence of distinct transactions;
+•ℎis a hash value (used to specify𝑏’s parent).
+We also write 𝑏.view, 𝑏.Tr and 𝑏.par to denote the corresponding entries of 𝑏. If 𝑏.view=𝑣 , we
+also refer to𝑏as a ‘view𝑣block’.
+Votes. Avotefor the block𝑏is a message of the form(vote, 𝑏).
+M-notarisations. An M-notarisationfor the block 𝑏 is a set of2 𝑓+ 1votes for 𝑏, each signed by a
+different processor. (By an M-notarisation, we mean an M-notarisation for some block.)
+L-notarisations. AnL-notarisationfor the block 𝑏 is a set of 𝑛−𝑓 votes for 𝑏, each signed
+by a different processor. We note that, since an L-notarisation is a larger set of votes than an
+M-notarisation, if 𝑝𝑖 has received an L-notarisation for 𝑏, then it has necessarily received an
+M-notarisation for𝑏.
+Nullify(𝑣) messages. For𝑣∈N ≥1, a nullify(𝑣)message is of the form(nullify, 𝑣).
+10Of course, leaders can also be randomly selected, if given an appropriate source of common randomness.
+
+--- PAGE 9 ---
+Chou et al.9
+Nullifications. Anullificationfor view 𝑣 is a set of2 𝑓+ 1nullify (𝑣) messages, each signed by a
+different processor. (By anullification, we mean a nullification for some view.)
+The local variableS. This variable is maintained locally by each processor𝑝𝑖 and stores all messages
+received. It is considered to be automatically updated, i.e., we do not give explicit instructions in
+the pseudocode updating S. We say a set of messages 𝑀 ′ iscontained in S if 𝑀 ′ ⊆S . We also regard
+S as containing a block 𝑏 whenever S contains any message (tuple) with 𝑏 as one of its entries.
+Initially,Scontains only𝑏 gen and an L-notarisation (and an M-notarisation) for𝑏 gen.
+The local variablev. Initially set to 1, this variable specifies the present view of a processor.
+The local timer T. Each processor 𝑝𝑖 maintains a local timer T, which is initially set to 0 and
+increments in real-time. (Processors will be explicitly instructed to reset their timer to 0 upon
+entering a new view.)
+The local variablesnullified,proposed, andnotarised. These are used by𝑝𝑖 to record whether
+it has yet sent a nullify(v) message, whether it has yet proposed a block for view 𝑣, and the block
+it has voted for in the present view: nullified and proposed are initially set to false, while
+notarised is initially set to ⊥ (a default value different than any block). These values will be
+explicitly reset upon entering a new view.
+The functionSelectParent (S,v) . This function is used by the leader of a view, 𝑝𝑖 say, to select the
+parent block to build on. If 𝑣 ′ <v is the greatest view11 such that S contains an M-notarisation for
+some𝑏with𝑏.view=𝑣 ′, and if𝑏is the lexicographically least such block, the function outputs𝑏.
+The procedureProposeChild (𝑏, 𝑣). This procedure is executed by the leader 𝑝𝑖 of view 𝑣 to
+determine a new block. To execute the procedure,𝑝 𝑖:
+• Forms a sequence of distinct transactions Tr, containing all transactions received by 𝑝𝑖 and
+not included in𝑏 ′.Tr for any𝑏 ′ ∈Swhich is an ancestor of𝑏, and;
+•Disseminates the block(𝑣,Tr, 𝐻(𝑏)).
+WhenScontains a valid proposal for view𝑣. This condition is satisfied whenScontains:
+(i) Precisely one block𝑏of the form𝑏=(𝑣,Tr, ℎ)signed bylead(𝑣);
+(ii) An M-notarisation for some𝑏 ′ with𝐻(𝑏 ′)=ℎ, and with𝑏 ′.view=𝑣 ′ (say), and;
+(iii) A nullification for each view in the open interval(𝑣 ′, 𝑣).
+When (i)–(iii) are satisfied w.r.t.𝑏, we sayScontains a valid proposal𝑏for view𝑣.
+New nullifications and notarisations. Processors will be required to forward on all newly
+received nullifications and M-notarisations. To make this precise, we must specify what is to count
+as a ‘new’ nullification/notarisation. At timeslot𝑡, 𝑝𝑖 regards a nullification 𝑁⊆S for some view 𝑣
+(not necessarily equal tov) asnewif:
+•S(as locally defined) did not contain a nullification for view𝑣at any smaller timeslot, and;
+•𝑁is lexicographically least amongst nullifications for view𝑣contained inS.
+At timeslot𝑡,𝑝 𝑖 regards an𝑀-notarisation𝑄⊆Sfor block𝑏asnew 12 if:
+•Sdid not contain an M-notarisation for𝑏at any smaller timeslot, and;
+•𝑄is lexicographically least amongst M-notarisations for𝑏contained inS.
+11There must exist such a view, sinceSalways contains an M-notarisation for the genesis block.
+12Since it is not necessary for liveness, our pseudocode does not require processors to forward L-notarisations. One could
+also require processors to forward L-notarisations, and the proofs of Section 5 would go through unchanged.
+
+--- PAGE 10 ---
+Chou et al.10
+For ease of reference, message types and local variables are displayed in Tables 1 and 2. The
+pseudocode appears in Algorithm 1.
+Message type Description
+𝑏gen The tuple(0, 𝜆, 𝜆), where𝜆is the empty string
+block𝑏≠𝑏 gen A tuple(𝑣,Tr, ℎ), signed bylead(𝑣)
+vote for𝑏 A message(vote, 𝑏)
+nullify(𝑣) A message of the form(nullify, 𝑣)
+nullification for𝑣 A set of2𝑓+1nullify(𝑣)messages, each signed by a different processor
+M-notarisation for𝑏 A set of2𝑓+1votes for𝑏, each signed by a different processor
+L-notarisation for𝑏 A set of𝑛−𝑓votes for𝑏, each signed by a different processor
+Table 1. Messages
+Variable Description
+v Initially 1, specifies the present view
+T Initially 0, a local timer reset upon entering each view
+nullified Initially false, specifies whether already sent nullify(v)message
+proposed Initially false, specifies whether already proposed a block for view𝑣
+notarised Initially set to⊥, records block voted for in present view
+S Records all received messages, automatically updated
+Initially contains only𝑏 gen and M/L-notarisations for𝑏 gen
+Table 2. Local variables
+5 Protocol Analysis
+5.1 Consistency
+We say block 𝑏 receivesan M-notarisation if 𝑏=𝑏 gen or at least2 𝑓+ 1processors send votes for 𝑏.
+Similarly, we say 𝑏 receives an L-notarisation if 𝑏=𝑏 gen or at least 𝑛−𝑓 processors send votes for
+𝑏. View𝑣receives a nullification if at least2𝑓+1processors send nullify(𝑣)messages.
+Lemma 5.1 (One vote per view).Correct processors vote for at most one block in each view, i.e., if
+𝑝𝑖 is correct then, for each 𝑣∈N ≥1, there exists at most one 𝑏 with 𝑏.view=𝑣 such that 𝑝𝑖 sends a
+message(vote, 𝑏).
+Proof. Recall that ⊥ is a default value, different than any block. Each correct processor’s local
+value notarised is initially set to ⊥, and is also set to ⊥ upon entering any view (lines 17 and 21).
+A correct processor 𝑝𝑖 will only vote for a block ifnotarised=⊥ (lines 10 and 20). The claim of
+the lemma holds because, upon voting for any block 𝑏, 𝑝𝑖 either sets notarised :=𝑏 (line 11) and
+then does not redefine this value until entering the next view, or else immediately enters the next
+view (lines 20 and 21).□
+Lemma 5.2 ((X1) is satisfied).If 𝑏 receives an L-notarisation, then no block 𝑏′ ≠𝑏 with 𝑏′.view=
+𝑏.view receives an M-notarisation.
+
+--- PAGE 11 ---
+Chou et al.11
+Algorithm 1: the instructions for𝑝 𝑖
+1:At every timeslot𝑡:
+2:Disseminate new nullifications inS;⊲‘new’ as defined in Section 4
+3:Disseminate new M-notarisations inS;
+4:
+5:If𝑝 𝑖 =lead(v)andproposed=false:
+6:ProposeChild(SelectParent(S,v),v);⊲Send out a new block
+7:Setproposed:=true;
+8:
+9:IfScontains a valid proposal𝑏for viewv:⊲As defined in Section 4
+10:Ifnotarised=⊥andnullified=false:
+11:Setnotarised:=𝑏and disseminate(vote, 𝑏);⊲Send vote
+12:
+13:IfT=2Δ,nullified=false andnotarised=⊥:
+14:Setnullified:=true and disseminate(nullify,v);⊲Send nullify(v)
+15:
+16:IfScontains a nullification forv:
+17:Setv:=v+1,nullified:=false,proposed:=false,notarised:=⊥,T:=0;
+18:⊲Go to next view
+19:IfScontains an M-notarisation for some𝑏with𝑏.view=v:
+20:Ifnotarised=⊥andnullified=false, disseminate(vote, 𝑏);⊲Send vote
+21:Setv:=v+1,nullified:=false,proposed:=false,notarised:=⊥,T:=0;
+22:⊲Go to next view
+23:
+24:Ifnullified=false,notarised≠⊥andScontains≥2𝑓+1messages, each signed by a
+25:different processor, and each either:
+26:(i) A message(nullify,v), or;
+27:(ii) Of the form(vote, 𝑏)for some𝑏s.t.𝑏.view=vandnotarised≠𝑏:
+28:Setnullified:=true and disseminate(nullify,v);
+29:⊲Send nullify(v)message upon proof of no progress forv
+30:
+31:IfScontains a new L-notarisation for any block𝑏:
+32:Finalise𝑏;⊲Finalisation as specified in Section 2
+Proof. Given Lemma 5.1, this now follows as in Section 3. Towards a contradiction, suppose
+that 𝑏 receives an L-notarisation and that 𝑏′ ≠𝑏 with 𝑏′.view=𝑏.view receives an M-notarisation.
+Let 𝑃 be the set of processors that contribute to the L-notarisation for 𝑏, and let 𝑃 ′ be the set of
+processors that vote for 𝑏′. Then |𝑃∩𝑃 ′ | ≥ (𝑛−𝑓) + ( 2𝑓+ 1) −𝑛=𝑓+ 1. So, 𝑃∩𝑃 ′ contains a
+correct processor, which contradicts Lemma 5.1.□
+Lemma 5.3 ((X2) is satisfied).If 𝑏 receives an L-notarisation and 𝑣=𝑏.view , then view 𝑣 does not
+receive a nullification.
+Proof. Towards a contradiction, suppose 𝑏 receives an L-notarisation, 𝑣=𝑏.view , and view 𝑣
+receives a nullification. Let 𝑃 be the correct processors that vote for 𝑏, let 𝑃 ′ =Π\𝑃 , and note
+that|𝑃 ′ | ≤2𝑓. Since view𝑣receives a nullification, it follows that some processor in𝑃must send
+a nullify(𝑣) message. So, let 𝑡 be the first timeslot at which some processor 𝑝𝑖 ∈𝑃 sends such a
+message. Since 𝑝𝑖 cannot send a nullify(𝑣) message upon timeout (lines 13-14), 𝑝𝑖 must send the
+
+--- PAGE 12 ---
+Chou et al.12
+nullify(𝑣) message at 𝑡 because the conditions of lines 24-27 hold for 𝑝𝑖 at 𝑡, i.e., 𝑝𝑖 must have
+received≥2𝑓+1messages, each signed by a different processor, and each of the form:
+(i)(nullify, 𝑣), or;
+(ii)(vote, 𝑏 ′)for some𝑏 ′ ≠𝑏with𝑏 ′.view=𝑣.
+By Lemma 5.1, no processor in 𝑃 sends a message of form (ii). By our choice of 𝑡, no processor in 𝑃
+sends a message of form (i) prior to 𝑡. Combined with the fact that |𝑃 ′ | ≤ 2𝑓 , this gives the required
+contradiction. □
+Lemma 5.4 (Consistency).The protocol satisfies Consistency.
+Proof. Towards a contradiction, suppose that two inconsistent blocks,𝑏 and 𝑏′ say, both receive
+L-notarisations. Without loss of generality suppose 𝑏.view≤𝑏 ′.view. Set 𝑏1 :=𝑏 and 𝑣1 :=𝑏 1.view.
+Then there is aleast𝑣 2 ≥𝑣 1 such that some block𝑏 2 satisfies:
+(1)𝑏 2.view=𝑣 2;
+(2)𝑏 1 is not an ancestor of𝑏 2, and;
+(3)𝑏 2 receives an M-notarisation.
+From Lemma 5.2, it follows that 𝑣2 >𝑣 1. According to clause (ii) from the definition of when S
+contains a valid proposal for view 𝑣2, correct processors will not vote for 𝑏2 in line 11 until they
+receive an M-notarisation for its parent, 𝑏0 say. Correct processors will not vote for 𝑏2 in line 20
+until 𝑏2 has already received an M-notarisation, meaning that at least 𝑓+ 1correct processors
+must first vote for 𝑏2 via line 11, and 𝑏0 must receive an M-notarisation. By our choice of 𝑣2, it
+follows that 𝑏0.view<𝑣 1. This gives a contradiction, because, by clause (iii) from the definition of
+a valid proposal for view 𝑣2, correct processors would not vote for 𝑏2 in line 11 without receiving
+a nullification for view 𝑣1. By Lemma 5.3, such a nullification cannot exist. So, block 𝑏2 cannot
+receive an M-notarisation (and no correct processor votes for𝑏 2 via either line 11 or 20).□
+5.2 Liveness
+Lemma 5.5 (Progression through views).Every correct processor enters every view𝑣∈N ≥1.
+Proof. Towards a contradiction, suppose that some correct processor𝑝𝑖 enters view 𝑣, but never
+enters view 𝑣+ 1. Note that correct processors only leave any view 𝑣 ′ upon receiving either a
+nullification for the view, or else an M-notarisation for some view𝑣 ′ block. Since correct processors
+forward new nullifications and notarisations upon receiving them (lines 2 and 3), the fact that 𝑝𝑖
+enters view𝑣but does not leave it means that:
+•All correct processors enter view𝑣;
+•No correct processor leaves view𝑣.
+Each correct processor eventually receives, from at least 𝑛−𝑓 processors, either a vote for
+some view 𝑣 block, or a nullify(𝑣) message. If any correct processor receives an M-notarisation
+for a view 𝑣 block, then we reach an immediate contradiction. So, suppose otherwise. If 𝑝 𝑗 is a
+correct processor that votes for a view 𝑣 block 𝑏, it follows that 𝑝 𝑗 receives messages from at least
+(𝑛−𝑓) − (2𝑓)=𝑛−3𝑓≥2𝑓+1processors, each of which is either:
+(i) A nullify(𝑣)message, or;
+(ii) A vote for a view𝑣block different than𝑏.
+So, the conditions of lines 24-27 are eventually satisfied, meaning that𝑝 𝑗 sends a nullify(𝑣) message
+(line 28). Any correct processor that does not vote for a view 𝑣 block also sends a nullify (𝑣)
+message, so all correct processors send nullify(𝑣) messages. All correct processors therefore receive
+a nullification for view𝑣and leave the view (line 17), giving the required contradiction.□
+
+--- PAGE 13 ---
+Chou et al.13
+Lemma 5.6 (Correct leaders finalise blocks).If 𝑝𝑖 =lead(𝑣) is correct, and if the first correct
+processor to enter view 𝑣 does so after GST, then 𝑝𝑖 disseminates a block and that block receives an
+L-notarisation.
+Proof. Suppose 𝑝𝑖 =lead(𝑣) is correct and that the first correct processor 𝑝 𝑗 to enter view 𝑣
+does so at timeslot𝑡≥GST . If 𝑣> 1, processor 𝑝 𝑗 enters view 𝑣 upon receiving either a nullification
+for view 𝑣− 1, or else an M-notarisation for some view 𝑣− 1block. Since 𝑝 𝑗 forwards on all new
+notarisations and nullifications that it receives (lines 2 and 3), it follows that all correct processors
+enter view 𝑣 by 𝑡+Δ (note that this also holds if 𝑣= 1). Processor 𝑝𝑖 therefore disseminates a
+new block 𝑏 by 𝑡+Δ , which is received by all processors by 𝑡+ 2Δ. Let 𝑏′ be the parent of 𝑏 and
+suppose 𝑏′.view=𝑣 ′. Then 𝑝𝑖 receives an M-notarisation for 𝑏′ by 𝑡+Δ . Since 𝑝𝑖 forwards on all
+new notarisations that it receives (line 3), all correct processors receive an M-notarisation for 𝑏′
+by 𝑡+ 2Δ. Since 𝑝𝑖 has entered view 𝑣, it must also have received nullifications for all views in
+the open interval (𝑣 ′, 𝑣) by 𝑡+Δ , and all correct processors receive these by 𝑡+ 2Δ. All correct
+processors therefore vote for 𝑏 (by either line 11 or 20) 13 before any correct processor sends a
+nullify(𝑣)message. The block𝑏therefore receives an L-notarisation, as claimed.□
+Lemma 5.7 (Liveness).The protocol satisfies Liveness.
+Proof. Suppose correct 𝑝𝑖 receives the transactiontr. Let 𝑣 be a view withlead(𝑣)=𝑝 𝑖 and such
+that the first correct processor to enter view𝑣 does so after GST. By Lemma 5.6,𝑝𝑖 will send a block
+𝑏 to all processors, and 𝑏 will receive an L-notarisation. From the definition of the ProposeChild
+procedure, it follows that tr will be included in 𝑏′.Tr for some ancestor 𝑏′ of 𝑏, and all correct
+processors will add tr to their log upon receiving all ancestors of𝑏 (see the final paragraph of Section
+2). Correct processors only vote for blocks whose parent has already received an M-notarisation.
+All ancestors of 𝑏′ of 𝑏 must therefore receive M-notarisations, meaning that at least 𝑓+ 1correct
+processors disseminate each such𝑏 ′, and correct processors receive all ancestors of𝑏.□
+5.3 Optimistic responsiveness
+Let 𝛿≤Δ be theactual(unknown) least upper bound on message delay after GST, and let 𝑓𝑎 ≤𝑓
+be the actual (unknown) number of Byzantine processors. If a transaction tr is first received by a
+correct processor at time 𝑡, and is first finalised by all correct processors (i.e., appended to log𝑖 for
+every correct 𝑝𝑖) at time 𝑡+ℓ , then we saylatency for tr is ℓ. We say a protocol isoptimistically
+responsiveif latency is 𝑂(𝑓 𝑎Δ+𝛿) for all transactions that are first received by any correct processor
+after GST: in particular, this means latency after GST is 𝑂(𝛿) when processors act correctly. In
+this section we show that Minimmit is optimistically responsive. In fact, it satisfies the stronger
+condition that latency after GST is𝑂(𝛿)whenleadersact correctly. 14
+Lemma 5.8.Suppose lead(𝑣) is correct and that the first correct processor to enter view 𝑣 does so at
+𝑡≥GST. Then all correct processors leave view𝑣and finalise a view𝑣block by𝑡+𝑂(𝛿).
+Proof. Proving the claim of the lemma just involves reviewing the proof of Lemma 5.6 and
+observing that the leader’s block will actually be finalised by all correct processors within time
+𝑂(𝛿)of any correct processor entering the view.
+As before, suppose first 𝑝𝑖 =lead(𝑣) is correct and that the first correct processor to enter
+view 𝑣 does so at timeslot 𝑡≥GST . Since correct processors forward on all new notarisations
+13The point of line 20 is to ensure this part of the proof goes through. As noted in Section 3, without it, there is the possibility
+that correct processors move to the next view upon seeing an M-notarisation, before they are able to vote via line 11, thereby
+failing to guarantee an L-notarisation.
+14Since the notion of leaders is protocol specific, we prefer to use the more general definition as stated, but the stronger
+result also follows directly from the proofs given in this section.
+
+--- PAGE 14 ---
+Chou et al.14
+and nullifications that they receive, it follows that all correct processors enter view 𝑣 by 𝑡+𝛿 .
+Processor 𝑝𝑖 therefore disseminates a new block 𝑏 by 𝑡+𝛿 , which is received by all processors by
+𝑡+ 2𝛿. Let 𝑏′ be the parent of 𝑏 and suppose 𝑏′.view=𝑣 ′. Then, from the definition of the function
+SelectParent, it follows that 𝑝𝑖 receives an M-notarisation for 𝑏′ by 𝑡+𝛿 . Since 𝑝𝑖 forwards on all
+new notarisations that it receives (line 3), all correct processors receive an M-notarisation for 𝑏′ by
+𝑡+ 2𝛿. Since 𝑝𝑖 has entered view 𝑣, it must also have received nullifications for all views in the open
+interval (𝑣 ′, 𝑣) by 𝑡+𝛿 , and all correct processors receive these by 𝑡+ 2𝛿. All correct processors
+therefore vote for 𝑏 (by either line 11 or 20) by 𝑡+ 2𝛿, and before any correct processor sends a
+nullify(𝑣) message. All correct processors therefore receive 𝑏 together with an L-notarisation (and
+an M-notarisation) for 𝑏 by 𝑡+ 3𝛿, and also leave view 𝑣 by this time. This establishes the claim of
+the lemma. □
+Lemma 5.9.Suppose the first correct processor to enter view𝑣does so at𝑡≥GST. Then, whether or
+notlead(𝑣)is correct, all correct processors leave view𝑣by𝑡+𝑂(Δ).
+Proof. Suppose the first correct processor to enter view 𝑣 does so at 𝑡≥ GST. Towards a
+contradiction, suppose some correct processor does not leave view 𝑣 by 𝑡+ 2Δ+ 3𝛿. As before, it
+follows that all correct processors enter view𝑣 by 𝑡+𝛿 . By timeslot 𝑡+𝛿+ 2Δ, all correct processors
+have either voted for some view 𝑣 block, or else sent a nullify(𝑣) message. If any correct processor
+receives an M-notarisation for a view 𝑣 block by 𝑡+ 2Δ+ 2𝛿, then it forwards it on to all processors.
+This means all correct processors leave the view by 𝑡+ 2Δ+ 3𝛿, giving an immediate contradiction.
+So, suppose otherwise. If 𝑝 𝑗 is a correct processor that votes for a view 𝑣 block 𝑏, it follows that, by
+𝑡+ 2Δ+ 2𝛿, 𝑝 𝑗 receives messages from at least (𝑛−𝑓) − ( 2𝑓)=𝑛− 3𝑓≥ 2𝑓+ 1processors, each of
+which is either:
+(i) A nullify(𝑣)message, or;
+(ii) A vote for a view𝑣block different than𝑏.
+So, the conditions of lines 24-27 are satisfied at this time, meaning that𝑝 𝑗 sends a nullify(𝑣) message
+(line 28). Any correct processor that does not vote for a view𝑣 block also sends a nullify(𝑣) message
+by this time. So, all correct processors receive a nullification for view 𝑣 by 𝑡+ 2Δ+ 3𝛿, giving the
+required contradiction.□
+Lemma 5.10.Minimmit is optimistically responsive.
+Proof. Suppose tr is first received by a correct processor at 𝑡≥ GST. Since we assume correct
+processors send new transactions to all other processors upon first receiving them,tr is received by
+all correct processors by 𝑡+𝛿 . Let 𝑣0 be the greatest view that any correct processor is in at 𝑡+𝛿 ,
+and let𝑣 1 be the least view>𝑣 0 such thatlead(𝑣)is correct. From Lemmas 5.8 and 5.9, it follows
+that all correct processors enter view 𝑣1 by time 𝑡+𝑂(𝑓 𝑎Δ+𝛿) , and that all correct processors
+also finalise a view 𝑣1 block, 𝑏 say, by 𝑡+𝑂(𝑓 𝑎Δ+𝛿) . According to the definition of the procedure
+ProposeChild(𝑏, 𝑣), tr will be included in an ancestor of𝑏. Since all ancestors of𝑏′ of 𝑏 must receive
+M-notarisations prior tolead(𝑣) proposing 𝑏, at least 𝑓+ 1correct processors send each such 𝑏′
+to all processors, and correct processors receive all ancestors of 𝑏 by 𝑡+𝑂(𝑓 𝑎Δ+𝛿) . All correct
+processors therefore finalise tr by time𝑡+𝑂(𝑓 𝑎Δ+𝛿).□
+6 Optimisations
+In Section 4, we gave a specification aimed at simplicity. In this section, we describe a number of
+possible optimisations.
+
+--- PAGE 15 ---
+Chou et al.15
+6.1 Progression through views
+The specification of Section 4 requires correct processors to progress sequentially through views.
+To recover quickly from periods of asynchrony, one can allow a correct processor that is presently
+in view 𝑣 ′ to progress immediately to view 𝑣+ 1 >𝑣 ′ upon seeing a nullification for view 𝑣, or an
+M-notarisation for view𝑣. This requires the following modifications:
+(1) If 𝑣 ′′ <𝑣 and a correct processor 𝑝𝑖 in view 𝑣 receives an M-notarisation for some view 𝑣 ′′
+block 𝑏, and if 𝑝𝑖 has not voted for any view 𝑣 ′′ block and has not sent a nullify(𝑣 ′′) message,
+then 𝑝𝑖 must vote for𝑏. This is now required to ensure that correct leaders finalise new blocks
+after GST, i.e., that a correct leader’s block receives an L-notarisation.
+(2) Upon entering view 𝑣, and before running ProposeChild(SelectParent(S, 𝑣), 𝑣) ,lead(𝑣) must
+now wait until there exists𝑣 ′′ <𝑣such that it has received:
+–An M-notarization for some view𝑣 ′′ block, and;
+–Nullifications for all views in(𝑣 ′′, 𝑣).
+Lemmas 5.6 and 5.8 still go through with this change in place, since, if the first correct
+processor to enter the view does so at 𝑡≥ GST, thenlead(𝑣) will still receive these required
+messages by𝑡+𝛿.
+With these changes in place, the proofs of Sections 5.1–5.3 go through almost unchanged.
+6.2 Reducing the size of votes
+In Section 4, votes take the form (vote, 𝑏), and so include the entire block 𝑏. For constant-sized
+blocks, this does not affect asymptotic communication complexity. However, when blocks are large,
+a standard optimisation is to use votes of the form(vote, 𝐻(𝑏)), containing only the block’s hash.
+This optimisation introduces a data availability challenge, which is common to all protocols
+using votes that only specify the block’s hash: a Byzantine leader might propose a block 𝑏 that
+receives sufficient votes for finalisation, but fail to send 𝑏 itself to all correct processors. Since
+correct processors need the actual block content to update their logs, they must have a mechanism
+to retrieve missing blocks.
+A standard solution exploits the fact that finalisation requires votes from many processors. If
+a block is finalised, at least 𝑛−𝑓 processors (including many correct ones) must have received
+and voted for it. Correct processors can therefore use a (potentially rate-limited) "pull" mechanism
+to retrieve any missing finalised blocks from peers who possess them, ensuring data availability
+without relying on potentially Byzantine leaders. An alternative approach, described in Section 6.3,
+is to have leaders broadcast blocks using erasure coding techniques.
+6.3 Erasure coding
+In Minimmit, as in all leader-based protocols, leaders must broadcast potentially large blocks to all
+𝑛 processors. With large blocks or high transaction throughput, leader bandwidth can become a
+bottleneck, limiting overall system performance. Following approaches used in recent SMR protocols
+[18, 30, 31], we can apply erasure coding techniques [4, 9] to distribute the communication load.
+The leader encodes each block into 𝑛 fragments such that any 𝑑 fragments suffice to reconstruct
+the original block (where𝑑is a parameter, set as required).
+As explained in Appendix C, anaiveapproach to the integration of erasure codes causes the
+resulting version of Minimmit to have adata expansionrate of 5: If blocks are of size 𝐵, this means
+the total amount of block data sent by each leader (to all processors combined) is approximately5 𝐵.
+The factor 5 arises because an M-notarisation only suffices to ensure that 𝑓+ 1correct processors
+have received their corresponding block fragments, meaning that 𝑓+ 1out of 𝑛 fragments should
+
+--- PAGE 16 ---
+Chou et al.16
+suffice for block reconstruction. However, in Appendices C-E, we also describe how to integrate
+erasure codes with Minimmit to give a data expansion rate of 2.5.
+Trade-offs. This optimisation reduces leader bandwidth requirements but adds fragment verifi-
+cation overhead. The approach is most beneficial when block sizes are large relative to network
+capacity. As noted in Section 6.2, a benefit of the approach is that it ensures correct processors
+receive all finalised blocks, without requiring the use of a "pull" mechanism to retrieve any missing
+finalised blocks from peers who possess them.
+6.4 Threshold signatures and communication complexity
+Section 4 assumes correct processors send newly received transactions to all others. In practice,
+transactions are typically disseminated through gossip networks, where each processor forwards
+transactions to a small constant number of peers. If transactions are constant-bounded in size, this
+approach maintains constant communication overhead per processor per transaction. Alternative
+dissemination mechanisms like Narwhal [12] can also be employed. In our analysis here, we treat
+transaction propagation as a black box and focus on the consensus layer. We assume blocks have
+constant-bounded size and, following standard practice, analyse only the communication costs
+required for consensus, taking mempool formation as given.
+Message complexity. Per view, the protocol requires:
+- Leader proposal:𝑂(𝑛)messages.
+- Votes:𝑂(𝑛 2)messages (each processor sends≤1vote to all others).
+- Nullify messages:𝑂(𝑛 2)messages.
+- Forwarding notarisations/nullifications:𝑂(𝑛 2)messages.
+Communication complexity. Each notarisation and nullification contains Ω(𝑛) signatures,
+resulting in communication complexity greater than 𝑂(𝑛 2) per view. The standard approach of
+using threshold signatures [5, 29] can be used to ensure that the communication complexity per
+view is𝑂(𝑛 2). We define:
+• An ‘M-certificate’ for𝑏 to be threshold signature (of constant-bounded length for a given
+security parameter) formed from2𝑓+1votes for𝑏by different processors.
+• An ‘N-certificate’ for view𝑣, to be a threshold signature formed from2 𝑓+ 1nullify (𝑣)
+messages by different processors.
+Threshold signature implemetation details. If 𝑝𝑖 has not already formed or received an M-certificate
+for 𝑏, then, upon receipt of2𝑓+ 1votes for 𝑏 by different processors,𝑝𝑖 combines the2 𝑓+ 1signatures
+to form an M-certificate (a single threshold signature). Rather than storing and forwarding the
+2𝑓+ 1votes, 𝑝𝑖 stores and forwards the M-certificate. Similarly, 𝑝𝑖 stores and sends N-certificates,
+rather than storing and sending large collections of nullify(𝑣) messages. Since partial signatures for
+any processor can be derived from2 𝑓+ 1partial signatures, we must now stipulate that processors
+finalise a block𝑏upon receiving𝑛−𝑓votes for𝑏directly from the corresponding processors.
+We note that the pseudocode specified in Algorithm 1 does not require processors to forward
+L-notarisations. If one wished to implement threshold signatures also for L-notarisations (requiring
+the different threshold 𝑛−𝑓 ), then one would need to establish two separate threshold signature
+schemes (two shared secrets), i.e., we require a separate shared secret for each threshold. This also
+means that each vote requires two signatures: one corresponding to each threshold. Of course,
+these two signatures can be computed/verified in parallel. Verification for the two signatures can
+also be transformed into an aggregate signature verification because the two signatures are over
+the same message payload.
+
+--- PAGE 17 ---
+Chou et al.17
+Alternative approaches. We note that some protocols (e.g., Hotstuff [35]) achieve linear com-
+munication complexity per view by relaying all messages via the leader. However, this approach
+significantly increases the number of communication rounds required, and the leader anyway acts
+as a communication bottleneck (e.g., see [24]).
+6.5 Compressed nullifications
+The problem: nullification build-up during asynchrony. During extended periods of asyn-
+chrony, processors may generate nullifications for many consecutive views without being able to
+finalise new blocks. When synchrony is restored, correct processors must exchange all accumulated
+nullifications before they can vote for new proposals. Since a processor requires nullifications for
+all intermediate views between a block’s parent and the current view (see Section 4), this can create
+substantial communication overhead.
+Solution: nullification aggregation. For signature schemes supporting aggregation (e.g., BLS
+[5]), we can compress consecutive nullifications. Given threshold signatures for views in the range
+[𝑣, 𝑣 ′], we aggregate them into a single signature𝜎of constant size and send the tuple(𝑣, 𝑣 ′, 𝜎).
+Verification. Aggregate signature verification requires specifying the message sequence and
+corresponding public keys. Here, the message sequence is implicitly defined by the view range
+[𝑣, 𝑣 ′], and each nullification uses the same shared public key from the threshold scheme.
+7 Experiments
+We test Minimmit against Simplex [11] and Kudzu [31] using a deterministic simulator that executes
+protocol specifications on configurable network topologies. The simulator implementation and
+experiment configurations are released under both MIT and Apache-2 licenses.15 A step-by-step
+guide for recreating every experiment appears in Appendix A.
+Protocol selection. Simplex introduced state-of-the-art transaction latency among 3-round finality
+protocols. Its design inspired Minimmit: both protocols decouple view iteration from finalisation,
+shrinking the worst-case delay before a transaction is included in a block. This structural similarity
+makes it a natural baseline against which to quantity the impact of Minimmit’s relaxed Byzantine
+fault tolerance.
+Kudzu (and the similarly constructed Alpenglow [18]) recently delivered state-of-the-art transac-
+tion latency for 2-round finality protocols by concurrently evaluating fast and slow paths. Unlike
+Alpenglow, which incorporates a scheme for disseminating erasure-coded block data during fixed
+400ms slots16, Kudzu is responsive and serves as a better candidate for comparison to Minimmit.
+We defer a comprehensive comparison to Alpenglow’s block dissemination to future work.
+Simulation procedure. Each simulation iteration designates a leader and treats the remaining
+processors as replicas. The leader initiates the view by broadcasting a payload of configurable
+size to all replicas. Replicas process received payloads after at most a configurable number of
+pending messages and broadcast their own protocol-specific messages. The simulator records
+the time at which each processor reaches salient protocol milestones and reports the mean and
+standard deviation over all processors. Because the runtime is deterministic, these measurements
+are reproducible by re-running the same command.17
+15https://github.com/commonwarexyz/monorepo/tree/19f19d32760daf1d497295726ec92a1e6b84959f/examples/estimator
+16A processor in Votor will not cast a vote for some block until it has recovered the entire block from Rotor.
+17https://github.com/commonwarexyz/monorepo/tree/19f19d32760daf1d497295726ec92a1e6b84959f/runtime/src/
+deterministic.rs
+
+--- PAGE 18 ---
+Chou et al.18
+Latency and bandwidth model. For every message transmission we sample a delay from a
+normal distribution with mean equal to the p5018 AWS inter-region latency and standard deviation
+(p90−p50) .19 Each processor has symmetric 1 Gbps (125,000,000 B/s) ingress and egress budgets,
+so message delivery time is the sum of the sampled network delay and the bandwidth-limited trans-
+mission time. We assume linear bandwidth usage and max-min fairness for bandwidth allocation,
+yielding conservative latency estimates. In practice, burstable bandwidth and traffic prioritisation
+provided by cloud operators would only decrease the reported latencies.
+Uniform global deployment. We place 50 processors uniformly across ten AWS regions (us-
+west-1, us-east-1, eu-west-1, ap-northeast-1, eu-north-1, ap-south-1, sa-east-1, eu-central-1, ap-
+northeast-2, ap-southeast-2) and enable the “reducing the size of votes” optimisation from Section
+6.2 for all protocols, so that the leader distributes full blocks (i.e. no erasure coding) while replicas
+vote on digests. We assume instantaneous block production and begin broadcasting at time 𝑡= 0.
+Table 3 summarises the resulting latency when proposing 32 KB blocks, the block size at which
+Minimmit processes 1,000 transactions per second20 in this configuration.
+Table 3. Uniform global deployment (50 processors, symmetric 1 Gbps links).
+Protocol View Latency Block Latency Transaction Latency
+Simplex 194.61±30.34ms 299.34±25.98ms 493.95±7.50ms
+Kudzu 189.94±29.32ms 220.31±28.58ms 410.25±7.61ms
+Minimmit 146.07±21.33ms 220.3±28.57ms 366.37±7.06ms
+Minimmit reduces transaction latency by 25.8% relative to Simplex and by 10.7% relative to
+Kudzu. The improvement stems from Minimmit’s ability to progress views after collecting2𝑓+ 1
+votes.
+Region-centric deployment. We next cluster 25 processors in the United States (13 in us-west-1
+and 12 in us-east-1) and place the remaining 25 uniformly across the other eight regions. Table 4
+reports the resulting latencies for the same 32 KB blocks, increasing Minimmit’s effective processing
+rate from 1,000 to 1,500 transactions per second at a lower transaction latency.
+Table 4. Region-centric deployment (50 processors, symmetric 1 Gbps links).
+Protocol View Latency Block Latency Transaction Latency
+Simplex 149.95±24.58ms 222.32±24.05ms 372.27±6.97ms
+Kudzu 139.77±26.17ms 185.16±24.09ms 324.93±7.09ms
+Minimmit 104.93±34.71ms 187.67±27.13ms 292.6±7.86ms
+Under this regional skew, Minimmit decreases transaction latency by 21.4% relative to Simplex
+and by 9.95% relative to Kudzu. Kudzu attains slightly lower block latency because its slow path
+races the fast path, and in this topology some leaders complete two rounds gathering3 𝑓+ 1votes
+before Minimmit collects𝑛−𝑓votes.
+Large blocks. Larger blocks take longer to transmit: broadcasting a 1 MB block to 50 processors
+over 1 Gbps links already requires roughly 400 ms of egress latency.21 Table 5 reproduces the global
+18https://www.cloudping.co/api/latencies?percentile=p_50&timeframe=1Y
+19https://www.cloudping.co/api/latencies?percentile=p_90&timeframe=1Y
+20Assumes each transaction is 200 B.
+21Recall, we assume bandwidth allocation is max-min fair.
+
+--- PAGE 19 ---
+Chou et al.19
+deployment with 1 MB blocks, the block size at which Minimmit processes 10,000 transactions per
+second22 in this configuration.
+Table 5. Uniform global deployment (50 processors, symmetric 1 Gbps links).
+Protocol View Latency Block Latency Transaction Latency
+Simplex 593.61±30.34ms 698.34±25.98ms 1291.95±7.50ms
+Kudzu 588.94±29.32ms 619.31±28.58ms 1208.25±7.61ms
+Minimmit 545.07±21.33ms 619.3±28.57ms 1164.37±7.06ms
+Introducing a Reed–Solomon erasure coding scheme reduces this bottleneck. We split each
+block into 50 fragments, have the leader broadcast a fragment to every processor, and require
+replicas to broadcast their fragment to all other processors when casting a vote. The fragment
+size is determined by the quorum needed for view progression: Simplex targets3 𝑓+ 1replicas
+and therefore transmits 61.72 KB fragments so that any 𝑓+ 1fragments suffice for reconstruction;
+E-Minimmit (as described in Appendices B-E targets5 𝑓+ 1replicas and sends 55.19 KB fragments
+to ensure2 𝑓+ 1fragments suffice; similarly, Kudzu also targets5 𝑓+ 1replicas and requires 55.19 KB
+fragments to guarantee reconstruction from2 𝑓+ 1fragments. Table 6 reports the resulting latencies,
+increasing Minimmit’s effective processing rate from 10,000 to around 30,000 transactions per
+second at a lower transaction latency.
+Table 6. Uniform global deployment with erasure coding (1 MB blocks).
+Protocol View Latency Block Latency Transaction Latency
+Simplex 230.62±30.33ms 335.36±25.97ms 565.98±7.50ms
+Kudzu 220.94±29.33ms 251.29±28.63ms 472.23±7.61ms
+Minimmit 177.06±21.45ms 251.29±28.63ms 428.35±7.08ms
+With coding enabled, Minimmit achieves the lowest view latency, block latency and transaction
+latency. Minimmitmaximises throughputacross all protocols, since blocks of a fixed size are
+produced at a faster rate.
+Increasing per processor bandwidth from 1 Gbps to 10 Gbps under this naïve coding scheme,
+produces latencies illustrated in Table 7.
+Table 7. Uniform global deployment with increased bandwidth and erasure coding (10 Gbps per processor
+and 1 MB blocks).
+Protocol View Latency Block Latency Transaction Latency
+Simplex 186.63±30.35ms 291.33±26.0ms 477.96±7.51ms
+Kudzu 181.86±29.31ms 212.3±28.6ms 394.16±7.61ms
+Minimmit 138.02±21.37ms 212.3±28.6ms 350.32±7.07ms
+Minimmit decreases transaction latency by 26.7% relative to Simplex and 11.1% relative to Kudzu,
+and also decreases view latency by 26.0% relative to Simplex and 24.1% relative to Kudzu.
+22Assumes each transaction is 200 B.
+
+--- PAGE 20 ---
+Chou et al.20
+8 Related work
+Classical Byzantine Consensus. The study of protocols for reaching consensus in the presence
+of Byzantine faults was introduced by Lamport, Shostak, and Pease [ 22]. Dwork, Lynch and
+Stockmeyer [13] showed that 𝑛≥ 3𝑓+ 1is optimal for partial synchrony. Standard protocols using
+the assumption 𝑛≥ 3𝑓+ 1, such as PBFT [10] and Tendermint [7, 8], satisfy 3-round finality. As
+shown by [3], this is optimal.
+Optimistic Responsiveness. While many standard protocols, such as PBFT, satisfy forms of
+optimistic responsiveness, a specific form of the concept was first discussed in [ 28]. Optimistic
+responsiveness has been further studied in a number of papers (e.g., [2, 35]) and can be defined in a
+number of ways [23, 25, 35].
+Fast-Path Approaches. A long line of work [6, 15, 16, 20, 27, 33] considers protocols with a ‘fast
+path’, which allows for quick termination/finalisation in certain ‘good’ scenarios. Kursawe [20]
+describes an agreement protocol that runs with3 𝑓+ 1processors, but is able to commit in two
+steps when all processes act correctly and the network is synchronous, falling back to a randomised
+asynchronous consensus protocol otherwise. FaB [27] extends Kursawe’s approach by more closely
+integrating the fast path and the fall-back mechanism (the ‘slow path’), and by introducing a
+parameterised model with 𝑛≥ 3𝑓+ 2𝑝+ 1processors. Fast termination is achieved, so long as at
+most 𝑝 processors are Byzantine. Unfortunately, the protocol suffers from a liveness bug [1]. FaB
+also gives a proof that the assumed bound 𝑛≥ 3𝑓+ 2𝑝+ 1is tight. However, it was pointed out in
+[21] and [3] that the proof only applies to a specific form of protocol. Kuznetsov et al. [21] show
+that, in fact, the bound 𝑛≥ 3𝑓+ 2𝑝− 1is optimal. Zyzzyva [ 19] also builds on FaB by (similarly)
+integrating the fast and slow paths, and by describing an SMR protocol, rather than a protocol
+for one-shot consensus. As pointed out in [1], the view-change mechanism in Zyzzyva does not
+guarantee safety when leaders are faulty. SBFT [17] also builds on the ideas introduced in FaB in
+order to allow the fast path to tolerate a small number of crash failures.
+Modern 2-Round Protocols. Alpenglow [ 18] is formally analysed under the assumption that
+𝑛≥ 5𝑓+ 1. The paper also considers circumstances in which the protocol can tolerate a further
+𝑓 crash failures, but the required assumptions for this case (essentially that Byzantine leaders
+cannot carry out a form of proposal equivocation) do not hold under partial synchrony. Banyan [34]
+carries out the fast path in parallel with the slow path mechanism, but can suffer from unbounded
+message complexity with faulty leaders. Kudzu (like FaB) makes the more general assumption that
+𝑛≥3𝑓+2𝑝+1for a tunable parameter𝑝. Kudzu and Alpenglow also describe the use of erasure
+coding techniques to allow for significantly improved maximum throughput (such techniques were
+also employed by SMR protocols in earlier papers, such as [30]).
+Compared to Minimmit, Alpenglow, and Kudzu, Hydrangea has improved resilience to crash
+failures. For a parameter 𝑘≥ 0, and for a system of 𝑛= 3𝑓+ 2𝑐+𝑘+ 1processors, Hydrangea
+achieves 2-round finality, so long as the number of faulty processors (Byzantine or crash) is at
+most 𝑝=⌊ 𝑐+𝑘
+2 ⌋. In the case that 𝑐= 0, this aligns precisely with the bounds provided by Kudzu.
+However, in more adversarial settings with up to 𝑓 Byzantine faults and 𝑐 crash faults, Hydrangea
+also obtains finality after two rounds of voting.
+As for Minimmit, ChonkyBFT [14] assumes 𝑛≥ 5𝑓+ 1and employs a single round of voting,
+but does not have Minimmit’s mechanism for fast view progression.
+Positioning of Minimmit. Minimmit assumes 𝑛≥ 5𝑓+ 1and achieves 2-round finality. The
+advantage of Minimmit over all previous approaches to 2-round finality is its fast view change
+mechanism, which, as described in Sections 1 and 7, allows for decreased view and transaction
+
+--- PAGE 21 ---
+Chou et al.21
+latency. While subjective, we also believe that the simplicity of the protocol will make it attractive
+to practitioners.
+9 Final comments
+We have presented Minimmit, a Byzantine fault-tolerant SMR protocol that achieves reduced
+transaction latency through a novel view-change mechanism. By decoupling view progression from
+transaction finality—requiring only2 𝑓+ 1votes for view changes while requiring 𝑛−𝑓 votes for
+finalisation—Minimmit demonstrates that significant latency improvements are possible without
+sacrificing safety or liveness guarantees.
+Our experimental evaluation shows an approximately 23% reduction in view latency and an
+11% reduction in transaction latency compared to existing approaches, achieved through faster
+view progression in geographically distributed networks. The protocol’s simplicity, requiring no
+complex slow-path mechanisms, may facilitate practical adoption in systems where low latency is
+critical.
+10 Acknowledgements
+We would like to thank Ittai Abraham, Benjamin Chan, Denis Kolegov, Ling Ren, and Victor Shoup
+for helpful conversations.
+References
+[1] Ittai Abraham, Guy Gueta, Dahlia Malkhi, Lorenzo Alvisi, Rama Kotla, and Jean-Philippe Martin. 2017. Revisiting fast
+practical byzantine fault tolerance.arXiv preprint arXiv:1712.01367(2017).
+[2] Ittai Abraham, Dahlia Malkhi, Kartik Nayak, Ling Ren, and Maofan Yin. 2020. Sync hotstuff: Simple and practical
+synchronous state machine replication. In2020 IEEE Symposium on Security and Privacy (SP). IEEE, 106–118.
+[3] Ittai Abraham, Kartik Nayak, Ling Ren, and Zhuolun Xiang. 2021. Good-case latency of byzantine broadcast: A
+complete categorization. InProceedings of the 2021 ACM Symposium on Principles of Distributed Computing. 331–341.
+[4] Nicolas Alhaddad, Sisi Duan, Mayank Varia, and Haibin Zhang. 2021. Succinct erasure coding proof systems.Cryptology
+ePrint Archive(2021).
+[5] Dan Boneh, Ben Lynn, and Hovav Shacham. 2001. Short signatures from the Weil pairing. InInternational conference
+on the theory and application of cryptology and information security. Springer, 514–532.
+[6] Francisco Brasileiro, Fabíola Greve, Achour Mostéfaoui, and Michel Raynal. 2001. Consensus in one communication
+step. InInternational Conference on Parallel Computing Technologies. Springer, 42–50.
+[7] Ethan Buchman. 2016.Tendermint: Byzantine fault tolerance in the age of blockchains. Ph. D. Dissertation.
+[8] Ethan Buchman, Jae Kwon, and Zarko Milosevic. 2018. The latest gossip on BFT consensus.arXiv preprint
+arXiv:1807.04938(2018).
+[9] Christian Cachin and Stefano Tessaro. 2005. Asynchronous verifiable information dispersal. In24th IEEE Symposium
+on Reliable Distributed Systems (SRDS’05). IEEE, 191–201.
+[10] Miguel Castro, Barbara Liskov, et al. 1999. Practical byzantine fault tolerance. InOsDI, Vol. 99. 173–186.
+[11] Benjamin Y Chan and Rafael Pass. 2023. Simplex consensus: A simple and fast consensus protocol. InTheory of
+Cryptography Conference. Springer, 452–479.
+[12] George Danezis, Lefteris Kokoris-Kogias, Alberto Sonnino, and Alexander Spiegelman. 2022. Narwhal and tusk: a
+dag-based mempool and efficient bft consensus. InProceedings of the Seventeenth European Conference on Computer
+Systems. 34–50.
+[13] Cynthia Dwork, Nancy A. Lynch, and Larry Stockmeyer. 1988. Consensus in the Presence of Partial Synchrony.J.
+ACM35, 2 (1988), 288–323.
+[14] Bruno França, Denis Kolegov, Igor Konnov, and Grzegorz Prusak. 2025. ChonkyBFT: Consensus Protocol of ZKsync.
+arXiv preprint arXiv:2503.15380(2025).
+[15] Roy Friedman, Achour Mostefaoui, and Michel Raynal. 2005. Simple and efficient oracle-based consensus protocols for
+asynchronous Byzantine systems.IEEE Transactions on Dependable and Secure Computing2, 1 (2005), 46–56.
+[16] Rachid Guerraoui and Marko Vukolić. 2007. Refined quorum systems. InProceedings of the twenty-sixth annual ACM
+symposium on Principles of distributed computing. 119–128.
+[17] Guy Golan Gueta, Ittai Abraham, Shelly Grossman, Dahlia Malkhi, Benny Pinkas, Michael Reiter, Dragos-Adrian
+Seredinschi, Orr Tamir, and Alin Tomescu. 2019. SBFT: A scalable and decentralized trust infrastructure. In2019 49th
+
+--- PAGE 22 ---
+Chou et al.22
+Annual IEEE/IFIP international conference on dependable systems and networks (DSN). IEEE, 568–580.
+[18] Quentin Kniep, Jakub Sliwinski, and Roger Wattenhofer. 2025. Solana Alpenglow Consensus.https:// www.scribd.com/
+document/ 895233790/ Solana-Alpenglow-White-Paper(2025).
+[19] Ramakrishna Kotla, Lorenzo Alvisi, Mike Dahlin, Allen Clement, and Edmund Wong. 2007. Zyzzyva: speculative
+byzantine fault tolerance. InProceedings of twenty-first ACM SIGOPS symposium on Operating systems principles. 45–58.
+[20] Klaus Kursawe. 2002. Optimistic byzantine agreement. In21st IEEE Symposium on Reliable Distributed Systems, 2002.
+Proceedings.IEEE, 262–267.
+[21] Petr Kuznetsov, Andrei Tonkikh, and Yan X Zhang. 2021. Revisiting optimal resilience of fast byzantine consensus. In
+Proceedings of the 2021 ACM Symposium on Principles of Distributed Computing. 343–353.
+[22] Leslie Lamport, Robert Shostak, and Marshall Pease. 1982. The Byzantine generals problem.ACM Transactions on
+Programming Languages and Systems (TOPLAS)4, 3 (1982), 382–401.
+[23] Andrew Lewis-Pye, Dahlia Malkhi, Oded Naor, and Kartik Nayak. 2024. Lumiere: Making optimal bft for partial
+synchrony practical. InProceedings of the 43rd ACM Symposium on Principles of Distributed Computing. 135–144.
+[24] Andrew Lewis-Pye, Kartik Nayak, and Nibesh Shrestha. 2025. The Pipes Model for Latency Analysis.Cryptology ePrint
+Archive(2025).
+[25] Andrew Lewis-Pye and Tim Roughgarden. 2023. Permissionless Consensus.arXiv preprint arXiv:2304.14701(2023).
+[26] Andrew Lewis-Pye and Tim Roughgarden. 2025. Beyond optimal fault tolerance.arXiv preprint arXiv:2501.06044
+(2025).
+[27] J-P Martin and Lorenzo Alvisi. 2006. Fast byzantine consensus.IEEE Transactions on Dependable and Secure Computing
+3, 3 (2006), 202–215.
+[28] Rafael Pass and Elaine Shi. 2018. Thunderella: Blockchains with optimistic instant confirmation. InAdvances in
+Cryptology–EUROCRYPT 2018: 37th Annual International Conference on the Theory and Applications of Cryptographic
+Techniques, Tel A viv, Israel, April 29-May 3, 2018 Proceedings, Part II 37. Springer, 3–33.
+[29] Victor Shoup. 2000. Practical threshold signatures. InInternational conference on the theory and applications of
+cryptographic techniques. Springer, 207–220.
+[30] Victor Shoup. 2023. Sing a song of Simplex.Cryptology ePrint Archive(2023).
+[31] Victor Shoup, Jakub Sliwinski, and Yann Vonlanthen. 2025. Kudzu: Fast and Simple High-Throughput BFT.arXiv
+preprint arXiv:2505.08771(2025).
+[32] Nibesh Shrestha, Aniket Kate, and Kartik Nayak. 2025. Hydrangea: Optimistic Two-Round Partial Synchrony with
+One-Third Fault Resilience.Cryptology ePrint Archive(2025).
+[33] Yee Jiun Song and Robbert Van Renesse. 2008. Bosco: One-step byzantine asynchronous consensus. InInternational
+Symposium on Distributed Computing. Springer, 438–450.
+[34] Yann Vonlanthen, Jakub Sliwinski, Massimo Albarello, and Roger Wattenhofer. 2024. Banyan: Fast rotating leader bft.
+InProceedings of the 25th International Middleware Conference. 494–507.
+[35] Maofan Yin, Dahlia Malkhi, Michael K Reiter, Guy Golan Gueta, and Ittai Abraham. 2019. HotStuff: BFT consensus
+with linearity and responsiveness. InProceedings of the 2019 ACM Symposium on Principles of Distributed Computing.
+347–356.
+A Reproducing Experiments
+All experiments were executed with the commonware-estimator23. Each run combines one of the
+protocol scripts below with a network distribution. The workflow is:
+(1) Save the desired script as<protocol>.lazy.
+(2) Invoke commonware-estimator –distribution <distribution> <protocol>.lazyus-
+ing one of the configurations listed at the end of this section.
+Protocol scripts
+The following schedules apply to experiments without erasure coding. Set<proposal_bytes> to
+32768for the 32 KB runs and to1048576for the 1 MB runs.
+23https://github.com/commonwarexyz/monorepo/tree/19f19d32760daf1d497295726ec92a1e6b84959f/examples/estimator
+
+--- PAGE 23 ---
+Chou et al.23
+Simplex
+# Simplex
+propose{0, size=<proposal_bytes>}
+wait{0, threshold=1}
+broadcast{1, size=40}
+wait{1, threshold=67%}
+broadcast{2, size=40}
+wait{2, threshold=67%}
+Kudzu (no coding)
+# Kudzu (no coding)
+propose{0, size=<proposal_bytes>}
+wait{0, threshold=1}
+broadcast{1, size=40}
+wait{1, threshold=61%}
+broadcast{2, size=40}
+wait{1, threshold=81%} || wait{2, threshold=61%}
+Minimmit
+# Minimmit
+propose{0, size=<proposal_bytes>}
+wait{0, threshold=1}
+broadcast{1, size=40}
+wait{1, threshold=41%}
+wait{1, threshold=81%}
+Use the erasure-coded variants below for Section 7’s coded experiments (message sizes already
+include shard data).
+Simplex (erasure coded)
+# Simplex (erasure coded)
+propose{0, size=61682}
+wait{0, threshold=1}
+broadcast{1, size=61722}
+wait{1, threshold=67%}
+broadcast{2, size=40}
+wait{2, threshold=67%}
+
+--- PAGE 24 ---
+Chou et al.24
+Kudzu (erasure coded)
+# Kudzu (erasure coded)
+propose{0, size=55190}
+wait{0, threshold=1}
+broadcast{1, size=55230}
+wait{1, threshold=61%}
+broadcast{2, size=40}
+wait{1, threshold=81%} || wait{2, threshold=61%}
+Minimmit (erasure coded)
+# Minimmit (erasure coded)
+propose{0, size=55190}
+wait{0, threshold=1}
+broadcast{1, size=55230}
+wait{1, threshold=41%}
+wait{1, threshold=81%}
+Network distributions
+Pair the scripts with one of the following network distributions when callingcommonware-estimator.
+The Uniform global distribution is reused for both block sizes; only<proposal_bytes>changes.
+Uniform global (1 Gbps links)
+commonware-estimator --distribution \
+us-west-1:5:125000000,us-east-1:5:125000000,\
+eu-west-1:5:125000000,ap-northeast-1:5:125000000,\
+eu-north-1:5:125000000,ap-south-1:5:125000000,\
+sa-east-1:5:125000000,eu-central-1:5:125000000,\
+ap-northeast-2:5:125000000,ap-southeast-2:5:125000000 \
+<protocol>.lazy
+Region-centric (1 Gbps links)
+commonware-estimator --distribution \
+us-west-1:13:125000000,us-east-1:12:125000000,\
+eu-west-1:3:125000000,ap-northeast-1:4:125000000,\
+eu-north-1:3:125000000,ap-south-1:3:125000000,\
+sa-east-1:3:125000000,eu-central-1:3:125000000,\
+ap-northeast-2:3:125000000,ap-southeast-2:3:125000000 \
+<protocol>.lazy
+
+--- PAGE 25 ---
+Chou et al.25
+Uniform global (10 Gbps links)
+commonware-estimator --distribution \
+us-west-1:5:1250000000,us-east-1:5:1250000000,\
+eu-west-1:5:1250000000,ap-northeast-1:5:1250000000,\
+eu-north-1:5:1250000000,ap-south-1:5:1250000000,\
+sa-east-1:5:1250000000,eu-central-1:5:1250000000,\
+ap-northeast-2:5:1250000000,ap-southeast-2:5:1250000000 \
+<protocol>.lazy
+B Erasure codes: the setup
+In this section, we describe the (standard) cryptographic primitives required for Appendices C-E.
+Threshold signatures. A 𝑘-of-𝑛 threshold signature scheme allowssignature sharesfrom any 𝑘
+processors on a given message to be combined to form acertificateon that message. Forming a
+certificate on any message is infeasible given less than 𝑘 signature shares. Such schemes can be
+implemented using BLS signatures [5]. We use one threshold signature scheme with𝑘= 2𝑓+ 1,
+and another with𝑘=𝑛−𝑓.
+Erasure codes. We suppose given an (𝑛, 2𝑓+ 1)-erasure code, which uniquely encodes any bit
+string 𝐶 of length 𝛽 as a sequence of 𝑛 fragments, 𝑐1, . . . , 𝑐𝑛, in such a way that any2 𝑓+ 1fragments
+and 𝛽 suffice to efficiently reconstruct𝐶. We suppose all fragments have the same size (as a function
+of 𝑛, 𝑓 and 𝛽). Reed-Solomon codes can be used to realise an (𝑛, 2𝑓+ 1)-erasure code so that each
+fragment has size ≈𝛽/( 2𝑓+ 1). If 𝑛= 5𝑓+ 1, this leads to a data expansion rate of roughly2 .5, i.e.,
+the combined size of all𝑛fragments is roughly 2.5𝛽.
+Merkle trees. We use Merkle trees in the standard way to allow a processor 𝑝 to commit to a
+sequence of values 𝑣1, . . . , 𝑣𝑛. To form the commitment, 𝑝 constructs a full binary tree in which
+the leaves are the hashes of 𝑣1, . . . , 𝑣𝑛 and every other node is the hash of its two children. The
+commitment is the root of the tree, 𝑟 say. Toopenthe commitment at position 𝑖, 𝑝 specifies 𝑣𝑖 and a
+validation path from 𝑟 to 𝑣𝑖 at position 𝑖: the validation path specifies the sibling of each node on
+the path from the hash of𝑣 𝑖 at position𝑖to the root.
+Encoding, certified fragments, and tags. We use techniques introduced by Cachin and Tessaro [9]
+for the purpose ofasynchronous verifiable information dispersal (A VID). These techniques combine
+the use of Merkle trees and erasure codes. Given a bit string 𝐶 of length 𝛽, let 𝑐1, . . . , 𝑐𝑛 be the
+corresponding fragments produced by our (𝑛, 2𝑓+ 1)-erasure code. Form a Merkle tree whose
+leaves are the hashes of 𝑐1, . . . , 𝑐𝑛 and let 𝑟 be the root of this tree. For each 𝑖∈ [𝑛] , let 𝜋𝑖 be a
+validation path from𝑟to𝑣 𝑖 at position𝑖. We define thetag𝜏(𝐶):=(𝛽, 𝑟)and set:
+Encode(𝐶):=(𝜏(𝐶),{(𝑐 𝑖, 𝜋𝑖 )}𝑖∈ [𝑛] ).
+If 𝑧=(𝛽 ′, 𝑟′) for some 𝛽 ′ ∈N and some hash value 𝑟 ′, we say (𝑐, 𝜋) acertified fragment of 𝑧 at 𝑖 if
+both:
+•𝑐is of the correct length (given𝑛and𝑓) to be a fragment of a message of length𝛽 ′, and;
+•𝜋is a validation path from𝑟 ′ to𝑐at position𝑖.
+Decoding. The function Decode takes inputs of the form
+(𝑧,{(𝑐 𝑖, 𝜋𝑖 )}𝑖∈𝐼 ),
+
+--- PAGE 26 ---
+Chou et al.26
+where 𝑧=(𝛽, 𝑟) for 𝛽∈N , 𝑟 is a hash value, 𝐼⊆ [𝑛] with |𝐼|= 2𝑓+ 1, and each (𝑐𝑖, 𝜋𝑖 ) is a
+certified fragment of 𝑧 at 𝑖. It then reconstructs a message 𝐶 of length 𝛽 from the fragments {𝑐𝑖 }𝑖∈𝐼 .
+If this reconstruction fails (e.g., due to a formatting error) it outputs ⊥. Otherwise, it computes
+𝜏(𝐶)=(𝛽, 𝑟 ′). If𝑟≠𝑟 ′ it outputs⊥, and otherwise outputs𝐶.
+C Erasure coding for Minimmit: the intuition
+In this section, we discuss the intuition behind the modifications required to describe a version of
+Minimmit, called E-Minimmit, which efficiently integrates the use of erasure codes.
+To explain our approach, we first consider a simple (but non-optimal) version, which has a
+data-expansion rate of 5, i.e., the total size of all fragments sent out by each leader to all processors
+combined is roughly five times the size of a block. The factor of 5 arises because this simple protocol
+requires that 𝑓+ 1fragments suffice to reconstruct a block. Then we describe a modified approach
+using an(𝑛,2𝑓+1)erasure code, resulting in a data-expansion rate of 2.5.
+C.1 A simple (but non-optimal) approach
+If one is happy to accept a data-expansion rate of 5, then erasure codes can be integrated with
+Minimmit in an entirely standard way, using methods first described in [9]. Since E-Minimmit will
+use threshold signatures, we describe an approach that does the same:
+• Rather than the leader 𝑝 of view 𝑣 sending the entire block 𝑏 to each processor, it first
+separates out thepayload 𝐶 :=𝑏.Tr of the block, i.e., the sequence of transactions associated
+with the block.
+• It then calculates Encode(𝐶)=(𝜏(𝐶),{(𝑐 𝑖, 𝜋𝑖 )}𝑖∈ [𝑛] ) (as described in Appendix B, but now
+using an(𝑛, 𝑓+1)-erasure code).
+• The block 𝑏 itself is now just a tuple (𝑣, 𝜏(𝐶), ℎ) signed by 𝑝, where ℎ is the hash of the parent
+of𝑏. We refer to the message(𝑏, 𝑖, 𝑐 𝑖, 𝜋𝑖 )asthe certified fragment of𝑏at𝑖.
+•The leader𝑝then sends each𝑝 𝑖 the certified fragment of𝑏at𝑖.
+• Upon checking that this message is well-formed, including verifying 𝜋𝑖 and that the neces-
+sary notarisations and nullifications (or the corresponding threshold certificates) have been
+received, 𝑝𝑖 then disseminates the certified fragment of 𝑏 at 𝑖 as well as a vote for 𝑏. The vote
+for 𝑏 contains 𝑝𝑖’s signature share for both the M-notarisation and L-notarisation threshold
+schemes on the message(vote, 𝑏).
+• The remaining instructions are largely unchanged, except that, instead of requiring processors
+to forward on M-notarisations, we have processors form a certificate (an ‘M-certificate’) from
+the signature shares included in votes, using a (2𝑓+ 1)-of-𝑛 threshold signature scheme.
+Processors now forward these certificates instead of a set of2 𝑓+ 1votes (and we proceed
+similarly for nullifications).
+• The factor 5 arises because the existence of an M-certificate only suffices to ensure that
+(2𝑓+ 1) −𝑓=𝑓+ 1correct processors have sent their fragments to all processors. So, we
+require that𝑓+1fragments suffice for block payload reconstruction.
+Next, we describe the intuition behind reducing the data-expansion rate to 2.5.
+C.2 Reducing the data-expansion rate to 2.5
+To reduce the data-expansion rate, we use an (𝑛, 2𝑓+ 1)-erasure code. This means the existence of
+an M-certificate no longer ensures sufficiently many correct processors have disseminated their
+fragments to guarantee data-availability for the block payload. Accordingly, we must now allow
+transition from view𝑣upon receiving either:
+(a) A nullification (or the corresponding certificate) for the view, or;
+
+--- PAGE 27 ---
+Chou et al.27
+(b) An M-certificate for some view 𝑣 blockandfragments from sufficiently many processors to
+reconstruct the block.
+With this change in place, there are two further required changes to the protocol:
+The sending of others’ fragments (in the bad case).Suppose that 𝑝𝑖 is in view 𝑣 and finds that
+(b) above applies with respect to some block 𝑏. Then 𝑝𝑖 should immediately progress to the next
+view. However, since𝑝𝑖 may be the leader of some subsequent view (and may propose a block with
+parent 𝑏 that it wishes others to vote for), it must also guarantee that other correct processors will
+be able to reconstruct the block payload. Since up to 𝑓 of the processors that sent fragments to 𝑝𝑖
+may be faulty, this is not necessarily the case. To deal with this issue, we first consider an approach
+that leads to large time-outs. Then we consider how to reduce time-outs.
+An approach that gives time-outs of8 Δ. One approach 𝑝𝑖 could follow would be to select a set of
+𝑓 processors disjoint from those whose fragments 𝑝𝑖 has received, and to send those processors
+notification that 𝑝𝑖 can send them their fragment if they have not already received it. This ensures
+that3 𝑓+ 1processors have access to their own fragment, so that2 𝑓+ 1correct processors have
+access to their own fragment. Data-availability is ensured so long as those correct processors
+disseminate their fragment to others.
+While this approach would work, it has the downside of significantly increasing the required
+time-out for each view. Suppose the first correct processor 𝑝𝑖 to enter view 𝑣 does so at 𝑡≥GST
+because they find that (b) above applies w.r.t. some block𝑏1. Suppose lead(𝑣) is correct and that
+we wish to ensure they propose a new block that becomes finalised. Then all correct processors,
+including lead(𝑣) , will enter the view by 𝑡+ 4Δ: we must wait one Δ for others to receive 𝑝𝑖’s
+messages (indicating that it can send required fragments), another Δ for 𝑝𝑖 to receive responses to
+those messages, one Δ for 𝑝𝑖 to send the relevant fragments, and then a final Δ for those fragments
+to be disseminated. However,lead(𝑣) may enter view 𝑣 just before it receives sufficient fragments
+to recover 𝑏1 because (b) above applies w.r.t. a different block𝑏2, and may propose a block 𝑏3 with
+𝑏2 as parent. Using the same argument, we can only guarantee that correct processors will be able
+to recover 𝑏2 and vote for 𝑏3 by 𝑡+ 8Δ. This would mean time-outs of8 Δ, meaning that crashed
+leaders cause significant delays.
+An approach with reduced time-outs. We follow an approach that gives significantly reduced time-
+outs, while requiring no extra message sending in the case that leaders are correct during synchrony.
+The approach uses a parameter 𝑠, which should be set to roughly the expected time between
+receiving2 𝑓+ 1votes and receiving3 𝑓+ 1votes when the leader is correct during synchrony.
+Generally, this will be some small fraction of Δ. Upon leaving view 𝑣 because it has received an
+M-certificate for 𝑏 and successfully decoded the payload, 𝑝𝑖 now sets a timer to expire in time 𝑠.
+The intuition is that if the leader was correct during synchrony, 𝑝𝑖 will receive3 𝑓+ 1votes within
+time 𝑠, ensuring2 𝑓+ 1correct processors have their fragments—sufficient for data availability.
+Only if this threshold is not met does𝑝 𝑖 need to intervene. Once the timer expires, processor𝑝 𝑖:
+•Sets𝐼:={𝑗∈ [𝑛]:𝑝 𝑖 has received a certified fragment of𝑏at𝑗from𝑝 𝑗 };
+•Sets𝑥:=(3𝑓+1) − |𝐼|, and if𝑥>0then it:
+(i) Chooses𝐽⊆ [𝑛]with|𝐽|=𝑥and𝐽∩𝐼=∅;
+(ii) For each𝑗∈𝐽, sends𝑝 𝑗 a certified fragment of𝑏at𝑗.
+The consequence is that by time𝑠+Δ after 𝑝𝑖 leaves view𝑣 at time𝑡, at least3 𝑓+ 1processors possess
+their fragments (if necessary, by 𝑝𝑖’s intervention), guaranteeing that2 𝑓+ 1correct processors
+have disseminated their fragments. This ensures all correct processors leave view 𝑣 by 𝑡+ 2Δ+𝑠 .
+The same argument as above shows that timeouts can now be set to4Δ+2𝑠.
+
+--- PAGE 28 ---
+Chou et al.28
+An optimisation reducing timeouts to3 Δ. We will initially formalise a version of E-Minimmit that
+ensures every correct leader after GST finalises a new block, and which uses timeouts of4 Δ+ 2𝑠.
+However, in Appendix E, we will also describe an optimisation that uses timeouts of3 Δ. The
+trade-off is that view 𝑣 is then only guaranteed to produce a new finalised block if view𝑣− 1begins
+after GST and the leaders of both views𝑣−1and𝑣are correct.
+Late dissemination of one’s own fragment (in the bad case).The protocol described above
+ensures data availability through two mechanisms: processors disseminate fragments with their
+votes, and processors who leave views early may subsequently send fragments to others. However,
+a subtle issue remains. Consider a processor 𝑝 𝑗 that receives a certified fragment of block 𝑏 from
+some processor 𝑝𝑖 (via the mechanism described above) after 𝑝 𝑗 has already voted for a different
+block in view 𝑣 or after 𝑝 𝑗 has timed out. In this case, 𝑝 𝑗 cannot produce a vote for 𝑏, and therefore
+would not automatically disseminate its fragment for𝑏.
+To ensure data availability in such scenarios, we require that processors disseminate their own
+fragments whenever they hold a fragment for a block with an M-certificate but have not yet
+disseminated that fragment. This ensures that2 𝑓+ 1correct processors eventually disseminate
+their fragment, guaranteeing data availability.24
+C.3 Avoiding the finalisation of junk blocks
+We introduce one further modification to address an issue arising from erasure coding: since
+processors vote for blocks before decoding their payloads, Byzantine leaders can cause blocks
+with invalid payloads to receive L-notarisations. Whilst one could simply finalise such blocks and
+subsequently ignore their contents when forming the transaction sequence, we prefer to exclude
+them entirely from the finalised chain. We achieve this through a straightforward mechanism.
+The key insight is to decouple M-certificates from block inclusion in the finalised chain. We
+proceed as follows:
+(1) Each processor 𝑝𝑖 maintains a local variable blocks containing the genesis block and all
+blocks𝑏satisfying:
+(i)𝑝 𝑖 has received (or formed) an M-certificate for𝑏;
+(ii)𝑝 𝑖 has received sufficient fragments to decode the payload and verify it is well-formed, and;
+(iii) The parent of𝑏belongs toblocks.
+(2) Processors advance from view 𝑣 upon receiving either a nullification (or the corresponding
+certificate) for view𝑣, or upon finding thatblockscontains a view𝑣block.
+(3) Processors finalise only those blocks appearing in (their local copy of) blocks (upon receipt
+of L-notarisations or L-certificates).
+This approach introduces a liveness concern: if view𝑣 produces a block with an M-certificate but
+invalid payload, we must ensure processors can still progress beyond view 𝑣. Since the block never
+enters blocks (failing condition (ii)), processors may require a nullification for view 𝑣 to advance.
+We address this by requiring processors to issue nullify(𝑣) messages upon decoding a view 𝑣
+block with an M-certificate and discovering the payload is invalid. This preserves consistency: the
+standard quorum intersection argument establishes that if view 𝑣 produces a block with a valid
+payload that achieves finalization, then no alternative view 𝑣 block can receive an M-certificate.
+Consequently, no processor will decode a distinct view 𝑣 block, discover it has an invalid payload,
+24Note that in executions without Byzantine behaviour, each processor still disseminates its fragment for at most one block
+per view. Byzantine leaders can produce slashable behaviour causing some correct processors to disseminate two extra
+fragments. This behaviour is ‘slashable’, because it requires the leader to produce more than one block for the same view,
+leading to objective proof of Byzantine action (for a formal account of ‘accountability/slashability’ see [26]).
+
+--- PAGE 29 ---
+Chou et al.29
+and issue a nullify(𝑣) message. This ensures that nullifications for view 𝑣 cannot reach the2 𝑓+ 1
+threshold required.
+D E-Minimmit: the formal specification
+As in Section 4, we say ‘disseminate’ to mean ‘send to all processors’. When a correct processor
+is instructed to send a message to itself, it regards that message as immediately received. The
+pseudocode uses a number of message types, local variables, functions and procedures, detailed
+below. While some of the following definitions are the same as in Section 4, we repeat them here
+for ease of reference.
+The functionlead(𝑣). As in Section 4, we setlead(𝑣):=𝑝 𝑗+1, where𝑗=𝑣mod𝑛.
+Blocks. Recall that 𝜏 is the tag function, as defined in Appendix B. Thegenesis blockis the tuple
+𝑏gen :=( 0, 𝜏(𝜆), 𝜆) , where 𝜆 denotes the empty sequence (of length 0). A block other than the
+genesis block, with associated payload𝐶, is a tuple𝑏=(𝑣, 𝜏(𝐶), ℎ)signed bylead(𝑣), where:
+•𝑣∈N ≥1 is the view corresponding to𝑏;
+•𝜏(𝐶)is the tag resulting from𝐶;
+•ℎis the hash of𝑏’s parent block.
+We write 𝑏.view, 𝑏.tag and 𝑏.par to denote the corresponding entries of 𝑏. If 𝑏.view=𝑣 , we also
+refer to 𝑏 as a ‘view𝑣 block’. If(𝑐𝑖, 𝜋𝑖 ) is a certified fragment of 𝜏(𝐶) at 𝑖, we also say that the tuple
+(𝑏, 𝑖, 𝑐𝑖, 𝜋𝑖 ) iscertified fragment of 𝑏 at 𝑖: it is a message of this form that a correct leader of view 𝑣
+will send to𝑝 𝑖 while in view𝑣.
+Votes. Avoteby𝑝 𝑖 ∈Πfor the block𝑏is a message of the form(vote, 𝑏, 𝑖, 𝜌 𝑖, 𝜌′
+𝑖 ), where:
+•𝜌 𝑖 is a (valid) signature share from𝑝𝑖 on the message (vote, 𝑏), using a (2𝑓+ 1)-of-𝑛 threshold
+signature scheme;
+•𝜌 ′
+𝑖 is a signature share from 𝑝𝑖 on the message (vote, 𝑏), using an (𝑛−𝑓) -of-𝑛 threshold
+signature scheme.
+Processor 𝑝𝑖 may disseminate a vote for 𝑏 upon receiving a certified fragment of 𝑏 at 𝑖. The vote for
+𝑏 by 𝑝𝑖 contains signature shares from 𝑝𝑖 corresponding to (2𝑓+ 1)-of-𝑛 and (𝑛−𝑓) -of-𝑛 threshold
+signature schemes. As detailed below, the first of these signature shares can be used to help form
+an ‘M-certificate’ for𝑏, while the second can be used to form an ‘L-certificate’ for𝑏.
+M-notarisations and certificates. An M-notarisationfor the block 𝑏 is a set of2 𝑓+ 1votes for 𝑏,
+each by a different processor in Π. (By an M-notarisation, we mean an M-notarisation for some
+block.) An M-certificatefor the block 𝑏 is the message (M-cert, 𝑏, 𝜌), where 𝜌 is a (2𝑓+ 1)-of-𝑛
+threshold certificate on the message(vote, 𝑏).
+L-notarisations and certificates. AnL-notarisationfor the block 𝑏 is a set of 𝑛−𝑓 votes for
+𝑏, each by a different processor in Π. An L-certificatefor the block 𝑏 is the message (L-cert, 𝑏, 𝜌),
+where𝜌is an(𝑛−𝑓)-of-𝑛certificate on the message(vote, 𝑏).
+Nullify messages and nullifications. For 𝑣∈N ≥1, a nullify (𝑣) message by 𝑝𝑖 is of the form
+(nullify, 𝑣, 𝑖, 𝜌𝑖 ), where 𝜌𝑖 is a (valid) signature share from 𝑝𝑖 on the message (nullify, 𝑣), using a
+(2𝑓+ 1)-of-𝑛 threshold signature scheme. Anullificationfor view 𝑣 is a set of2 𝑓+ 1nullify (𝑣)
+messages, each by a different processor in Π. (By anullification, we mean a nullification for some
+view.) AnN-certificatefor view 𝑣 is a message (N-cert, 𝑣, 𝜌) , where 𝜌 is a (2𝑓+ 1)-of-𝑛 certificate
+on the message(nullify,𝑣).
+The local variablev. Initially set to 1, this variable specifies the present view of a processor.
+
+--- PAGE 30 ---
+Chou et al.30
+The local variable b. Initially set to 𝑏gen, this variable is used by leaders to choose a parent block.
+The local timer T. Each processor 𝑝𝑖 maintains a local timer T, which is initially set to 0 and
+increments in real-time. (Processors will be explicitly instructed to reset their timer to 0 upon
+entering a new view.)
+The local variablecertificates. Initially empty, this local variable for𝑝𝑖 is automatically updated
+by 𝑝𝑖 (without explicit instructions in the pseudocode) to contain all M-certificates, L-certificates,
+and N-certificates received by 𝑝𝑖. If 𝑝𝑖 receives an M-notarisation, L-notarisation, or a nullification,
+then it automatically forms the associated certificate, and adds it tocertificates.
+An N-certificate 𝑄 for view 𝑣 is regarded asnewat timeslot 𝑡 if 𝑄∈certificates and
+certificates did not contain an N-certificate for view 𝑣 at any timeslot 𝑡 ′ <𝑡 . Similarly, an
+M-certificate 𝑄 for 𝑏 is new at timeslot 𝑡 if 𝑄∈certificates and certificates did not contain
+an M-certificate for𝑏at any timeslot𝑡 ′ <𝑡.
+The local variable blocks. Initially set to {𝑏gen}, this local variable is automatically updated by
+𝑝𝑖 (without explicit instructions in the pseudocode). At any timeslot,blocks contains 𝑏gen and all
+blocks𝑏such that (i)-(iii) below are all satisfied:
+(i)certificatescontains an M-certificate for𝑏;
+(ii) There exists 𝐼⊂ [𝑛] with |𝐼|= 2𝑓+ 1such that, for each 𝑗∈𝐼 , 𝑝𝑖 has received (𝑏, 𝑗, 𝑐 𝑗, 𝜋𝑗 )
+from 𝑝 𝑗, which is a certified fragment of 𝑏 at 𝑗. On input (𝑏.tag,{(𝑐 𝑗, 𝜋𝑗 )} 𝑗∈𝐼 ), Decode does
+not output⊥;
+(iii) There exists𝑏 ′ ∈blockswith𝐻(𝑏 ′)=𝑏.par, i.e., the parent of𝑏is inblocks.
+At timeslot𝑡,𝑏∈blocksis regarded asnewif it was not inblocksat any previous timeslot.
+The local timers T(𝑏) . Processor 𝑝𝑖 will leave view 𝑣 upon finding thatblocks contains a view
+𝑣 block 𝑏, or else upon finding that certificates contains an N-certificate for view 𝑣. In the
+former case, it will not be necessary during ‘standard operation’ for𝑝𝑖 to send out further certified
+fragments of 𝑏. However, if the leader of the view is faulty, it may be necessary to do so, so that
+other processors can recover the payload associated with𝑏.
+To achieve this, we consider a parameter 𝑠, which should be set to roughly the expected time
+between receiving2 𝑓+ 1votes for 𝑏 and receiving3 𝑓+ 1votes for 𝑏, during synchrony and if the
+leader of the view is correct. Upon putting a new block 𝑏 intoblocks, 𝑝𝑖 triggersa timer T(𝑏) to
+expire in time 𝑠. When the timer expires, the pseudocode specifies to which processors 𝑝𝑖 must
+send their corresponding certified fragments of𝑏.
+The local variablesnullified,proposed, andnotarised. These are used by𝑝𝑖 to record whether
+it has yet sent a nullify(v) message, whether it has yet proposed a block for view 𝑣, and the block
+it has voted for in the present view: nullified and proposed are initially set to false, while
+notarised is initially set to ⊥ (a default value different than any block). These values will be
+explicitly reset upon entering a new view.
+The procedureProposeBlock. This procedure is executed by the leader 𝑝𝑖 of view 𝑣 to produce
+and send out a new block. To execute the procedure,𝑝 𝑖:
+• Forms a payload𝐶, containing all received transactions not included the payloads of ancestors
+ofb. 25
+•Calculates Encode(𝐶):=(𝜏(𝐶),{(𝑐 𝑗, 𝜋𝑗 )} 𝑗∈ [𝑛] )and sets𝑏:=(𝑣, 𝜏(𝐶), 𝐻(b))signed by𝑝 𝑖.
+•For each𝑗∈ [𝑛], sends(𝑏, 𝑗, 𝑐 𝑗, 𝜋𝑗 )to𝑝 𝑗, i.e., sends the certified fragment of𝑏at𝑗to𝑝 𝑗.
+25The protocol ensuresb∈blocks, so that𝑝 𝑖 knows the payload of every ancestor ofb.
+
+--- PAGE 31 ---
+Chou et al.31
+When 𝑝𝑖 has received a votable fragment for view 𝑣. If 𝑏=(𝑣, 𝜎, ℎ) is a view 𝑣 block signed by
+lead(𝑣) and (𝑏, 𝑖, 𝑐𝑖, 𝜏𝑖 ) is a certified fragment of 𝑏 at 𝑖, then 𝑝𝑖 regards this certified fragment as
+votable for view𝑣if:
+(i) there exists𝑏 ′ ∈blockswith𝐻(𝑏 ′)=ℎ,𝑏 ′.view<𝑣, and;
+(ii)certificatescontains an N-certificate for each view in the open interval(𝑏 ′.view, 𝑣).
+For ease of reference, local variables are displayed in the table below. The pseudocode appears in
+Algorithm 2.
+Variable Description
+v Initially 1, specifies the present view
+b Initially𝑏 gen, used to specify parents
+T Initially 0, a local timer reset upon entering each view
+T(𝑏) Expires after time𝑠once triggered
+nullified Initially false, specifies whether already sent nullify(v)message
+proposed Initially false, specifies whether already proposed a block for viewv
+notarised Initially set to⊥, records block voted for in present view
+certificates Initially empty, records all received certificates
+Automatically updated
+blocks Initially contains only𝑏 gen, records all blocks with M-certificates
+and recovered payloads. Automatically updated
+Table 8. Local variables for E-Minimmit
+E E-Minimmit: analysis
+E.1 Consistency
+We say a block 𝑏 receives an M-certificate if some processor receives an M-certificate for𝑏 (and
+similarly for L-certificates). View 𝑣 receives an N-certificate if some processor receives an N-
+certificate for view 𝑣. The proof of consistency is very similar to that for Minimmit. The only
+substantive change is in the proof is the corresponding version of Lemma 5.3.
+Lemma E.1 (One vote per view).Correct processors vote for at most one block in each view.
+Proof.The proof is the same as for Lemma 5.1.□
+Lemma E.2 ((X1) is satisfied).If 𝑏 receives an L-certificate, then no block 𝑏′ ≠𝑏 with 𝑏′.view=
+𝑏.view receives an M-certificate.
+Proof.The proof is essentially identical to that for Lemma 5.2.□
+Lemma E.3 ((X2) is satisfied).If 𝑏 receives an L-certificate and some correct processor finalises 𝑏,
+then view𝑣:=𝑏.view does not receive an N-certificate.
+Proof. Towards a contradiction, suppose 𝑏 receives an L-certificate and some correct processor
+finalises 𝑏, let 𝑣 :=𝑏.view , and suppose view 𝑣 receives an N-certificate. Let 𝑃 be the correct
+processors that vote for 𝑏, let 𝑃 ′ =Π\𝑃 , and note that |𝑃 ′ | ≤ 2𝑓 . Since view 𝑣 receives an
+N-certificate, it follows that some processor in 𝑃 must send a nullify (𝑣) message. So, let 𝑡 be
+the first timeslot at which some processor 𝑝𝑖 ∈𝑃 sends such a message. Since 𝑝𝑖 cannot send a
+nullify(𝑣) message upon timeout (lines 14-15), there are two possibilities. The first is that 𝑝𝑖 sends
+
+--- PAGE 32 ---
+Chou et al.32
+Algorithm 2: the instructions for𝑝 𝑖 at timeslot𝑡
+1:At every timeslot𝑡: ⊲MAIN LOOP
+2:
+3:Disseminate new N-certificates;⊲‘new’ as defined in Section D
+4:Disseminate new M-certificates;
+5:
+6:If𝑝 𝑖 =lead(v)andproposed=false:
+7:ProposeBlock; Setproposed:=true;⊲Send out a new block
+8:
+9:If𝑝 𝑖 has received(𝑏, 𝑖, 𝑐 𝑖, 𝜋𝑖 )that is votable for viewv:⊲‘votable’ as defined in Section 4
+10:Ifnotarised=⊥andnullified=false:
+11:Setnotarised:=𝑏and disseminate a vote for𝑏by𝑝 𝑖 ;⊲Send vote
+12:Disseminate(𝑏, 𝑖, 𝑐 𝑖, 𝜋𝑖 )if𝑝 𝑖 has not already done so;
+13:
+14:IfT=4Δ+2𝑠,nullified=false andnotarised=⊥:
+15:Setnullified:=true and disseminate a nullify(v)message by𝑝 𝑖 ;⊲Send nullify(v)upon time-out
+16:
+17:Ifcertificatescontains an N-certificate forv:
+18:Setv:=v+1,nullified:=false,proposed:=false,notarised:=⊥,T:=0;⊲Go to next view
+19:Ifblockscontains a viewvblock𝑏,
+20:Ifnotarised=⊥andnullified=false, disseminate a vote for𝑏by𝑝 𝑖 ;⊲Send vote (akin to line 20 of Algorithm 1)
+21:Setb:=𝑏,v:=v+1,nullified:=false,proposed:=false,notarised:=⊥,T:=0;⊲Updateband go to next view
+22:
+23:Ifcertificatescontains an L-certificate for any non-finalised𝑏∈blocks:
+24:Finalise𝑏and all ancestors; ⊲Finalisation
+25:⊲EXTRA INSTRUCTIONS TO SEND NULLIFY MESSAGES
+26:Ifnullified=false,notarised≠⊥and there exists𝐼⊂ [𝑛]with|𝐼|=2𝑓+1and a set
+27:of messages{𝑚 𝑗 } 𝑗∈𝐼 s.t., for each𝑗∈𝐼,𝑚 𝑗 has been received by𝑝 𝑖 and is either:
+28:(i) a nullify(v)message by𝑝 𝑗 , or;
+29:(ii) a vote by𝑝 𝑗 for some viewvblock𝑏≠notarised:
+30:Setnullified:=true; Disseminate a nullify(v)message by𝑝 𝑖 ;
+31:⊲Disseminate nullify(v)message upon proof of no progress forv(akin to lines 24-28 of Algorithm 1)
+32:
+33:Ifnullified=false and there exists a viewvblock𝑏such that:
+34:(i)certificatescontains an M-certificate for𝑏.
+35:(ii) There exists𝐼⊂ [𝑛]with|𝐼|=2𝑓+1such that, for each𝑗∈𝐼,𝑝 𝑖 has received(𝑏, 𝑗, 𝑐 𝑗 , 𝜋𝑗 )from𝑝 𝑗 , which is a certified
+36:fragment of𝑏at𝑗. On input(𝑏.tag,{ (𝑐 𝑗 , 𝜋𝑗 ) }𝑗∈𝐼 ), Decode outputs⊥.
+37:Setnullified:=true; Disseminate a nullify(v)message by𝑝 𝑖 ;
+38:⊲Disseminate nullify(v)message upon notarisation for junk block (see Section C.3)
+39:⊲INSTRUCTIONS TO SEND EXTRA FRAGMENTS IN THE BAD CASE (see Section C.2)
+40:For each new𝑏∈blocks:
+41:Trigger the timerT(𝑏)to expire in time𝑠;⊲𝑠a parameter
+42:
+43:For each𝑏such thatT(𝑏)expires at𝑡:
+44:Set𝐼:={𝑗∈ [𝑛]:𝑝 𝑖 has received a certified fragment of𝑏at𝑗from𝑝 𝑗 };
+45:Set𝑥:=(3𝑓+1) − |𝐼|, and if𝑥>0:
+46:Choose𝐽⊆ [𝑛]with|𝐽|=𝑥and𝐽∩𝐼=∅;
+47:For each𝑗∈𝐽, send𝑝 𝑗 a certified fragment of𝑏at𝑗;⊲Send others their fragment
+48:
+49:For any block𝑏s.t.:
+50:(i)certificatescontains an M-certificate for𝑏;
+51:(ii)𝑝 𝑖 has received a certified fragment of𝑏at𝑖, and;
+52:(iii)𝑝 𝑖 has not previously disseminated a certified fragment of𝑏at𝑖:
+53:Disseminate a certified fragment of𝑏at𝑖;⊲Send own fragment
+the nullify(𝑣) message at 𝑡 because the conditions of lines 26-29 hold for 𝑝𝑖 at 𝑡, i.e., there exists
+𝐼⊂ [𝑛] with |𝐼|= 2𝑓+ 1and a set of messages {𝑚𝑗 } 𝑗∈𝐼 s.t., for each 𝑗∈𝐼 , 𝑚 𝑗 has been received by
+𝑝𝑖 and is either:
+(i) A nullify(𝑣)message by𝑝 𝑗, or;
+(ii) A vote by𝑝 𝑗 for some view𝑣block𝑏 ′ ≠𝑏.
+
+--- PAGE 33 ---
+Chou et al.33
+By Lemma E.1, no processor in 𝑃 sends a message of form (ii). By our choice of 𝑡, no processor in 𝑃
+sends a message of form (i) prior to 𝑡. Combined with the fact that |𝑃 ′ | ≤ 2𝑓 , this gives the required
+contradiction.
+The second possibility is that 𝑝𝑖 sends the nullify (𝑣) message at 𝑡 because the conditions of
+lines 33-36 hold for 𝑝𝑖 at 𝑡. The fact that some correct processor adds 𝑏 into their local value
+blocks means that Decode does not output ⊥ when given any2 𝑓+ 1certified fragments of 𝑏 as
+input. By Lemma E.2, no other block for view 𝑣 receives an M-certificate. This gives the required
+contradiction. □
+Lemma E.4 (Consistency).The protocol satisfies Consistency.
+Proof. Towards a contradiction, suppose some block 𝑏1 with 𝑏1.view=𝑣 1 receives an L-
+certificate and is finalised by some correct processor, and that for someleast 𝑣2 ≥𝑣 1 some block 𝑏2
+satisfies:
+(1)𝑏 2.view=𝑣 2;
+(2)𝑏 1 is not an ancestor of𝑏 2, and;
+(3)𝑏 2 receives an M-certificate.
+From Lemma E.2, it follows that 𝑣2 >𝑣 1. According to clause (i) from the definition of a votable
+fragment, correct processors will not vote for 𝑏2 in line 11 until they receive an M-certificate for
+its parent, 𝑏0 say. Correct processors will not vote for 𝑏2 in line 20 until 𝑏2 has already received
+an M-certificate, meaning that at least 𝑓+ 1correct processors must first vote for 𝑏2 via line 11,
+and 𝑏0 must receive an M-certificate. By our choice of 𝑣2, it follows that 𝑏0.view<𝑣 1. This gives a
+contradiction, because, by clause (ii) from the definition of a votable fragment for view 𝑣2, correct
+processors would not vote for𝑏2 in line 11 without receiving an N-certificate for view𝑣1. By Lemma
+E.3, such an N-certificate cannot exist. So, block𝑏2 cannot receive an M-notarisation or M-certificate
+(and no correct processor votes for𝑏 2 via either line 11 or 20).□
+E.2 Liveness
+We letblocks𝑖 be the variableblocks as locally defined for 𝑝𝑖, and letblocks𝑖 (𝑡) be blocks𝑖 as
+defined at the end of timeslot𝑡.
+Lemma E.5 (Agreement on blocks).If 𝑝𝑖 and 𝑝 𝑗 are correct and 𝑡 is the least timeslot such that
+𝑏∈blocks 𝑖 (𝑡), then for𝑡 ′ :=max{𝑡,GST} +2Δ+𝑠,𝑏∈blocks 𝑗 (𝑡 ′).
+Proof. The proof is by induction on 𝑏.view. The result holds trivially for 𝑏gen. So, suppose the
+conditions in the statement of the lemma hold, 𝑣 :=𝑏.view> 0, and that the claim holds for all
+previous views (and so, for the parent of𝑏).
+Since 𝑏∈blocks 𝑖 (𝑡) , 𝑝𝑖 receives an M-certificate for 𝑏 by 𝑡, and so disseminates such an M-
+certificate by 𝑡 (line 4). It follows that all correct processors receive an M-certificate for 𝑏 by
+max{𝑡,GST} +Δ . At 𝑡+𝑠 , 𝑝𝑖 executes lines 43-47 with respect to 𝑏. This ensures that at least
+2𝑓+ 1correct processors receive their own certified fragment of 𝑏 (as well as an M-certificate
+for 𝑏) by max{𝑡+𝑠,GST} +Δ . Lines 49-53 ensure that those correct processors will disseminate
+their fragments by the latter timeslot. All correct processors will therefore receive an M-certificate
+and fragments sufficient to decode the payload of 𝑏 by max{𝑡+𝑠,GST} + 2Δ. By the induction
+hypothesis, and since the parent of 𝑏 is inblocks𝑖 (𝑡) , it follows that for 𝑡 ′ :=max{𝑡,GST} + 2Δ+𝑠
+and for any correct processor𝑝 𝑗,𝑏∈blocks 𝑗 (𝑡 ′)as required.□
+Lemma E.6 (Timely view entry).If correct 𝑝𝑖 enters view 𝑣 at 𝑡, then all correct processors enter
+view𝑣by𝑡 ′ :=max{𝑡,GST} +2Δ+𝑠.
+
+--- PAGE 34 ---
+Chou et al.34
+Proof. The proof is by induction on 𝑣. For 𝑣= 1, the claim is immediate. Suppose 𝑣> 1and that
+the claim holds for all previous views. Let 𝑝𝑖, 𝑡 and 𝑡 ′ be as in the statement of the lemma. By the
+induction hypothesis, it follows that all correct processors enter view𝑣− 1by 𝑡 ′. Processor 𝑝𝑖 either
+enters view 𝑣 at 𝑡 upon finding a view 𝑣− 1block in blocks, or upon receiving an N-certificate for
+view 𝑣− 1. In the former case, the claim follows by Lemma E.5. In the latter case, the claim follows
+because𝑝 𝑖 disseminates the N-certificate at𝑡(line 3).□
+Lemma E.7 (Progression through views).Every correct processor enters every view𝑣∈N ≥1.
+Proof. Towards a contradiction, suppose that some correct processor𝑝𝑖 enters view 𝑣, but never
+enters view𝑣+1. From Lemma E.6, it follows that:
+•All correct processors enter view𝑣;
+•No correct processor leaves view𝑣.
+Each correct processor𝑝 𝑗 disseminates at least one of:
+(a) A nullify(𝑣)message;
+(b) A vote for some view𝑣block𝑏, together with the certified fragment of𝑏at𝑗.
+If there exists a view𝑣 block 𝑏 such that at least2 𝑓+ 1correct processors vote for 𝑏 and disseminate
+their corresponding certified fragments of 𝑏, and if Decode does not output ⊥ when given those
+fragments as input, then we reach an immediate contradiction. If there exists 𝑏 such that at least
+2𝑓+ 1correct processors vote for 𝑏 and disseminate their corresponding certified fragments of 𝑏,
+and if Decode outputs ⊥ when given those fragments as input, then we also reach a contradiction:
+in this case, all correct processors will send nullify(𝑣) messages (line 37). So, suppose the previous
+two cases do not apply. If 𝑝 𝑗 is a correct processor that votes for a view 𝑣 block 𝑏, it follows that 𝑝 𝑗
+receives messages from at least (𝑛−𝑓) − ( 2𝑓)=𝑛− 3𝑓≥ 2𝑓+ 1processors, each of which is either:
+(i) A nullify(𝑣)message, or;
+(ii) A vote for a view𝑣block different than𝑏.
+So, the conditions of lines 26-29 are eventually satisfied, meaning that𝑝 𝑗 sends a nullify(𝑣) message
+(line 30). Any correct processor that does not vote for a view 𝑣 block also sends a nullify (𝑣)
+message, so all correct processors send nullify(𝑣) messages. All correct processors therefore receive
+a nullification for view𝑣, giving the required contradiction.□
+Lemma E.8 (Correct leaders finalise blocks).If 𝑝𝑖 =lead(𝑣) is correct, and if the first correct
+processor to enter view 𝑣 does so after GST, then 𝑝𝑖 disseminates a block that is finalised by all correct
+processors.
+Proof. Suppose 𝑝𝑖 =lead(𝑣) is correct and that the first correct processor to enter view𝑣 does so
+at timeslot 𝑡≥GST . From Lemma E.6, it follows that all correct processors (including𝑝𝑖) enter view
+𝑣 by 𝑡+ 2Δ+𝑠 . Processor 𝑝𝑖 therefore disseminates a new block𝑏 by 𝑡+ 2Δ+𝑠 , which is received by all
+processors by 𝑡+ 3Δ+𝑠 . Let 𝑏′ be the parent of𝑏 and set 𝑣 ′ :=𝑏 ′.view. Since 𝑏′ ∈blocks 𝑖 (𝑡+ 2Δ+𝑠) ,
+it follows from Lemma E.5 that, for every correct𝑝 𝑗, 𝑏′ ∈blocks 𝑗 (𝑡+ 4Δ+ 2𝑠). Since 𝑝𝑖 has entered
+view 𝑣 at 𝑡+ 2Δ+𝑠 , it must also have received N-certificates for all views in the open interval
+(𝑣 ′, 𝑣) by this time, and all correct processors receive these by 𝑡+ 3Δ+𝑠 . All correct processors
+therefore vote for 𝑏 (by either line 11 or 20) by 𝑡+ 4Δ+ 2𝑠, before any correct processor sends a
+nullify(𝑣) message. The block 𝑏 therefore receives an L-notarisation and is finalised by all correct
+processors, as claimed.□
+Lemma E.9 (Liveness).The protocol satisfies Liveness.
+Proof. Suppose correct 𝑝𝑖 receives the transactiontr. Let 𝑣 be a view withlead(𝑣)=𝑝 𝑖 and such
+that the first correct processor to enter view 𝑣 does so after GST. By Lemma E.8, 𝑝𝑖 will disseminate
+
+--- PAGE 35 ---
+Chou et al.35
+a block that is finalised by all correct processors. From the definition of the ProposeBlock procedure,
+it follows that tr will be included in the payload of an ancestor of 𝑏. It follows that tr is finalised for
+all correct processors upon finalisation of𝑏.□
+E.3 An optimisation reducing timeouts to3Δ
+According to Lemma E.8, every view with a correct leader that begins after GST will produce a
+new finalised block if we set timeouts to4 Δ+ 2𝑠. However, we can reduce timeouts with a small
+modification to the pseudocode, if we are prepared to accept the trade-off that view 𝑣 is then only
+guaranteed to produce a new finalised block if view 𝑣− 1begins after GST and the leaders of both
+views𝑣−1and𝑣are correct.
+To do so, note first that while processors cannot immediately vote for a view𝑣 block 𝑏 until they
+have received sufficiently many certified fragments of the parent 𝑏′ to recover its payload, wecan
+allow a correct processor to enumerate the parent 𝑏′ into their local value blocks upon receiving
+an M-certificate for the child 𝑏. This is because the existence of an M-certificate for 𝑏 suffices to
+ensure𝑓+1correct processors have already enumerated𝑏 ′ into their local valueblocks.
+We can therefore modify the way in which a correct processor 𝑝𝑖 defines its local valueblocks
+as follows. At any timeslot, blocks contains 𝑏gen and all blocks 𝑏 such that (i)-(iii) below are all
+satisfied:
+(i)certificatescontains an M-certificate for𝑏.
+(ii) Eithercertificatescontains an M-certificate for a child of𝑏or:
+(a) There exists 𝐼⊂ [𝑛] with |𝐼|= 2𝑓+ 1such that, for each 𝑗∈𝐼 , 𝑝𝑖 has received (𝑏, 𝑗, 𝑐 𝑗, 𝜋𝑗 )
+from𝑝 𝑗, which is a certified fragment of𝑏at𝑗, and;
+(b) On input(𝑏.tag,{(𝑐 𝑗, 𝜋𝑗 )} 𝑗∈𝐼 ), Decode does not output⊥.
+(iii) There exists𝑏 ′ ∈blockswith𝐻(𝑏 ′)=𝑏.par, i.e., the parent of𝑏is inblocks.
+Now suppose we set timeouts to3 Δ. In what follows, we suppose that2 𝑠≤Δ , that view 𝑣− 1
+begins after GST (i.e., the first correct processor to enter the view does so after GST) and that the
+leaders of views𝑣−1and𝑣are both correct. There are four cases to consider.
+Case 1. The first correct processor to enter view 𝑣 does so upon receiving an N-certificate for view
+𝑣− 1. The leader of view 𝑣 proposes a block 𝑏 with parent 𝑏′ such that 𝑏′.view<𝑣− 1. In this case,
+suppose the first correct processor to enter view 𝑣− 1does so at 𝑡0, while the first correct processor
+to enter view 𝑣 does so at 𝑡1. Note that 𝑡1 ≥𝑡 0 + 3Δ. By Lemma E.6,lead(𝑣) enters view 𝑣− 1by
+𝑡0 + 2Δ+𝑠 and 𝑏′ is in its local value blocks by this time. By Lemma E.5, and since2 𝑠≤Δ , 𝑏′ is in
+blocks𝑗 for every correct processor 𝑝 𝑗 by 𝑡1 + 2Δ. Processorlead(𝑣) enters view 𝑣 by 𝑡1 +Δ and
+runs ProposeBlock by this time. All correct processors vote for𝑏by𝑡+2Δ.
+Case 2. The first correct processor to enter view 𝑣 does so upon receiving an N-certificate for view
+𝑣− 1. The leader of view 𝑣 proposes a block 𝑏 with parent 𝑏′ such that 𝑏′.view=𝑣− 1. In this
+case, suppose the first correct processor to enter view 𝑣 does so at 𝑡. Then all correct processors,
+includinglead(𝑣) , do so by 𝑡+Δ . All correct processors receive an M-certificate for 𝑏′ by 𝑡+ 2Δ,
+and also add the parent 𝑏′′ of 𝑏′ and all ancestors of 𝑏′′ into their local value blocks by this time.
+Since lead(𝑣− 1) is correct, all correct processors receive sufficiently many certified fragments of
+𝑏′ to recover the payload by𝑡+3Δ, and vote for𝑏by this time.
+Case 3. The first correct processor to enter view 𝑣 does so upon receiving an M-certificate for a
+view 𝑣− 1block 𝑏′. The leader of view 𝑣 proposes a block 𝑏 with 𝑏′ as parent. In this case, suppose
+the first correct processor to enter view 𝑣 does so at 𝑡. Then all correct processors receive an
+M-certificate for 𝑏′ by 𝑡+Δ . Since lead(𝑣− 1) is correct, all correct processors receive certified
+
+--- PAGE 36 ---
+Chou et al.36
+fragments sufficient to recover the payload of𝑏 ′ by𝑡+2Δ, and have entered view𝑣and added𝑏 ′
+and all ancestors to their local valueblocks by this time. In particular,lead(𝑣) enters view 𝑣 by
+𝑡+2Δ, and all correct processors vote for their proposal𝑏by𝑡+3Δ.
+Case 4. The first correct processor to enter view𝑣 does so upon receiving an M-certificate for a view
+𝑣− 1block 𝑏′′. The leader of view𝑣 proposes a block𝑏 with 𝑏′ as parent such that𝑏′.view<𝑣− 1. In
+this case, suppose the first correct processor to enter view 𝑣− 1does so at 𝑡0, while the first correct
+processor 𝑝𝑖 to enter view 𝑣 does so at 𝑡1. Then all correct processors receive an M-certificate for
+𝑏′′ by 𝑡1 +Δ and add all ancestors of the parent of 𝑏′′ to their local value blocks by this time.
+Since some correct processors receive their certified fragments of 𝑏′′ fromlead(𝑣− 1) by 𝑡1 and
+lead(𝑣− 1) is correct, all correct processors receive their certified fragments of𝑏′′ by 𝑡1 +Δ , and so
+would vote for 𝑏′′ by this time if they have not already timed out. Since lead(𝑣) leaves view 𝑣− 1
+upon receiving an N-certificate for view 𝑣− 1, it follows that 𝑡1 ≥𝑡 0 + 2Δ. By Lemma E.6, lead(𝑣)
+enters view 𝑣− 1by 𝑡0 + 2Δ+𝑠 and, by Lemma E.5 and the fact that2 𝑠≤Δ , all correct processors
+add 𝑏′ to their local valueblocks by 𝑡0 + 5Δ≤𝑡 1 + 3Δ. As in Case 3, all correct processors enter
+view 𝑣 by 𝑡1 + 2Δ. All correct processors therefore receive their certified fragment of𝑏 fromlead(𝑣)
+by𝑡 1 +3Δand it is votable for view𝑣by that time.

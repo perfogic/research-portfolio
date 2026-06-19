@@ -1,0 +1,929 @@
+--- PAGE 1 ---
+Signature-Free Asynchronous Byzantine Consensus
+w
+ith t < n/ 3 and O(n2) Messages
+Achour Mostéfaoui
+LINA, Université de Nantes
+44322 Nantes, France
+Achour.Mostefaoui@univ-
+nantes.fr
+Hamouma Moumen
+University of Bejaia
+Bejaia, Algeria
+moumenh@gmail.com
+Michel Raynal
+Institut Universitaire de France
+& IRISA, Université de Rennes
+raynal@irisa.fr
+ABSTRACT
+This paper presents a new round-based asynchronous consensus al-
+gorithm that copes with up to t < n/ 3 Byzantine processes, where
+n is the total number of processes. In addition of not using signa-
+ture, not assuming a computationally-limited adversary, while be-
+ing optimal with respect to the value of t, this algorithm has several
+noteworthy properties: the expected number of rounds to decide
+is four, each round is composed of two or three communication
+steps and involves O(n2) messages, and a message is composed of
+a round number plus a single bit. To attain this goal, the consen-
+sus algorithm relies on a common coin as deﬁned by Rabin, and
+a new extremely simple and powerful broadcast abstraction suited
+to binary values. The main target when designing this algorithm
+was to obtain a cheap and simple algorithm. This was motivated
+by the fact that, among the ﬁrst-class properties, simplicity –albeit
+sometimes under-estimated or even ignored– is a major one.
+Categories ands Subject Descriptors
+C.2.4 [Computer-Communication Network]: Distributed Systems
+-distributed applications, network operating systems; D.4.1 [Oper-
+ating Systems ] - concurrency, synchronization; D.4.5 [ Operating
+Systems] Reliability - fault-tolerance; F.1.1 [Computation by Ab-
+stract Devices]: Models of Computation - Computability theory
+General Terms: Algorithms, Reliability, Theory
+Keywords: Abstraction, Asynchronous message-passing system,
+Broadcast abstraction, Byzantine process, Common coin, Consen-
+sus, Distributed algorithm, Optimal resilience, Randomized algo-
+rithm, Signature-free algorithm, Simplicity.
+1. INTRODUCTION
+Distributed computing.
+Distributed computing occurs when one has to solve a problem
+in terms of physically distinct entities (usually called nodes, pro-
+cessors, processes, agents, sensors, etc.) such that each entity has
+only a partial knowledge of the many parameters involved in the
+Permission to make digital or hard copies of all or part of this work for personal or
+classroom use is granted without fee provided that copies are not made or distributed
+for proﬁt or commercial advantage and that copies bear this notice and the full cita-
+tion on the ﬁrst page. Copyrights for components of this work owned by others than
+ACM must be honored. Abstracting with credit is permitted. To copy otherwise, or re-
+publish, to post on servers or to redistribute to lists, requires prior speciﬁc permission
+and/or a fee. Request permissions from permissions@acm.org.
+PODC’14, July 15–18, 2014, Paris, France.
+Copyright 2014 ACM 978-1-4503-2944-6/14/07 ...$15.00.
+http://dx.doi.org/10.1145/2611462.2611468.
+problem. In the following, we use the term process to denote any
+computing entity. From an operational point of view this means that
+the processes of a distributed system need to exchange information,
+and agree in some way or another, in order to cooperate to a com-
+mon goal. If processes do not cooperate, the system is no longer a
+distributed system. Hence, a distributed system has to provide the
+processes with communication and agreement abstractions.
+Understanding and designing distributed applications is not an
+easy task [3, 11, 29, 38, 39, 40]. This is because, due to the very
+nature of distributed computing, no process can capture instanta-
+neously the global state of the application it is part of. This comes
+from the fact that, as processes are geographically localized at dis-
+tinct places, distributed applications have to cope with the uncer-
+tainty created by asynchrony and failures. As a simple example,
+it is impossible to distinguish a crashed process from a very slow
+process in an asynchronous system prone to process crashes.
+As in sequential computing, a simple approach to facilitate the
+design of distributed applications consists in designing appropri-
+ate abstractions. More generally, computer science is a science of
+abstraction and distributed computing is the science of distributed
+abstractions [19]. With such abstractions, the application designer
+can think about solutions to solve problems at a higher conceptual
+level than the basic send/receive communication level.
+Communication and agreement abstractions.
+Broadcast abstractions are among the most important abstrac-
+tions encountered in fault-tolerant distributed computing [3, 11, 13,
+29, 38]. Roughly speaking, these abstractions allow processes to
+disseminate information in such a way that speciﬁc provable prop-
+erties concerning this dissemination are satisﬁed. One of the most
+popular of these abstractions is reliable broadcast [8, 13].
+As far as agreement abstractions are concerned, non-blocking
+atomic commit [24, 30] and consensus [18, 36] are certainly the
+most important abstractions of fault-tolerant distributed comput-
+ing. Assuming that each process proposes a value, the consensus
+abstraction allows the non-faulty processes to agree on the same
+value, which has to satisfy some validity condition depending on
+both the proposed values and the failure model [3, 29, 38, 39].
+Consensus in asynchronous Byzantine systems.
+This paper is on consensus in asynchronous distributed systems
+where processes can commit Byzantine failures [27]. This failure
+type has ﬁrst been introduced in the context of synchronous dis-
+tributed systems [27, 36, 39], and then investigated in the context
+of asynchronous distributed systems [3, 29, 38]. A process has a
+Byzantine behavior when it arbitrarily deviates from its intended
+behavior: it then commits a Byzantine failure (otherwise we say it
+is correct). This bad behavior can be intentional (malicious) or sim-
+2
+
+--- PAGE 2 ---
+Protocol n > signatures msgs/round bits/msg steps/round
+Rabin 1983 [37] 10t yes O(n2) O( 1) 2
+Berman Garay 1993 [5] 5t no O(n2) O( 1) 2
+Friedman Mostefaoui Raynal 2005 [22] 5t no O(n2) O( 1) 1
+Bracha 1987 [7] 3t no O(n3) O( log( n)) 9
+Srikanth Toueg 1987 [42] 3t no O(n3) O( log( n)) 5
+Toueg 1984 [43] 3t yes O(n3) O(n) 3
+Canetti Rabin 1993 [12] 3t yes O(n2) poly(n) 9
+Cachin Kursawe Shoup 2000 [9] 3t yes O(n2) O(ℓ) 2
+This paper 3t no O(n2) O( 1) 2 or 3
+Table 1: Cost and constraint of different Byzantine binary co nsensus algorithms
+ply the result of a transient fault that altered the local state of a pro-
+cess, thereby modifying its behavior in an unpredictable way. Let
+us notice that process crashes (unexpected halting) deﬁne a strict
+subset of Byzantine failures.
+Related work.
+Let t denote the model upper bound on the number of processes
+that can have a Byzantine behavior. It is shown in several papers
+(e.g., [16, 27, 36, 43]) that Byzantine consensus cannot be solved
+when t≥ n/ 3, be the system synchronous or asynchronous, be
+the algorithm allowed to use cryptography or not, or be the al-
+gorithm allowed to use random numbers or not. As far as syn-
+chronous systems are concerned, it has been been shown in [17]
+that (t + 1) rounds is a lower bound on the number of commu-
+nication steps needed to solve Byzantine consensus. It has also
+been shown in [23] that, using randomization, this bound can be
+improved to an expected O(log n) value in systems that are full-
+information, synchronous, and where where t≤ n
+3+ǫ a nd ǫ > 0.
+As far as asynchronous systems are concerned, it is well-known
+that there is no deterministic consensus algorithm as soon as one
+process may crash [18], which means that Byzantine consensus
+cannot be solved either as soon as one process can be faulty. Said
+another way, the basic asynchronous Byzantine system model has
+to be enriched with additional computational power. Such an ad-
+ditional power can be obtained by randomization (e.g., [4, 14, 22,
+37]), assumption on message delivery schedules [8, 43], failure de-
+tectors suited to Byzantine systems (e.g., [21, 25]), additional –
+deterministic or probabilistic– synchrony assumptions (e.g., [8, 16,
+31]), or restrictions on the vectors of input values proposed by the
+processes [20, 33].
+This paper is on binary consensus algorithms in asynchronous
+Byzantine systems where the additional computational power is
+supplied by a common coin . Such an object, introduced by Ra-
+bin [37], is a distributed object that delivers the same sequence of
+random bits b1, b 2, . . . , b r, . . . to each process. Some of the ﬁrst
+randomized algorithms (such as the ones of Ben-Or [4] or Bracha
+[6]) use local coins. As a consequence they have an expected num-
+ber of rounds which is exponential (unless t = O(√
+n)) , which
+makes them of theoretical interest, but of limited practical use. As
+randomized algorithms based on a common coin can have an ex-
+pected number of rounds which is constant, this paper focuses only
+on such algorithms.
+Round-based asynchronous Byzantine algorithms based on a com-
+mon coin are listed in Table 11. All these algorithms, which address
+binary consensus, are round-based, and, in each of them, each mes-
+1A s far as synchronous systems are concerned, an efﬁcient coin-
+based algorithm that solves consensus despite Byzantine processes
+is described in [26]. This algorithm assumes an adaptive adversary.
+sage carries a round number. Hence, when comparing their mes-
+sage size, we do not consider round numbers. We have the follow-
+ing.
+• The ﬁrst algorithm is such that n < 10t, has an O(n2) mes-
+sage complexity, and requires signatures.
+• The algorithms of the two next lines are such that t < n/ 5,
+and their message complexity is O(n2). These algorithms
+are simple, signature-free, and use one or two communica-
+tion steps per round, but none of them is optimal with respect
+to t-resilience.
+• The algorithms of the next three lines are optimal with re-
+spect to t, but have an O(n3) message complexity. More-
+over, [43] uses signed messages, while [7] does not use a
+common coin, and may consequently execute an exponen-
+tial number of rounds. Due to their message complexity, and
+their number of communication steps per round, these algo-
+rithms are costly.
+• The algorithm proposed in [12], although polynomial, has a
+huge bit complexity. The algorithm presented in [9] is opti-
+mal with respect to t, uses only O(n2) messages per round,
+has two communication steps per round, and uses signed
+messages (the value ℓ in the bit complexity corresponds to
+the size of RSA signatures). However, as noticed by its au-
+thors, “because of public key operations, the computational
+complexity of this protocol is typically higher than those us-
+ing authentication codes”.
+Content of the paper.
+The paper ﬁrst introduces a simple broadcast abstraction suited
+to binary values, that we call BV-broadcast. This broadcast fo-
+cuses on values and not on processes, which means that it does
+not consider the fact that “this” value has been broadcast by “this”
+process. BV-broadcast, whose implementation is particularly sim-
+ple, reduces the power of Byzantine processes, in such a way that
+a value broadcast only by Byzantine processes is never delivered
+to the correct processes. This value-oriented broadcast abstraction
+is then used to solve Byzantine binary consensus is asynchronous
+systems enriched with a common coin. The resulting consensus al-
+gorithm is a round-based asynchronous algorithm that has the fol-
+lowing noteworthy features.
+• The algorithm requires t < n/ 3 and is consequently optimal
+with respect to t.
+• The algorithm uses 2 or 3 communication steps per round (2
+steps when the correct processes start a round with the same
+estimate of the decision value).
+• The expected number of rounds to decide is 4.
+• The message complexity is O(n2) messages per round.
+3
+
+--- PAGE 3 ---
+• E ach message carries its type, a round number plus a single
+data bit.
+• Finally, the algorithm does not require signed messages, and
+does not assume a computationally-limited adversary.
+Hence, contrarily to what one could believe from existing asyn-
+chronous Byzantine binary consensus algorithms, the formula
+[quadratic message complexity]⇒
+[(use of signatures)∨ (t < n/ 5)]
+is false. The proposed algorithm shows that t < n/ 3 (as in [9]),
+quadratic message complexity (as in [5, 9]), and absence of signa-
+tures (as in [5, 22]) are not incompatible.
+Simplicity is a ﬁrst class property.
+When designing this algorithm, an important issue was to ob-
+tain a simple Byzantine consensus algorithm. Our guiding mantra
+while designing the proposed algorithm was the famous sentence
+of Einstein “make it as simple as possible, but not simpler”. This
+was not an easy task as simplicity is rarely obtained for free. Let us
+also remember the following sentence written by Pascal at the end
+of a letter to a friend “I apologize for having written such a long
+letter, I had not enough time to write a shorter one”. The impli-
+cation “simple⇒ easy” is rarely true for non-trivial problems [1].
+Simplicity requires effort, but is very rewarding. It is a ﬁrst class
+scientiﬁc property which participates in the beauty of science 2 and
+makes pedagogy easier.
+Roadmap.
+The paper is composed of 5 sections. Section 2 presents the com-
+putation model. Section 3 presents and proves correct the binary-
+value broadcast abstraction, while Section 4 presents and proves
+correct the consensus algorithm. Finally, Section 5 concludes the
+paper.
+2. COMPUT ATION MODEL
+Asynchronous processes.
+The system is made up of a ﬁnite set Π of n > 1 asynchronous
+sequential processes, namely Π ={p1, . . . , p n}. “Asynchronous”
+means that each process proceeds at its own pace, which may vary
+arbitrarily with time, and remains always unknown to the other pro-
+cesses.
+Communication network.
+The processes communicate by exchanging messages through
+an asynchronous reliable point-to-point network. “Asynchronous”
+means that a message that has been sent is eventually received by
+its destination process, i.e., there is no bound on message transfer
+delays. “Reliable” means that the network does not loss, duplicate,
+modify, or create messages. “Point-to-point” means that there is
+a bi-directional communication channel between each pair of pro-
+cesses. Hence, when a process receives a message, it can identify
+its sender.
+A process pi sends a message to a process pj by invoking the
+primitive “send TAG(m) to pj”, where TAG is the type of the mes-
+sage and m its content. To simplify the presentation, it is assumed
+that a process can send messages to itself. A process receives a
+message by executing the primitive “ receive()”.
+2T o quote Dijkstra: “When we recognize the battle against chaos,
+mess, and unmastered complexity as one of computing science’s
+major callings, we must admit that “Beauty is our Business”.” [15].
+The operation broadcast TAG(m) is a macro-operation which
+stands for “ for each j ∈ {1, . . . , n } send TAG(m) to pj end
+for”.This operation is usually called unreliable broadcast (if the
+sender crashes in the middle of the for loop, it is possible that only
+an arbitrary subset correct processes receives the message).
+Failure model.
+Up to t processes may exhibit a Byzantine behavior. A Byzan-
+tine process is a process that behaves arbitrarily: it may crash, fail
+to send or receive messages, send arbitrary messages, start in an
+arbitrary state, perform arbitrary state transitions, etc. Hence, a
+Byzantine process, which is assumed to send a message m to all
+the processes, can send a message m1 to some processes, a differ-
+ent message m2 to another subset of processes, and no message at
+all to the other processes. Moreover, Byzantine processes can col-
+lude to “pollute” the computation. A process that exhibits a Byzan-
+tine behavior is called faulty. Otherwise, it is correct.
+Let us notice that, as each pair of processes is connected by a
+channel, no Byzantine process can impersonate another process.
+Byzantine processes can modify the message delivery schedule, but
+cannot affect network reliability. More generally, the model does
+not assume a computationally-limited adversary.
+Notation.
+This computation model is denoted BZ_AS n,t [∅]. In the fol-
+lowing, this model is both restricted with a constraint on t and
+enriched with an object providing processes with additional com-
+putational power. More precisely, BZ_AS n,t [n > 3t] denotes
+the modelBZ_AS n,t [∅] where the number of faulty processes is
+smaller than n/ 3, andBZ_AS n,t [n > 3t, CC] denotes the model
+BZ_AS n,t [n > 3t] enriched with the common coin (CC) abstrac-
+tion as deﬁned in [37].
+3. THE BINARY-V ALUE BROADCAST
+ABSTRACTION
+3.1 Binary-value Broadcast
+Deﬁnition.
+This communication abstraction (in short, BV-broadcast) in an
+all-to-all abstraction that provides the processes with a single oper-
+ation denoted BV_broadcast().
+When a process invokes BV_broadcast TAG(m), we say that it
+“BV-broadcasts the message TAG(m)”. The content of a message
+m is 0 or 1 (hence the term “binary-value” in the name of this
+communication abstraction).
+In a BV-broadcast instance, each correct processpi BV-broadcasts
+a binary value and obtains binary values. To store the values ob-
+tained by each process, BV-broadcast provides each correct process
+pi with a read-only local variable denoted bin_valuesi. This vari-
+able is a set, initialized to ∅, which increases when new values are
+received. VB-broadcast is deﬁned by the four following properties.
+• BV-Obligation. If at least (t + 1) correct processes BV-
+broadcast the same value v, v is eventually added to the set
+bin_valuesi of each correct process pi.
+• BV-Justiﬁcation. If pi is correct and v∈ bin_valuesi, v has
+been BV-broadcast by a correct process.
+• BV-Uniformity. If a value v is added to the set bin_valuesi
+of a correct process pi, eventually v∈ bin_valuesj at every
+correct process pj.
+• BV-Termination. Eventually the set bin_valuesi of each
+correct process pi is not empty.
+4
+
+--- PAGE 4 ---
+operation B V_broadcast MSG (vi) is
+(1) broadcast B_VAL(vi).
+when B_VAL(v) is received
+(2) if
+(
+B_VAL(v) received from (t + 1) different processes and B_VAL(v) not yet broadcast
+)
+(3) then broadcast B_VAL(v) % a process echoes a value only once %
+(4) end if;
+(5) if
+(
+B_VAL(v) received from (2t + 1) different processes
+)
+(6) then bin_valuesi← bin_valuesi∪{ v} % local delivery of a value %
+(7) end if.
+Figure 1: An algorithm implementing BV-broadcast inB Z_AS n,t [n > 3t]
+The following property is an immediate consequence of the previ-
+ous properties.
+PROPERTY 1. Eventually the sets bin_valuesi of the correct
+processes pi become non-empty and equal, contain all the val-
+ues broadcast by correct processes and no value broadcast only
+by Byzantine processes.
+3.2 A BV-broadcast Algorithm
+A simple algorithm implementing the BV-broadcast abstraction
+is described in Figure 1. This algorithm is based on a particularly
+simple “echo” mechanism. Differently from previous echo-based
+algorithms (e.g., [7, 42]), echo is used here with respect to each
+value that has been received (whatever the number of processes
+that broadcast it), and not with respect to each pair composed of a
+value plus the identity of the process that broadcast this value. In
+the algorithm of Figure 1, a value entails a single echo, whatever
+the number of processes that have broadcast this value.
+When a process invokes BV_broadcast MSG (v), v∈{ 0, 1}, it
+broadcasts B_VAL(v) to all the processes (line 1). Then, when a
+process pi receives (from any process) a message B_VAL(v), (if
+not yet done) it forwards this message to all the processes (line 3)
+if it has received the same message from at least (t + 1) different
+processes (line 2). Moreover, if pi has received v from at least
+(2t + 1) different processes, the value v is added to bin_valuesi.
+Remark.
+It is important to notice that no correct process pi can know
+when its set bin_valuesi has obtained its ﬁnal value. (Otherwise,
+consensus will be directly obtained by directing each process pi to
+deterministically extract the same value from bin_valuesi). This
+impossibility is due to the net effect of asynchrony and process fail-
+ures [18].
+3.3 Proof and Cost of the Algorithm
+THEOREM 1. The algorithm described in Figure 1 implements
+the BV-broadcast abstraction in the system model BZ_AS n,t [t <
+n/ 3].
+Proof Proof of the BV-Obligation property. Let v be a value such
+that (t + 1) correct processes invoke BV_broadcast MSG (v). It
+follows from the predicate of line 2 that each correct process even-
+tually receives these (t + 1) messages, and consequently each cor-
+rect process broadcasts exactly once the message B_VAL(v) to all
+the processes. As the channels are reliable, and n− t≥ 2t + 1,
+it follows that the predicate of line 5 is eventually satisﬁed at each
+correct process, and consequently, the property follows.
+Proof of the BV-Justiﬁcation property. To show this property, we
+prove that a value BV-broadcast only by faulty processes cannot be
+added to the set bin_valuesi of a correct process pi. Hence, let us
+assume that only faulty processes BV-broadcast v. It follows that a
+correct process can receive the message B_VAL(v) from at most t
+different processes. Consequently the predicate of line 2 cannot be
+satisﬁed at a correct process. Hence, the predicate of line 5 cannot
+be satisﬁed either at a correct process, and the property follows.
+Proof of the BV-Uniformity property. If a value v is added to
+the set bin_valuesi of a correct process pi (local delivery), this
+process has received B_VAL(v) from at least (2t + 1) different
+processes (line 5), i.e., from at least (t + 1) different correct pro-
+cesses. As each of these correct processes has sent this message to
+all the processes, it follows that the predicate of line 2 is eventually
+satisﬁed at each correct process, which consequently broadcasts
+B_VAL(v) to all. As n− t≥ 2t + 1, the predicate of line 5 is then
+eventually satisﬁed at each correct process, and the BV-Uniformity
+property follows.
+Proof of the BV-Termination property. As (a) there are at least
+(n− t) correct processes, (b) each of them invokes BV_broadcast
+MSG (), (c) n− t≥ 2t + 1 = ( t + 1) + t, and (d) only 0 and 1
+can be BV-broadcast, it follows that there is a value v∈{ 0, 1} that
+is BV-broadcast by at least (t + 1) correct processes. The proof of
+the BV-Termination property is then an immediate consequence of
+the BV-Obligation property. ✷ T heorem 1
+Cost of the algorithm.
+As far as the cost of the algorithm is concerned, we have the
+following for each BV-broadcast instance.
+• If all correct processes BV-broadcast the same value, the al-
+gorithm requires a single communication step. Otherwise, it
+can require two communication steps.
+• Let c≥ n− t be the number of correct processes.
+The correct processes send c n messages if they BV-broadcast
+the same value, and send 2 c n messages otherwise.
+• In addition to the control tag B_VAL, a message carries a
+single bit. Hence, message size is constant.
+4. A BYZANTINE CONSENSUS
+ALGORITHM
+4.1 Byzantine Consensus and Enriched Model
+Binary Byzantine consensus.
+The Byzantine consensus problem has been informally stated in
+the Introduction. Assuming that each correct process pi proposes a
+value vi∈{ 0, 1}, each of them has to decide a value such that the
+following property are satisﬁed.
+• BC-V alidity. A decided value was proposed by a correct pro-
+cess.
+5
+
+--- PAGE 5 ---
+• B C-Agreement. No two correct processes decide different
+values.
+• BC-One-shot. A correct process decides at most once.
+• BC-Termination. Each correct process decides.
+The BC-V alidity property states that no value proposed only by
+faulty processes can be decided. As we consider binary consensus,
+it is equivalent to the following property: if all correct processes
+propose the same value v, the value v c annot be decided (where v
+i
+s the other binary value).
+From binary to multivalued Byzantine consensus.
+Interestingly, asynchronous multivalued Byzantine consensus (i.e.,
+when more than two values can be proposed) can be solved on top
+of binary Byzantine consensus. Such constructions are described
+in [10, 14, 28, 32, 34, 35, 41] (see [44] for synchronous systems).
+Enriching the basic asynchronous model: Rabin’s com-
+mon coin.
+As indicated in the Introduction, the modelBZ_AS n,t [t < n/ 3]
+has to be enriched so that Byzantine consensus can be solved. The
+additional computational power we consider here is a common coin
+(CC) as deﬁned by Rabin [37]. As indicated, the corresponding
+enriched system model is denoted BZ_AS n,t [t < n/ 3, CC]. A
+common coin can be seen as a global entity that delivers the very
+same sequence of random bits b1, b 2, . . . , b r, . . . to processes, each
+bit br has the value 0 or 1 with probability 1/ 2.
+More precisely, this oracle provides the processes with a prim-
+itive denoted random() that returns a bit each time it is called by
+a process. In addition to being random, this bit has the following
+global property: the rth invocation of random() by a correct pro-
+cess pi returns it the bit br. This means that the rthinvocations of
+random() by any pair of correct processes pi and pj return them
+br. A common coin is built in such a way that the processes need to
+cooperate to compute the value of each bit br. More precisely, no
+Byzantine process can obtain the value br before at least one cor-
+rect process has started accessing br (see [11]). This is required to
+prevent Byzantine processes from computing bit values in advance
+and exploit these values to produce message delivery schedule that
+would prevent termination3. The reader interested in the implemen-
+tation of such a common coin can consult [2, 9].
+On randomized consensus.
+When using additional computing power provided by common
+coins, the consensus termination property can no longer be deter-
+ministic. Randomized consensus is deﬁned by BC-V alidity (Obli-
+gation), BC-Agreement, plus the following BC-Termination prop-
+erty [4, 37]: Every non-faulty process decides with probability 1.
+For round-based algorithms, this termination property is re-stated
+as follows. For any correct process pi, we have:
+limr→ +∞
+(
+Probability [pi decides by round r]
+)
+= 1.
+3A s just indicated, this assumption on the common coin compu-
+tation is due to the fact that Byzantine processes are not prevented
+from controlling message delivery schedule, thereby rendering ran-
+dom numbers helpless. It would be possible to let Byzantine pro-
+cesses know in advance the sequence of random bits, as long as
+they cannot control message delivery schedules (this assumption
+corresponds to the oblivious scheduler model [2]).
+4.2 Randomized Byzantine Consensus
+Algorithm
+Principles and description of the algorithm.
+The consensus algorithm is described in Figure 2. It requires
+t < n/ 3 and is consequently optimal with respect to the maximal
+number t of Byzantine processes that can be tolerated. A process
+pi invokes propose(vi) where vi∈{ 0, 1} is the value it proposes.
+It decides when it executes the statement decide(v) at line 8.
+The local variable esti of a process pi keeps its current estimate
+of the decision (initially esti = vi). The processes proceed by
+consecutive asynchronous rounds and a BV-broadcast instance is
+associated with each round. The local variable ri denotes the cur-
+rent round of process pi, while the local variable bin_valuesi[ri]
+denotes the local read-only variable bin_valuesi associated with
+the BV-broadcast instance used at round ri.
+The behavior of a correct process pi during a round ri can be
+decomposed in three phases.
+• Phase 1: lines 1-3. This ﬁrst phase is an exchange phase.
+During a round ri, a process pi ﬁrst invokes BV_broadcast
+EST [ri](esti) (line 2) to inform the other processes of the
+value of its current estimate esti. This message is tagged EST
+and associated with the round number ri (hence the nota-
+tion EST [ri]()). Then, pi waits until its underlying read-only
+BV-broadcast variable bin_valuesi[ri] is no longer empty
+(line 3). Due to the BV-Termination property, this eventu-
+ally happens. When the predicate becomes satisﬁed, the set
+bin_valuesi[ri] has not yet necessarily its ﬁnal value, but
+it contains at least one value ∈ {0, 1}. Moreover, due to
+the BV-Justiﬁcation property, the values in bin_valuesi[ri]
+were BV-broadcast by correct processes.
+• Phase 2: lines 4-5. The second phase is also an exchange
+phase during which each correct process pi invokes the op-
+eration broadcast AUX[ri](w) where w is a value belonging
+to bin_valuesi[ri] (line 4). Let us notice that all the correct
+processes pj broadcast a value of their set bin_valuesj[rj]
+(i.e., an estimate value of a correct process), while a Byzan-
+tine process can broadcast an arbitrary binary value. To sum-
+marize, the broadcasts of the second phase inform the other
+processes of estimate values that have been BV-broadcast by
+correct processes.
+A process pi then waits until the predicate of line 5 becomes
+satisﬁed. This predicate is used to discard (if any) a value that
+would have been sent only by Byzantine processes. From an
+operational point of view, it states that there is a set valuesi
+containing only the values broadcast at line 4 by (n− t)
+distinct processes, and these values originated from correct
+processes (which BV-broadcast them at line 2). Said in an-
+other way, the set valuesi of a correct process pi cannot
+contain an estimate value broadcast only by Byzantine pro-
+cesses. Hence, after line 5, we have valuesi∈{ 0, 1}, and
+for any v ∈ valuesi, v is an estimate VB-broadcast by a
+correct process.
+• Phase 3: lines 6-11. This last phase is a local computation
+phase. A correct process pi ﬁrst obtains the common coin
+value s associated with the current round (line 6).
+– If|valuesi| = 2 , both the value 0 and the value 1 are
+estimate values of correct processes. In this cases, pi
+adopts the value s of the common coin (line 10).
+– If|valuesi|= 1, pi decides v (the single value present
+in valuesi) if additionally s = v (line 8). Otherwise it
+adopts v as its new estimate (line 9).
+6
+
+--- PAGE 6 ---
+operation p ropose (vi) is
+esti← vi; ri← 0;
+repeat forever
+(1) ri← ri + 1;
+(2) BV_broadcast EST [ri](esti);
+(3) wait until (bin_valuesi[ri]̸=∅);
+% bin_valuesi[ri] has not necessarily obtained its ﬁnal value when the wait statement terminates %
+(4) broadcast AUX[ri](w) where w∈ bin_valuesi[ri];
+(5) wait until
+(
+∃ a set of (n− t) AUX[ri](x) messages delivered from distinct processes such that
+valuesi⊆ bin_valuesi[ri] where valuesi is the set of values x carried by these (n− t) messages
+)
+;
+(6) s← random();
+(7) if (valuesi ={v}) % i.e., |valuesi|= 1 %
+(8) then if (v = s) then decide(v) if not yet done end if;
+(9) esti← v
+(10) else esti← s
+(11) end if
+end repeat.
+Figure 2: A BV-broadcast-based algorithm implementing bina ry consensus inBZ_AS n,t [n > 3t, CC]
+The statement decide() used at line8 allows the invoking pro-
+cess pi to decide but does not stop its execution. A process
+executes round forever. This facilitates the description and
+the understanding of the algorithm.
+4.3 Proof and Cost of the Algorithm
+Notation.
+Let pi be a correct process. valuesr
+i denotes the value of the
+local variable valuesi which makes satisﬁed the predicate of line 5
+at round r.
+LEMMA 1. Let n > 3t. Consider the situation where, at the be-
+ginning of a round r, all the non-faulty processes have the same es-
+timate value v. These processes will never change their estimates,
+thereafter .
+Proof If all the correct processes (which are at least n− t >
+t + 1) have the same estimate value v at beginning of a round r,
+they all BV-broadcast EST [r](v) at line 2. It follows that the set
+bin_valuesi[r] of each correct process pi contains v (BV-Obligation
+property) and only v (BV-Justiﬁcation property). Hence, due to the
+lines 4, 7, and 9, the estimate esti of any correct process pi is set
+to v, which concludes the proof of the lemma. ✷ Lemma 1
+LEMMA 2. Let n > 3t, and pi and pj be two correct processes.
+(valuesr
+i ={v})∧ (valuesr
+j ={w}) ⇒ (v = w).
+Proof Let us consider a correct process pi and assume valuer
+i =
+{v}. It follows from the predicate of line 5 that pi has received the
+same message AUX[r](v) from at least (n− t) different processes.
+As at most t processes can be Byzantine, it follows that pi has re-
+ceived AUX[r](v) from at least (n− 2t) different correct processes,
+i.e., as n− 2t≥ t + 1, from at least (t + 1) correct processes.
+Let us consider another correct process pj such that valuer
+j =
+{w}. This process received the message AUX[r](w) from at least
+(n− t) different processes. As (n− t) + (t + 1) > n , it follows
+that one correct process px sent AUX[r](v) to pi and AUX[r](w)
+to pi. As px is correct, it sent the same message to all the pro-
+cesses. Hence v = w, which concludes the proof of the lemma.
+✷ Lemma 2
+LEMMA 3. Let n > 3t. A decided value is a value proposed by
+a correct process.
+Proof Let us consider the round r = 1 . It follows from (a) the
+BV-Justiﬁcation property of the BV-broadcast (line 2), (b) the wait
+statement at line 3, and (c) the broadcast by each correct process pj
+of a value taken from its set bin_valuesj[1], that, the set valuesi
+computed at line 5 by any correct process pi contains only esti-
+mate values of correct processes. Then, if valuesi ={v} and v
+is equal to the value s of the common coin, v is decided. Be the
+value v decided or not, pi adopts it as new estimate (line 9). If
+valuesi ={0, 1}, both values have been proposed by correct pro-
+cesses and pi adopts the one deﬁned by the common coin as its new
+estimate (line 10). In all cases, the estimate value of a correct pro-
+cess is equal to a proposed value. Then the same reasoning applies
+to all other rounds, from which it follows that a decided value is an
+estimate value that was proposed by a correct process. ✷ Lemma 3
+LEMMA 4. No two non-faulty processes decide different val-
+ues.
+Proof Let r be the ﬁrst round at which processes decide. If two
+correct processes pi and pj decide at round r, they decide the same
+value, namely, the value of the common coin associated with round
+r, and update their estimates to the value of the common coin.
+Moreover, due to Lemma 2, if pi decides v during round r, there
+is no correct process pj such that valuer
+i ={w}, with w̸= v.
+Hence, if a process pj does not decide during r, we necessarily
+have valuesr
+j ={v, w} ={0, 1}. It follows that such a process
+pj executes line 10, and assigns the value of the common coin to
+its estimate estj.
+Hence, at the beginning of round (r + 1), the estimates of all
+the correct processes are equal to the common coin, which is itself
+equal to the decided value v. It then follows from Lemma 1 that
+they keep this value forever. As a decided value is a an estimate
+value, only v can be decided. ✷ Lemma 4
+LEMMA 5. Each non-faulty process decides with probability 1.
+Proof Let us ﬁrst prove that no correct process remains blocked
+forever during a round r. There are two wait statements. Due to
+the BV-Termination property, no correct process can block forever
+at line 3. To show that no correct process can block forever at
+line 5, we have to show that the predicate of line 5 becomes even-
+tually true at every correct process pi. This follows from the fol-
+lowing observations: during round r, (a) the set bin_valuesi[r] of
+7
+
+--- PAGE 7 ---
+each correct process contains only values BV-broadcast by co rrect
+processes (BV-Justiﬁcation), and eventually the sets of all the cor-
+rect processes are equal (BV-Uniformity); (b) each of the at least
+(n− t) correct processes pi broadcasts a message AUX[r](w) such
+that w∈ bin_valuesi[r]; (c) each of these messages is eventually
+received by each correct process.
+Claim. With probability 1, there is a round r at the end of which
+all the correct processes have the same estimate value. (End of the
+claim.)
+Assuming the claim holds, it follows from Lemma 1 that all the
+correct processes pi keep their estimate value esti = v and con-
+sequently the predicate valuesi ={v} at line 7 is true at every
+round. Due to the common coin CC, it follows that, with proba-
+bility 1, there is eventually a round in which random() outputs v.
+Then, the predicates of the lines 7 and 8 evaluate to true, and all the
+correct processes decide.
+Proof of the claim. We need to prove that, with probability 1, there
+is a round at the end of which all the correct processes have the
+same estimate value. Let us consider a round r.
+• If all the correct processes execute line 10, they all adopt the
+value of the common coin at the end of round r, and the claim
+directly follows.
+• Similarly, if all the correct processes execute line 9, they
+adopt the same value v as their new estimate, and the claim
+follows.
+• The third case is when some correct processes execute line 9
+and adopt the same value v, while others execute line 10 and
+adopt the same value s.
+Due to the properties of the common coin, the value it com-
+putes at a given round is independent from the values it com-
+putes at the other rounds (and also from the Byzantine pro-
+cesses and the network scheduler). Thus, s is equal to v
+with probability p = 1 / 2. Let P (r) be the following prob-
+ability (where xr is the value of x at round r): P (r) =
+Probability[∃r′ : r′≤ r : vr′
+= sr′
+]. We have P (r) =
+p + (1− p)p +···+ (1− p)r− 1p. So, P (r) = 1− (1− p)r.
+As limr→ +∞ P (r) = 1 , the claim follows. (End of the proof
+of the claim.) ✷ Lemma 5
+THEOREM 2. The algorithm described in Figure 2 solves the
+randomized binary consensus problem inBZ_AS n,t [t < n/ 3, CC].
+Proof BC-V alidity follows from Lemma 3. BC-Agreement follows
+from Lemma 4. BC-One-shot follows from line 8. BC-Termination
+follows from Lemma 5. ✷ T heorem 2
+THEOREM 3. Let n > 3t. The expected decision time is con-
+stant (four rounds).
+Proof As indicated in the proof of Lemma 5, termination is ob-
+tained in two phases. First, all the correct processes must adopt the
+same value v. Second, the outcome of the common coin has to be
+the same as the commonly adopted value v.
+It follows from the proof of Lemma 5 that there is only one sit-
+uation in which the correct processes do not adopt the same value.
+This is when the predicate of line 7 is satisﬁed for a subset of cor-
+rect processes and not for the other correct processes. Thus, the
+expected number of rounds for this to happen is 2. As for the sec-
+ond phase, here again, the probability that the value output by the
+common coin is the same as the value held by all the correct pro-
+cesses is 1/ 2. Thus, the expected time for this to occur is also
+2. Combining the two phases, the expected termination time is 4
+rounds (i.e., a small constant). ✷ T heorem 3
+Cost of the algorithm.
+As far as the cost of the algorithm is concerned, we have the fol-
+lowing, where c≥ n− t denotes the number of correct processes.
+• If the correct processes propose the same value, each round
+requires two communication steps (one in the BV-broadcast
+and one broadcast), and the expected number of rounds to
+decide is two. Hence, the total number of messages sent by
+correct processes is 2 c n.
+• If the correct processes propose different values, each round
+requires three communication steps (two in the BV-broadcast
+and one broadcast), and the expected number of rounds to
+decide is four. Moreover, the total number of messages sent
+by the correct processes is then 4 c n per round.
+• In addition to a round number, both a message EST [r]() and
+a message AUX[r]() sent by a correct process carry a single
+bit. An underlying message B_VAL() has to carry a round
+number and a bit.
+• The total number of bits exchanged by the correct processes
+is O(n2r log r) where r is the number of rounds executed by
+the correct processes. Hence, the expected bit complexity is
+O(n2).
+5. CONCLUSION
+This paper has presented a new consensus algorithm suited to
+asynchronous systems composed of n processes, and where up to
+t < n/ 3 processes may have a Byzantine behavior. This algo-
+rithm relies on Rabin’s common coin and an underlying binary-
+value broadcast algorithm which guarantees that a value broad-
+cast only by Byzantine processes is never delivered to the correct
+processes. In addition to being t-resilient optimal, the algorithm,
+which is round-based and signature-free, uses two or three com-
+munication steps per round (this depends on the estimate values of
+the correct processes at the beginning of a round), and O(n2) mes-
+sages per rounds. Moreover, each message carries a round number
+and a single bit, and the expected number of rounds to decide is
+four. Finally, as claimed in the Introduction, and in addition to its
+efﬁciency-related properties, a very important ﬁrst class property
+of the proposed algorithm lies in its design simplicity.
+6. ACKNOWLEDGMENTS
+The authors want to thank the referees for their constructive com-
+ments. This work has been partially supported by the French ANR
+project DISPLEXITY devoted to computability and complexity in
+distributed computing.
+7. REFERENCES
+[1] Aigner M. and Ziegler G., Proofs from THE BOOK (4th
+edition). Springer, 274 pages, 2010 (ISBN
+978-3-642-00856-6).
+[2] Aspnes J., Lower bounds for distributed coin ﬂipping and
+randomized consensus. J. of the ACM, 45(3):415-450, 1998.
+[3] Attiya H. and Welch J., Distributed computing:
+fundamentals, simulations and advanced topics , (2d
+Edition), Wiley-Interscience, 414 pages, 2004.
+8
+
+--- PAGE 8 ---
+[4] Ben-Or M., Another advantage of free choice: completely
+a
+synchronous agreement protocols. Proc. 2nd Annual ACM
+Symposium on Principles of Distributed
+Computing(PODC’83), ACM Press, pp. 27-30, 1983.
+[5] Berman P . and Garay J.A., Randomized distributed
+agreement revisited. Proc. 33rd Annual Int’l Symposium on
+Fault-Tolerant Computing (FTCS’93), IEEE Computer
+Press, pp. 412-419, 1993.
+[6] Bracha G., An asynchronous (n− 1)/ 3-resilient consensus
+protocol. Proc. 3rd Annual ACM Symposium on Principles of
+Distributed Computing (PODC’84), ACM Press,
+pp. 154-162, 1984.
+[7] Bracha G., Asynchronous Byzantine agreement protocols.
+Information & Computation, 75(2):130-143, 1987.
+[8] Bracha G. and Toueg S., Asynchronous consensus and
+broadcast protocols. Journal of the ACM , 32(4):824-840,
+1985.
+[9] Cachin Ch., Kursawe K., and Shoup V ., Random oracles in
+Constantinople: practical asynchronous Byzantine
+agreement using cryptography. Proc. 19th Annual ACM
+Symposium on Principles of Distributed Computing
+(PODC’00), ACM Press, pp. 123-132, 2000.
+[10] Cachin Ch., Kursawe K., Petzold F., and Shoup V ., Secure
+and efﬁcient asynchronous broadcast protocols. Proc. 21st
+Annual International Cryptology Conference CRYPTO’01 ,
+Springer LNCS 2139, pp. 524â ˘A ¸ S541, 2001.
+[11] Cachin Ch., Guerraoui R., and Rodrigues L., Reliable and
+secure distributed programming, Springer, 367 pages, 2011
+(ISBN 978-3-642-15259-7).
+[12] Canetti R., and Rabin T., Fast asynchronous Byzantine
+agreement with optimal resilience, Proc. 25th Annual ACM
+Symposium on Theory of Computing (STOC’93) , ACM
+Press, pp. 42-51, 1993.
+[13] Chandra T. and Toueg S., Unreliable failure detectors for
+reliable distributed systems. Journal of the ACM ,
+43(2):225-267, 1996.
+[14] Correia M., Ferreira Neves N., and V erissimo P ., From
+consensus to atomic broadcast: time-free Byzantine-resistant
+protocols without signatures. The Computer Journal,
+49(1):82-96, 2006.
+[15] Dijkstra E.W., Some beautiful arguments using mathematical
+induction. Algorithmica, 13(1):1-8, 1980.
+[16] Dwork C., Lynch N., and Stockmeyer L., Consensus in the
+presence of partial synchrony. Journal of the ACM , 35(2),
+288-323, 1988.
+[17] Fischer M. and Lynch N., A lower bound for the time to
+ensure interactive consistency. Information Processing
+Letters, 14:183-186, 1982.
+[18] Fischer M.J., Lynch N.A., and Paterson M.S., Impossibility
+of distributed consensus with one faulty process. Journal of
+the ACM, 32(2):374-382, 1985.
+[19] Fischer M.J. and Merritt M., Appraising two decades of
+distributed computing theory research. Distributed
+Computing, 16(2-3): 239-247, 2003.
+[20] Friedman R., Mostéfaoui A., Rajsbaum S., and Raynal M.,
+Distributed agreement problems and their connection with
+error-correcting codes. IEEE Transactions on Computers,
+56(7):865-875, 2007.
+[21] Friedman R., Mostéfaoui A. and Raynal M., ✸Pmute-based
+consensus for asynchronous Byzantine systems. Parallel
+Processing Letters, 15(1-2):162-182, 2005.
+[22] Friedman R., Mostéfaoui A., and Raynal M., Simple and
+efﬁcient oracle-based consensus protocols for asynchronous
+Byzantine systems. IEEE Transactions on Dependable and
+Secure Computing, 2(1):46-56, 2005.
+[23] Goldwasser S., Pavlov E., and V aikuntanathan V .,
+Fault-tolerant distributed computing in full-information
+networks. Proc. 47th Annual IEEE Symposium on
+F oundations of Computer Science (FOCS’06),IEEE
+Computer Society, pp. 15-26, 2006.
+[24] Gray J. and Reuter A., Transaction processing: concepts and
+techniques, Morgan Kaufmann Pub., San Francisco (CA),
+1045 pages, 1993, (ISBN 1-55860-190-2).
+[25] Kihlstrom K.P ., Moser L.E. and Melliar-Smith P .M.,
+Byzantine fault detectors for solving consensus. The
+Computer Journal, 46(1):16-35, 2003.
+[26] King V . and Saia J., Breaking the O(n2) bit barrier: scalable
+Byzantine agreement with an adaptive adversary. Proc. 30th
+ACM Symposium on Principles of Distributed Computing
+(PODC’11), ACM Press, pp. 420-429, 2011.
+[27] Lamport L., Shostack R., and Pease M., The Byzantine
+generals problem. ACM Transactions on Programming
+Languages and Systems, 4(3)-382-401, 1982.
+[28] Liang G. and V aidya N., Error-free multi-valued consensus
+with Byzantine failures. Proc. 30th ACM Symposium on
+Principles of Distributed Computing (PODC’11) , ACM
+Press, pp. 11-20, 2011.
+[29] Lynch N.A., Distributed algorithms. Morgan Kaufmann
+Pub., San Francisco (CA), 872 pages, 1996 (ISBN
+1-55860-384-4).
+[30] Lynch N.A., Merritt M., Weihl W.E., and Fekete A., Atomic
+Transactions. Morgan Kaufmann Pub., San Francisco (CA),
+500 pages, 1994 (ISBN 1-55860-104-X).
+[31] Martin J.-Ph. and Alvizi L., Fast Byzantine consensus. IEEE
+Transactions on Dependable and Secure Computing ,
+3(3):202-215, 2006.
+[32] Milosevic Z., Hutle M., and Schiper A., On the reduction of
+atomic broadcast to consensus with Byzantine faults. Proc.
+30th IEEE Int’l Symposium on Reliable Distributed Systems
+(SRDS’11), IEEE Computer Press, pp. 235-244, 2011.
+[33] Mostéfaoui A., Rajsbaum S., and Raynal M., Conditions on
+input vectors for consensus solvability in asynchronous
+distrbuted systems. Journal of the ACM , 50(6):922-954,
+2003.
+[34] Mostéfaoui A. and Raynal M., Signature-free
+broadcast-based intrusion tolerance: never decide a
+Byzantine value. Proc. 14th Int’l Conference On Principles
+Of Distributed Systems (OPODIS’10) , Springer LNCS 6490,
+pp. 144-159, 2010.
+[35] Patra A., Error-free multi-valued broadcast and Byzantine
+agreement with optimal communication complexity. Proc.
+15th Int’l Conference On Principles Of Distributed Systems
+(OPODIS’10), Springer LNCS 7109 pp. 34-49, 2011.
+[36] Pease M., R. Shostak R., and Lamport L., Reaching
+agreement in the presence of faults. Journal of the ACM ,
+27:228-234, 1980.
+[37] Rabin M., Randomized Byzantine generals. Proc. 24th IEEE
+Symposium on F oundations of Computer Science (FOCS’83),
+IEEE Computer Society Press, pp. 116-124, 1983.
+[38] Raynal M., Communication and agreement abstractions for
+fault-tolerant asynchronous distributed systems. Morgan &
+Claypool, 251 pages, 2010 (ISBN 978-1-60845-293-4).
+[39] Raynal M., Fault-tolerant agreement in synchronous
+message-passing systems. Morgan & Claypool, 165 pages,
+2010 (ISBN 978-1-60845-525-6).
+[40] Raynal M., Concurrent programming: algorithms, principles
+and foundations. Springer, 515 pages, 2013 (ISBN
+978-3-642-32026-2).
+[41] Song Y .J. and van Renesse R., Bosco: one-step Byzantine
+asynchronous consensus. Proc. 22th Symposium on
+Distributed Computing (DISC’08), Springer LNCS 5218,
+438-450, 2008.
+[42] Srikanth T.K. and Toueg S., Simulating authenticated
+broadcasts to derive simple fault-tolerant algorithms.
+Distributed Computing, 2:80-94, 1987.
+[43] Toueg S., Randomized Byzantine agreement. Proc. 3rd
+Annual ACM Symposium on Principles of Distributed
+Computing (PODC’84), ACM Press, pp. 163-178, 1984.
+[44] Turpin R. and Coan B.A., Extending binary Byzantine
+agreement to multivalued Byzantine agreement. Information
+Processing Letters, 18:73-76, 1984.
+9
