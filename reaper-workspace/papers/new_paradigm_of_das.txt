@@ -1,0 +1,907 @@
+                                          From Indexing to Coding: A New Paradigm for
+                                                   Data Availability Sampling
+
+                                             Moritz Grundei, Vipindev Adat Vasudevan, Kishori Konwar, and Muriel
+                                                                           Médard
+
+                                                                 Optimum, Cambridge, MA, USA
+                                                       {moritz,vipindev,kkonwar,mmedard}@getoptimum.xyz
+
+
+
+
+arXiv:2509.21586v2 [cs.CR] 29 Apr 2026
+                                               Abstract. The data availability problem is a central challenge in blockchain
+                                               systems and lies at the core of the accessibility and scalability issues
+                                               faced by platforms such as Ethereum. Modern solutions employ several
+                                               approaches, with data availability sampling (DAS) being the most self-
+                                               sufficient and minimalistic in its security assumptions. Existing DAS
+                                               methods typically form cryptographic commitments on codewords of
+                                               fixed-rate erasure codes, which restrict light nodes to sampling from a
+                                               predetermined set of coded symbols.
+                                               In this paper, we introduce a new approach to DAS that modularizes
+                                               the coding and commitment process by committing to the uncoded data
+                                               while performing sampling through on-the-fly coding. The resulting sam-
+                                               ples are significantly more expressive, enabling light nodes to obtain, in
+                                               concrete implementations, up to multiple orders of magnitude stronger
+                                               assurances of data availability than from sampling pre-committed sym-
+                                               bols from a fixed-rate redundancy code as done in established DAS
+                                               schemes using Reed Solomon or low density parity check codes. We
+                                               present a concrete protocol that realizes this paradigm using random
+                                               linear network coding (RLNC).
+
+                                               Keywords: Blockchain Systems · Data Availability · Data Availability
+                                               Sampling
+
+
+                                         1    Introduction
+
+                                         Blockchains such as Ethereum can be modeled as distributed state machines
+                                         that rely on full replication of a shared state. They function by disseminating
+                                         transaction data throughout the network, aggregating it into sequentially linked
+                                         blocks, and applying this data to update the globally shared state. In recent
+                                         years, scalability and accessibility have become central challenges: As network
+                                         throughput has increased, the hardware requirements for operating a full node
+                                         have also risen. To address this, Ethereum and similar blockchains support light
+                                         nodes alongside full nodes. Light nodes do not store or download the full trans-
+                                         action history; instead, they maintain custody of block headers, which act as
+                                         compact references to the data contained in each block. While this design allows
+                                         light nodes to verify the inclusion of individual transactions, it does not provide
+2       M. Grundei, V. A. Vasudevan, K. Konwar, M. Médard
+
+
+       Sampling by indexing                                                                Original data
+                                                                                           Encoded data
+                       1   2   3   4                    (1,4)                              Sample
+                   1
+
+                   2
+                                                        (3,3)
+                   3
+                   4
+
+
+
+
+       Sampling by coding
+                   (0,0) (0,1) (0,2) (0,3) (0,4) (0,5) (0,6) (1,0) (1,1) (1,2) (1,3) (1,4) (1,5) (1,6)
+
+
+
+
+Fig. 1: Two sampling paradigms. Top: Sampling by indexing, where samples
+are generated by returning fixed rate coded data from an array of coded data.
+Bottom: Sampling by coding, where a dynamic coding operation is performed
+during the sampling process.
+
+
+
+them with any assurances regarding the integrity or even the availability of data
+to the system of nodes.
+    The problem of verifying that the data contained in a block is available to a
+system of nodes is known as the data availability problem. Several approaches
+exist to provide availability guarantees, but one of the most minimalistic and
+self-sufficient methods is data availability sampling (DAS) [2, 7]. In DAS, a light
+node challenges nodes that claim that the data is available by requesting small,
+randomly chosen portions of the block data. Each successfully answered challenge
+provides the light node with probabilistic assurance that the full data is indeed
+available. To prevent an adversarial node from selectively withholding only a
+small fraction of the data, DAS protocols operate over coded data rather than
+raw block data, ensuring that even partial withholding can be detected [2,3,7,16].
+    Previous approaches combine fixed-rate erasure-coded data with a crypto-
+graphic commitment layered on top [2, 3, 7, 14–16], which serves as a reference
+for light nodes to verify the integrity of the sampled data shares. In this setting,
+a light node performs sampling with an index sampler, selecting coded symbols
+at specified positions from the underlying array of coded data. Since the com-
+mitment was generated for this single coded representation, it fixes the coded
+representation and significantly reduces the degrees of freedom for the sampling
+operation. Further, the size of the sampling space is inherently constrained by
+the storage capacity of the participating nodes, either producing the data or
+claiming it available.
+    In this paper, we propose a new, modular paradigm for DAS that decou-
+ples the cryptographic commitment from the coding process. The key idea is
+to employ a sampling method that allows a claimer to generate coded data on
+ From Indexing to Coding: A New Paradigm for Data Availability Sampling             3
+
+the fly, while using a cryptographic commitment to the uncoded data. This de-
+sign offers several advantages. First, it separates the commitment scheme from
+the coding of the underlying data offering more modularity. Second, the sam-
+pling space is no longer constrained by the storage capacity of the individual
+nodes, which makes the set of possible challenges richer compared to sampling
+from pre-committed coded data. Finally, by generating samples dynamically at
+the claimer, we trade additional computation at the claimer for reduced storage
+requirements and lower download costs for the light node, since the resulting
+samples are more powerful in their impact on certainty about data availability
+than those derived from pre-committed coded data.
+    Further, we demonstrate a concrete implementation of this new approach to
+DAS using random linear network coding (RLNC) [9], a class of rateless era-
+sure codes. RLNC is particularly well suited to our modular paradigm because
+it allows coded samples to be generated flexibly and efficiently on demand and
+integrates naturally with a commitment scheme on the uncoded data using ho-
+momorphic vector commitments like Pedersen commitments. Within this frame-
+work, a single RLNC sample can provide the same certainty about availability
+as approximately 73 samples from a commonly used r = 0.25 two-dimensional
+Reed–Solomon (RS) code and 156 samples from the low density parity check
+(LDPC) codes employed in [11,13,16]. In our simulations, this translates into (i)
+a reduction in download costs for light nodes by a factors of up to ∼ 12−195 com-
+pared to schemes that use pre-committed codewords of 2D-RS codes or LDPCs,
+while (ii) incurring no storage overhead at the claimer node, in contrast to the
+4× storage overhead of the original data at claimer nodes holding redundancy
+coded data.
+
+
+2     Notation
+We use the following notation throughout the paper. Scalars are denoted by
+lowercase letters (e.g., a), vectors by bold lowercase letters (e.g., c), and matrices
+by bold uppercase letters (e.g., A). For a matrix A, we let ai denote its i-th
+column and a(i) its i-th row. The field of coding coefficients is denoted by F, and,
+depending on the context, |F| may either refer to the cardinality (the number of
+elements in the field) or the size of a binary representation of any element in the
+field. A set of n elements is denoted by {ai }ni=1 , while a binding but not hiding
+Pedersen vector commitment to a vector P       a ∈ Fn with respect to the generator
+                                                 n
+basis {g1 , . . . , gn } is denoted by[[a]]g =   i=1 ai gi . Finally, an inner product
+argument for vectors a and b is written as ⟨⟨a, b⟩⟩.
+
+
+3     Sampling from Coded Data
+3.1   System Model
+In a trustless system of nodes where resource constrained nodes want to gain
+certainty about data being available to the system, Fig. 2 displays the three
+4       M. Grundei, V. A. Vasudevan, K. Konwar, M. Médard
+
+
+
+                                 Producer
+
+                                  data      &data
+                                                          data
+                      &data
+
+           Verifier                                    Claimer
+            &data
+                                                        data
+
+
+
+
+Fig. 2: System actors in the data availability problem: The verifier tries to ascer-
+tain the availability of the data corresponding to a data reference obtained from
+producer through requesting coded samples from a claimer node.
+
+
+system actors: A data producer creates a succinct cryptographic data reference
+to the data entity (or a coded version thereof) and broadcasts this reference
+to participating nodes in the system (e.g. by putting it into the header of a
+block in a blockchain). A verifier node with limited bandwidth and / or storage
+resources (e.g. an Ethereum light node) then queries one or several claimer nodes
+that claim that the data is available to the network. The claimer node responds
+with a coded sample of the underlying data, accompanied by a membership
+proof that can be used to verify that the sampled data was derived from the
+data entity. For the purposes of this work, we additionally adopt a simplifying
+assumption regarding the interaction between verifier and claimer nodes, as well
+as the sampling strategy, namely the strong model for data availability [12].
+In particular, we assume non-adaptivity of claimer nodes: whenever a claimer
+attempts to deceive verifiers about data availability by revealing only a subset
+of coded chunks, it must decide which shares to publish before the sampling
+process begins.
+    For schemes that employ layered commitments on coded data that are not
+code binding (e.g., [2,16]), an additional actor, an auditor node, is required. The
+role of the auditor is to validate the responses provided by claimer nodes. If
+a response is incorrectly coded the auditor can generate and transmit a fraud
+proof, thereby alerting the verifier to the inconsistency.
+
+3.2   Sampling Coded Data: Two Paradigms
+When sampling from a coded representation of a data entity, two paradigms
+must be distinguished:
+ 1. Sampling by indexing: Sampling is performed from a static, precomputed
+    set of coded pieces. The verifier specifies which pieces to retrieve, for exam-
+ From Indexing to Coding: A New Paradigm for Data Availability Sampling          5
+
+                               RLNC         2D-RS         LDPC
+
+
+             10−1
+
+
+
+             10−4
+       PFN
+
+             10−7
+
+
+
+             10−10
+                     1                      10                         100
+                                 Number of samples
+Fig. 3: Probability that withholding a sufficient amount of samples to make the
+underlying data entity undecodable goes undetected (false negative probability
+PF N ) when (i) sampling by indexing code words of fixed-rate r = 0.25 2D-
+RS or LDPC codes, versus (ii) sampling by coding with RLNC using a field of
+cardinality 216 (2B).
+
+
+    ple by providing indices to an array of coded symbols. Consequently, the
+    sampling space is bounded by the size of the pre-stored data at the claimer
+    which only forwards the coded symbols produced by the producer on request
+    from the verifier.
+ 2. Sampling by coding: In this setup, the verifier provides an input parameter
+    to a coding operation C(data, ·), which prompts the claimer to compute the
+    response dynamically rather than retrieving it from a precomputed array, as
+    in the sampling by indexing paradigm. The size of the sampling is thus not
+    determined by the size of the encoded data stored at the claimer node, but
+    instead follows the cardinality of the input to the coding function.
+
+    Figure 1 illustrates the two sampling paradigms. In the upper half, sampling
+is performed from precomputed coded data arranged as a 4 × 4 array of 16 coded
+symbols, exemplifying the sampling by indexing approach. The verifier specifies
+coordinates (e.g., (1, 4)) to retrieve the corresponding symbol. In this case, the
+size of the sampling space is fixed at 16, matching the number of coded symbols
+stored at the claimer node.
+    The lower half of the figure illustrates sampling by coding. In this paradigm,
+the coded symbol returned to the verifier is computed dynamically from the un-
+derlying data together with an input tuple (e.g., (0, 1)). The size of the sampling
+space is determined by the cardinality of the field from which the input tuple is
+drawn. In the example shown, the tuple consists of elements from the prime field
+GF (7), resulting in a sampling space of size 72 = 49. This additional flexibility
+6      M. Grundei, V. A. Vasudevan, K. Konwar, M. Médard
+
+in specifying a coded sample, when combined with a suitable coding operation,
+enables the verifier to derive a substantially stronger estimate of the probability
+that the underlying data is actually available as is shown next in a concrete
+embodiment of this paradigm with RLNC.
+    This example illustrates an important trade-off: sampling by indexing a coded
+data representation is storage-intensive but computationally cheap during sam-
+pling, whereas sampling by coding minimizes storage requirements at the cost
+of increased computational complexity during sampling. As we will see in the
+following example, sampling by coding, when applied with a suitable coding
+scheme, yields much stronger guarantees for verifier nodes probing claimer nodes
+suspected of withholding data from the network.
+
+
+Example Paradigm 1: Fixed Rate Redundancy Codes Prominent DAS
+schemes combine fixed-rate linear redundancy codes with index sampling [2, 7,
+13,16]. Given k data symbols to be checked for availability, the producer encodes
+the k symbols into n coded symbols, which the claimer then forwards to verifiers
+on request. The code rate is r = k/n.
+    For a malicious claimer to prevent decoding, they must withhold enough
+coded symbols to prevent reconstruction from the set of coded pieces emitted.
+In this context, the undecodability ratio α denotes the minimum fraction of
+coded symbols that must be hidden to keep the data unrecoverable from the
+sampled pieces. Intuitively, the smaller α is, the more samples a verifier must
+request to gain high assurance of data availability, since the adversary can reveal
+a larger portion of symbols while still preventing reconstruction.
+    Several embodiments of this paradigm appear in the literature [2, 3, 7, 11,
+13, 16]. In [2], a two dimensional Reed√Solomon
+                                             √      (2D-RS) approach is described
+whereby k chunks are arranged into a k× k matrix and subsequently encoded
+row- and column-wise with a r = 0.5 RS code. To derive data references, each
+row and column of the encoded matrix is treated as the leaf set of a Merkle
+tree, and the resulting Merkle roots are placed in the block header. Variants also
+pair 2D-RS with polynomial commitment schemes such as KZG, which reduce
+both commitment and sampling sizes at the expense of requiring a trusted setup
+(e.g., a KZG ceremony) [3,13]. The coded Merkle tree (CMT) construction in [16]
+proposes a layered data tree with LDPC-coded layers. This construction fixes
+the size of the top-layer commitments while allowing the data size to grow by
+adding layers. As a result, it achieves constant commitment size, but incurs a
+higher sampling cost for a given level of certainty due to stopping-set phenomena
+in LDPC codes under peeling decoding. [11] proposes a more careful LDPC code
+design for DAS by systematically eliminating stopping sets and optimizing the
+corresponding indexing technique.
+    The undecodability ratio depends on both the code and employed decoder.
+For a 2D-RS code at rate r = 0.25, up to 75% of coded symbols can be revealed
+without enabling reconstruction, so α = 0.25 [2]. The LDPC codes considered
+in [11, 16], decoded via peeling, exhibit α ≈ 0.125.
+ From Indexing to Coding: A New Paradigm for Data Availability Sampling          7
+
+Example paradigm 2: Sampling through RLNC A possible way to im-
+plement sampling by coding leverages random linear network codes (RLNC). In
+this implementation, the verifier sends the claimer a vector consisting of coding
+coefficients for an RLNC coding operation. The claimer node holds the data
+they claim to be available in the form of a matrix V ∈ Fm×n The claimer node
+responds to this challenge by sending an RLNC-coded data vector, obtained as
+a linear combination of the n column vectors of the matrix V in its custody,
+using the specified coefficient vector. Since the decoding algorithm for RLNC is
+based on inverting the matrix of coefficient vectors, a claimer must render all
+coded vectors corresponding to one particular degree of freedom in the space of
+coefficient vectors unavailable. To make the data thus available, the claimer can
+only reveal a subspace of dimension at most n − 1. Consequently, the claimer
+can answer at most |F| n−1 out of the |F|n possible challenges. The corresponding
+undecodability ratio is calculated as
+                                               1
+                                αRLNC = 1 −       .
+                                              |F|
+
+    This means that when sampling from RLNC with 1-byte coefficients, the
+                                            1
+uncdecodability ratio amounts to 1 − 256        ≈ 99.6% of the samples, while with
+                                              1
+2-byte coefficients this increases to 1 − 65536  ≈ 99.998%.
+    Fig. 3 compares the impact of applying two different paradigms in the context
+of DAS. The paradigm of sampling by indexing is represented through indexing
+coded data from LDPC and 2D-RS codes, with undecodability ratios of α = 0.25
+and α = 0.125, respectively, as used in [2,13,16]. The figure shows the probability
+that a verifier fails to detect a malicious claimer who withholds enough samples
+to make decoding impossible, after successfully retrieving s samples. For a target
+failure probability of 10−4 , the verifier must obtain 33 samples from the RS code
+and 70 samples from the LDPC code.
+    By contrast, under the sampling from coding paradigm, exemplified through
+RLNC, a single sample suffices when the size of the field is bigger than two bytes.
+As we will see in the concrete instantiation of a DAS protocol with RLNC, these
+probabilities directly correspond to the probability of the soundness property
+being broken.
+
+
+4     RLNC-DAS
+
+4.1   Description
+
+Here we show one possible way to design a DAS protocol using sampling through
+coding leveraging RLNC and a vector commitment on the row vectors of the
+uncoded data matrix V ∈ Fm×n . To verify the consistency of the coded vector
+with the cryptographic commitment to the uncoded data matrix, we use a second
+step where the verifier requests the claimer to send an inner product argument
+[4,5] for the projection of the coded vector on vectors chosen by the verifier. The
+resulting scheme has favorable properties in terms of a constant commitment size,
+8         M. Grundei, V. A. Vasudevan, K. Konwar, M. Médard
+
+
+
+                                                                     Original data
+                     Producer
+                             n
+                                                                     Coded vector
+
+                     m
+                                                                     Commitment
+                                 1
+                                                                     Challenge vector
+
+
+                                                                     Membership proof
+
+
+                                                                     Projection vector
+                         2
+    Verifier                              Claimer
+                                                  n       3
+
+                         4
+                                          m
+
+                                                              5
+
+
+
+
+Fig. 4: Information exchange between the system actors in the DAS protocol
+using RLNC-based on-the-fly sampling, together with a vector (Pedersen) com-
+mitment and an interactive inner product argument proof.
+
+
+logarithmic download size in the total amount of data due to the inner product
+argument in the verification step and no storage overhead at the claimer node
+as samples are generated on the fly.
+    The procedures that make up the protocol are described as follows, and shown
+in Fig. 4
+1. Commitment generation: Given a data matrix V ∈ Fm×n the data pro-
+   ducer computes the commitments over rows with a Pedersen commitment:
+                                                 n
+                                                 X
+                                 [[v (i) ]]g =         gj Vi,j ∈ C
+                                                 j=1
+
+   and publishes the commitments to the network.
+2. Data availability challenge: The verifier sends the claimer a vector of
+   coefficients c ∈ Fn .
+3. Challenge response: Given the coefficients c, the claimer sends the verifier
+   the RLNC coded vector
+                                          n
+                                          X
+                                     ω=          ci vi ∈ Fm .
+                                           i=1
+
+4. Membership proof request: After receiving the coded vector ω, the ver-
+   ifier sends p vectors {pi ∈ Fm }pi=1 to the claimer.
+5. Membership proof generation: After receiving the vectors pi , the ver-
+   ifier
+   DDPsends a membership    EE    proof in the form of p inner product arguments
+          m          (j)
+          j=1 pi,j v     , c . Each inner product argument contains 2 log(n) EC
+   points and 2 scalars in F
+ From Indexing to Coding: A New Paradigm for Data Availability Sampling          9
+
+ 6. Membership proof verification: The verifier confirms the inner product
+    arguments using                       Pm
+      – Vector commitments: [[c]] and j=1 pi,j [[v (j) ]]
+      – Inner product value: p⊤ i ω
+    If even one verification fails, then the data is deemed unavailable. If it suc-
+    ceeds, then the verifier sends another challenge if it needs more certainty
+    about data being available (step 2), else the verifier concludes that the data
+    is available to the network
+
+
+4.2   Security Properties
+
+Definitions There exist several security primitives for DAS schemes [3, 7] that
+make different assumptions about the underlying system of nodes participating
+in the network as well as the power of a potential malicious claimer node.
+    Completeness: Given an honest claimer answers the verifiers sampling re-
+quest truthfully, the verifier will conclude that the data is available. This prop-
+erty captures the protocol’s correct behavior under the assumption that all actors
+act honestly.
+    Soundness: If an honest verifier accepts the data to be available, then some
+data entity can be reconstructed with high probability.
+    Consistency: For a set of coded data vectors received from the claimer node
+that satisfy soundness, that is, they enable the reconstruction of a data entity,
+the reconstructed entity coincides, with high probability, with the data that the
+producer committed to. This property guarantees that the reconstructible data
+remains bound to the original uncoded data that was committed. We say that
+a sample is consistent if it is truthfully derived from the underlying committed
+data entity.
+    We now state theorems concerning the soundness and consistency properties
+of the protocol under the strong model for data availability. We do not state
+completeness as a separate theorem, since it follows directly from the protocol
+construction. Throughout, we assume a single field F for the projection, data,
+and coefficient vector entries, and denote its cardinality by q.
+
+
+Analysis Soundness: For the scheme to be sound, we have to check that if the
+data is deemed available by the verifier, then some data entity V ∈ Fm×n can
+be reconstructed from a sufficient amount of coded vectors sampled from the
+claimer node with high probability. Appendix A proves the following theorem:
+Theorem 1. Assuming l verifiers sample s coded vectors each from the claimer
+(given ls ≥ n + s), RLNC DAS satisfies soundness with probability at most 1/q s .
+From this theorem we can make two observations:
+
+ 1. Each verifier implicitly assume that a sufficient number of other verifiers are
+    sampling coded data from the claimer node(s) corresponding to the same
+    commitment. This is a natural condition for availability, since data can only
+10       M. Grundei, V. A. Vasudevan, K. Konwar, M. Médard
+
+
+               Table 1: Simulation parameters for DAS protocols.
+ Parameter Value Description
+                                  RLNC-DAS
+ |F|          32B Size of coefficients and data chunks
+ |C|          48B Size of elliptic-curve group elements
+ p            1     Number of vectors to verify membership
+                     LDPC-based Coded Merkle Tree
+ b            256B Size of base-layer symbol in coded Merkle tree
+ r            0.25 Coding rate: ratio of encoded symbols to information symbols
+ α            0.125 Undecodability ratio
+ q            8     Batching factor: symbols concatenated per hash at each level
+ t            256   Number of root hashes
+                                    2D-RS [2]
+ b            512B Size of one (un)coded symbol
+ r            0.25 Coding rate: ratio of encoded symbols to information symbols
+
+
+
+    be considered truly available to the network if enough coded pieces have
+    been emitted by the claimer node and can subsequently be reconstructed
+    across verifier nodes.
+ 2. The probability of soundness failure is the same as the probability of a verifier
+    failing to detect that a malicious claimer only selectively responds to the data
+    availability challenges, as described in Sec. 3.2. This implies that soundness
+    failure can be made sufficiently small with only a few samples compared to
+    sampling from fixed-rate redundancy codes.
+   Consistency: For the scheme to be consistent, the probability that a verifier
+accepts an inconsistent sample from a claimer must be negligible. The following
+theorem, proved in Sec. B, formalizes this requirement:
+Theorem 2. Let a verifier send p vectors {pi }pi=1 to the claimer as part of the
+membership proof. Then a malicious claimer can violate the consistency of a
+single coded vector with probability at most 1/q p .
+    We observe that the probability of a consistency failure decreases exponen-
+tially with the number of vectors p sent by the verifier. Consequently, even a
+small number of vectors suffices to make the failure probability negligible. For
+example, for a field size of q = 2256 (corresponding to 32-byte symbols) and
+p = 1, the failure probability is 2−256 , so the claimer must succeed on this event
+in a single attempt.
+
+
+5      Numerical Analysis
+In this section, we evaluate RLNC-DAS, as described in Sec. 4, with respect
+to its overall bandwidth cost, focusing primarily on the interaction between
+ From Indexing to Coding: A New Paradigm for Data Availability Sampling          11
+
+
+Table 2: Comparison of DAS schemes for 32 MB of data with Pf,soundness ≤ 10−9 .
+                 Commit- Sampling Comm. Storage Auditor Trusted
+   Code
+                   ment      cost    size overhead node  setup
+   2D-RS         MT        57.0 kB 32.0 kB 96.0 MB  Yes    No
+   2D-RS         KZG       38.8 kB  8.0 kB 96.0 MB  No    Yes
+   LDPC          CMT      736.1 kB 8.0 kB 96.0 MB   Yes    No
+   RLNC (m = 16) Pedersen   3.0 kB  0.8 kB  0.0 B   No     No
+
+
+
+claimer and verifier and, in particular, on the verifier’s download cost. We further
+provide asymptotic evaluations of the computational complexity incurred during
+commitment, coding, and membership proving for a several verifier sampling
+from one claimer. For this purpose, we compare RLNC-DAS against three data
+availability sampling (DAS) protocols from the literature, considered in their
+originally proposed or slightly adapted form:
+
+ 1. Sampling from a coded Merkle tree [16],
+ 2. Two protocols based on 2D-RS codes, using either Merkle trees or KZG
+    commitments as the underlying commitment scheme [2].
+
+    The parameters used for this comparison are listed in Table 1. To the best
+of our knowledge, they reflect realistic and widely adopted design choices for
+DAS schemes that have either been deployed in practice or proposed in the
+literature. Following common design choices in blockchains such as Ethereum,
+we instantiate the Pedersen commitment over the BLS12-381 curve. This curve
+provides compressed group elements of size 48B and a prime group order of
+approximately 32B. We adopt the latter as the chunk size for the RLNC data
+vectors to ensure compatibility with the linear homomorphism of the Pedersen
+commitments.
+    The RLNC-DAS construction achieves a consistency failure probability of
+2−256 , corresponding to a 256-bit consistency level. This aligns with the security
+targets commonly adopted for cryptographic primitives in blockchain systems.
+
+
+5.1   Performance Evaluation
+
+Light Node Download Cost Fig. 5 compares the light node download cost
+of RLNC DAS to the other protocols in terms of commitment and sampling
+cost. Four instantiations of RLNC DAS with different vector lengths (m ∈
+{16, 64, 256, 1024}) are displayed. The data size is itself grown with the num-
+ber of data vectors n included. For all schemes, we aim for a target soundness
+failure rate of < 10−9 .
+
+ – Sampling cost: For RLNC, one DA challenge has to be answered correctly
+   by the claimer to convince the verifier with a certainty of ≥ 1−10−9 that the
+   data is indeed available. The entire download cost thus sums up to one coded
+12                       M. Grundei, V. A. Vasudevan, K. Konwar, M. Médard
+
+                    RLNC (m=16)             RLNC (m=64)            RLNC (m=256)                    RLNC (m=1024)
+                    2D-RS + MT              2D-RS + KZG               CMT
+
+
+
+
+Sampling size / d                                            Commitment size / d
+                                                                                   10−2
+                    10−2                                                           10−3
+                    10−3
+                                                                                   10−4
+                    10−4
+                                                                                   10−5
+                         −5
+                    10
+                                                                                   10−6
+                         −6
+                    10
+                              1   4    16    64   256 1024                                1   4    16   64   256 1024
+                                      d in MB                                                     d in MB
+Fig. 5: Comparison of verifier download costs relative to the total amount of
+data d for RLNC-coded DAS under different choices of coded vector length m,
+sampling by indexing DAS protocols for a target probability of soundness error
+of 10−9 . The latter combine either layered approaches (CMT, Merkle Trees) or
+polynomial commitment schemes (KZG) with fixed-rate redundancy codes (2D-
+RS / LDPC in the case of CMT). Left: DA challenge response size, consisting
+of a sampled code symbol together with its membership proof, shown relative to
+the total data size d. Right: Commitment size, shown relative to the total data
+size d for these schemes.
+
+
+     vector with a size of m|C| and one inner product argument over two length n
+     vectors with a total size of 2(log2 (n)|C| + |F|) each. For the CMT and 2D-RS
+     constructions, on the other hand, 73 and 156 DA challenges have to all be
+     answered respectively. This results in up to ∼ 10 times lower sampling costs
+     compared to the DAS schemes using 2D-RS codes, and ∼ 200 compared to
+     sampling from a coded Merkle tree when choosing m = 16.
+   – Commitment size: With RLNC DAS, the commitment size stays constant
+     with m · |C| and can thus be controlled in its size by choosing the dimension
+     of the data vector m. The CMT also provides a constant size commitment
+     by construction (8kB in this case). 2D-RS paired with Merkle trees creates a
+     commitment for every row and every column, which is why the commitment
+     size scales with the square root of the total amount of data d.
+
+    Table 2 presents the download cost comparison for 32 MB of total data.
+Among the listed protocols, the combination of RLNC with Pedersen commit-
+ments is the only one that requires neither a trusted setup nor the presence
+of an honest auditor node. Furthermore, for m = 16, RLNC-DAS achieves a
+total download cost of 3.8kB for the verifier node, reducing the cost by a fac-
+tor of ∼ 12 compared to 2D-RS+KZG and by a factor of ∼ 195 compared to
+ From Indexing to Coding: A New Paradigm for Data Availability Sampling          13
+
+
+Table 3: Comparison of total networking cost from the view of a DA verifier of
+DAS schemes for 32 MB of data with Pf,soundness ≤ 10−9 .
+                  Commit-                            Total network
+    Code                   Upload cost Download cost
+                    ment                                   cost
+    2D-RS         MT         288.0 B       89.0 kB       89.0 kB
+    2D-RS         KZG        288.0 B       46.8 kB       46.8 kB
+    LDPC          CMT        48.8 kB      744.1 kB      792.9 kB
+    RLNC (m = 16) Pedersen    64.0 B        3.8 kB        3.8 kB
+
+
+
+CMT+LDPC [16]. Another advantage of RLNC-DAS is that there is no storage
+overhead at the claimer nodes, since samples are generated on demand, at the
+expense of additional computational complexity during sampling. In contrast,
+redundancy-coded schemes based on RS and LDPC codes with rate r = 0.25
+require storing the redundancy-coded data, forcing claimers to store at least 4×
+the original data (an additional 96MB in this case).
+    These results illustrate that, as an embodiment of the sampling by coding
+paradigm, as RLNC-DAS requires fewer samples to achieve the same soundness
+error, this directly translates to a reduction in sampling cost for light nodes com-
+pared to schemes based on the sampling by indexing paradigm. The difference is
+particularly recognizable for fixed-rate redundancy codes with low undecodabil-
+ity ratios, exemplified through a CMT employing LDPC codes, whose stopping
+sets yield an undecodability ratio of αLDPC = 0.125. Moreover, the flexibility
+of RLNC allows the commitment size to be controlled by the system parameter
+m. In contrast, LDPC-based constructions such as CMT, and 2D-RS-based con-
+structions, do not offer comparable flexibility due to stopping-set and field-length
+constraints, respectively.
+
+Total Bandwidth Cost Table 3 evaluates the verifier upload cost and the
+total network cost incurred by the different protocols, including the number of
+interactions required per sampling operation, for d = 32 MB of data, extending
+the total verifier download cost from table 2.
+
+ 1. RLNC-DAS requires the verifier to send one vector p ∈ Fm and one co-
+    efficient vector c ∈ Fn to the claimer, which together constitute the data
+    availability challenge.
+ 2. 2D-RS sampling requires transmitting only two indices to the claimer.
+ 3. For the coded Merkle tree (CMT), the verifier samples one element from
+    each layer of the tree and, with probability 1 − r, additionally samples from
+    each intermediate layer.
+
+   While cursory considerations suggest that the coefficient vectors in RLNC-
+DAS scale with the total data size and thus make the verifier upload cost a
+dominant component of the overall network cost, the vectors p and n in RLNC-
+DAS merely serve to define a random challenge that must remain unpredictable
+14     M. Grundei, V. A. Vasudevan, K. Konwar, M. Médard
+
+
+Table 4: Asymptotic computational cost of DA claimer in DAS protocols in
+a setting with l verifiers requesting s samples each. We distinguish between
+sampling,
+ √ √      proving, and commitment cost. Here, 2D-RS uses code dimensions
+( n, k) in each dimension and RLNC-DAS leverages an m × n data matrix .
+                                     Coding Proving Commitment
+         Code        Commitment
+                                       cost      cost     cost
+         2D-RS    MT                O(n log(n)) O(1)      O(n)
+         2D-RS    KZG               O(n log(n)) O(n3/2 )  O(k)
+         LDPC     CMT                 O(n2 )     O(1)    O(n2 )
+         RLNC-DAS Pedersen           O(mnls) O(lsn)      O(mn)
+
+
+
+at the time the data is committed. Rather than transmitting the full vectors ex-
+plicitly, the verifier can instead send short seed values for mutually agreed-upon
+cryptographic hash functions. The full challenge vectors can then be derived
+deterministically from these seeds, substantially reducing the upload cost while
+preserving the soundness guarantees. This optimization is conceptually aligned
+with established RLNC techniques for reducing protocol overhead [8].
+
+
+Computational Cost Lastly, we compare the computational complexity of RS-
+and LDPC-based sampling methods with RLNC-based sampling in Table 4. The
+comparison distinguishes between three components: coding, proving, and com-
+mitment generation. At a high level, the key difference is that RS- and LDPC-
+based approaches follow a sampling-by-indexing paradigm, where the claimer
+first computes a coded version of the data and then answers verifier queries by
+revealing precomputed coded symbols together with the corresponding authen-
+tication information. In contrast, RLNC-based sampling follows a sampling-by-
+coding paradigm, where each verifier request is answered by generating a fresh
+coded sample and its associated proof on demand, requiring additional compu-
+tation upon verifier request.
+    For the RS-based schemes, the coding cost is therefore a one-time preprocess-
+ing cost that depends only on the code parameters n, k. In the Merkle-tree-based
+variant, the commitment cost contains constructing the authentication structure
+over the coded data, i.e., computing the leaf hashes and internal hashes needed
+to build the Merkle trees for the relevant rows and columns. The corresponding
+proofs are then available as authentication paths in the committed structure,
+so they do not require additional computation beyond selecting the appropriate
+path for a queried symbol. In the KZG-based variant, commitment generation
+requires computing one commitment per row, while proving requires the explicit
+computation of KZG opening proofs for the requested coded chunks.
+    For the LDPC-based scheme, the coding cost is likewise incurred as a pre-
+processing step and depends only on the chosen code parameters. Commitment
+generation is performed through the construction of the coded Merkle tree. In
+contrast to a standard Merkle tree, this requires not only hashing and con-
+ From Indexing to Coding: A New Paradigm for Data Availability Sampling           15
+
+catenation at each layer, but also re-encoding the symbols of each layer before
+proceeding to the next one. Since the number of symbols decreases geometrically
+across layers, the total commitment cost remains asymptotically dominated by
+the bottom layer. As in the Merkle-tree-based RS construction, the correspond-
+ing proofs are already contained in the committed structure and can therefore
+be served without additional expensive prover-side computation.
+     RLNC-DAS differs in that coding and proving are performed in response to
+verifier queries. For each requested sample, the claimer computes a new random
+linear combination of the coded data and then generates the corresponding proof
+of membership or consistency. As a result, its computational cost scales with the
+number of verifier requests ls, captured here by the number of verifiers and the
+number of samples requested by each verifier.
+     Overall, RS- and LDPC-based sampling methods incur a fixed upfront cost
+for encoding and commitment generation, after which samples can be served
+efficiently. RLNC-DAS, on the other hand, only creates as many samples as
+requested. Consequently, RLNC-DAS is computationally attractive from the
+claimer perspective when the number of verifier requests is small, a benefit fur-
+ther reinforced by its higher sampling efficiency. In contrast, RS- and LDPC-
+based methods become more favorable in settings with many verifiers or with
+many requested samples per claimer.
+
+
+6   Discussion
+
+We presented a new approach to designing DAS protocols, where sampling is
+performed through on-the-fly coding rather than by indexing pre-committed
+redundancy coded data. The advantages of this new approach were demonstrated
+through a concrete protocol instantiation based on RLNC. The resulting scheme
+exhibits desirable properties, particularly in terms of storage efficiency for the
+claimer node and reduced bandwidth requirements for the verifier node.
+    Further work could extend the security analysis presented here to stronger
+adversarial models [3, 7].
+    Although the protocol described here assumes that claimer nodes hold the
+full uncoded data, the sampling by coding paradigm is not restricted to that
+setting. A claimer node may instead prove properties about a partial data rep-
+resentation it possesses, or multiple claimer nodes may collaborate to jointly
+respond to a verifier’s DA challenge. Once again, RLNC is a natural fit because
+of its composability and repairability [1, 6]: a node holding only partial coded
+data can still generate fresh, valid codewords by recoding coded data.
+
+
+References
+
+ 1. Abdrashitov, V., Médard, M.: Durable network coded distributed storage. In: 2015
+    53rd Annual Allerton Conference on Communication, Control, and Computing
+    (Allerton). pp. 851–856. IEEE (2015)
+16      M. Grundei, V. A. Vasudevan, K. Konwar, M. Médard
+
+ 2. Al-Bassam, M., Sonnino, A., Buterin, V.: Fraud and data availability proofs: Max-
+    imising light client security and scaling blockchains with dishonest majorities.
+    arXiv preprint arXiv:1809.09044 (2018)
+ 3. Boneh, D., Neu, J., Nikolaenko, V., Partap, A.: Data availability sampling with
+    repair. Cryptology ePrint Archive (2025)
+ 4. Bünz, B., Bootle, J., Boneh, D., Poelstra, A., Wuille, P., Maxwell, G.: Bulletproofs:
+    Short proofs for confidential transactions and more. In: 2018 IEEE symposium on
+    security and privacy (SP). pp. 315–334. IEEE (2018)
+ 5. Bünz, B., Maller, M., Mishra, P., Tyagi, N., Vesely, P.: Proofs for inner pairing
+    products and applications. In: International conference on the theory and applica-
+    tion of cryptology and information security. pp. 65–97. Springer (2021)
+ 6. Deb, S.: How good is random linear coding based distributed networked storage.
+    In: Workshop on Network Coding, Theory and Applications (2005)
+ 7. Hall-Andersen, M., Simkin, M., Wagner, B.: Foundations of data availability sam-
+    pling. Cryptology ePrint Archive (2023)
+ 8. Heide, J., Pedersen, M.V., Fitzek, F.H.P., Larsen, T.: Random linear network
+    coding (rlnc). IETF Network Coding Research Group (NWCRG), Internet-
+    Draft draft-heide-nwcrg-rlnc-02 (Oct 2017), https://datatracker.ietf.org/
+    doc/draft-heide-nwcrg-rlnc/02/, work in progress
+ 9. Ho, T., Médard, M., Koetter, R., Karger, D.R., Effros, M., Shi, J., Leong, B.:
+    A random linear network coding approach to multicast. IEEE Transactions on
+    information theory 52(10), 4413–4430 (2006)
+10. Médard, M., Vasudevan, V.A., Pedersen, M.V., Duffy, K.R.: Network Coding for
+    Engineers. John Wiley & Sons (2025)
+11. Mitra, D., Tauz, L., Dolecek, L.: Overcoming data availability attacks in blockchain
+    systems: Short code-length ldpc code design for coded merkle tree. IEEE Transac-
+    tions on Communications 70(9), 5742–5759 (2022)
+12. Neu, J.: Data availability sampling: From basics to open problems. Technical re-
+    port, Paradigm (2022)
+13. Wagner, B., Zapico, A.: A documentation of ethereum’s peerdas. Cryptology ePrint
+    Archive (2024)
+14. Yu, M., Kannan, S., Viswanath, P., Li, S., Avestimehr, A.S.: Determining data
+    availability, https://patents.google.com/patent/US11533127B1/en
+15. Yu, M., Kannan, S., Viswanath, P., Li, S., Avestimehr, A.S.: Verifying a set of
+    remotely stored data, https://patentimages.storage.googleapis.com/f4/3f/
+    e9/6fb900187dc974/US11356274.pdf
+16. Yu, M., Sahraei, S., Li, S., Avestimehr, S., Kannan, S., Viswanath, P.: Coded
+    merkle tree: Solving data availability attacks in blockchains. In: International Con-
+    ference on Financial Cryptography and Data Security. pp. 114–134. Springer (2020)
+
+
+A     Proof of Soundness Theorem
+For soundness, some data entity must be reconstructible from the emitted coded
+vectors whenever the verifier accepts data availability with high probability. We
+prove this theorem for the strong model for data availability [12]. We introduce
+the following notation:
+ – H: the event that the claimer is honest, i.e., responds to all requests c with
+   a coded vector ω.
+ From Indexing to Coding: A New Paradigm for Data Availability Sampling         17
+
+ – V: the event that the verifier accepts that the data is available (some data
+   can be reconstructed from the coded vectors).
+ – q: the field size, |F|.
+ – C = [c1 , . . . , cls ] ∈ Fn×ls : the matrix whose columns are the coefficient
+   vectors of sampled coded vectors ωi .
+Theorem Assuming l verifiers sample s coded vectors each from the claimer
+(given ls ≥ n + s), RLNC DAS satisfies soundness with probability at most
+1/q s .
+Proof. Since reconstruction from ls RLNC coded vectors uses Gaussian elimi-
+nation, soundness fails exactly when rank(C) < n. Decomposing over H and H̄
+gives
+                                                      
+P V ∩ {rank(C) < n} = P H P V ∩ {rank(C) < n} | H
+                                                         
+                          + P H̄ P V ∩ {rank(C) < n} | H̄
+                                                                              
+                        ≤ max P V ∩ {rank(C) < n} | H , P V ∩ {rank(C) < n} | H̄ .
+                                                                        (1)
+    Under non-adaptivity, the probability that the verifier accepts in the dishon-
+est case is
+                                                      1
+                      P V ∩ {rank(C) < n} | H̄ = s .                           (2)
+                                                      q
+   By completeness, H ⇒ V, hence
+                                                         
+             P V ∩ {rank(C) < n} | H = P {rank(C) < n} | H .
+A counting argument over C ∈ Fn×ls [10] yields
+                                                    
+     P {rank(C) < n} | H = 1 − P {rank(C) = n} | H
+                                Qn−1 ls                n−1
+                                       (q − q i )      Y
+                           = 1 − i=0 lsn          = 1−     (1 − q i−ls ).
+                                      q                i=0
+
+   Using the inequality
+                          n−1
+                          Y                           n−1
+                                                      X
+                                (1 − q i−ls ) ≥ 1 −         q i−ls ,
+                          i=0                         i=0
+
+which can be proved by induction, we obtain the bound
+                               n−1
+                                 X                  qn − 1
+           P {rank(C) < n} | H ≤     q i−ls = q −ls        ≤ q n−ls .          (3)
+                                 i=0
+                                                     q − 1
+
+   Combining (1), (2), and (3), and noting that for ls ≥ n+s the bound in (3) is
+smaller than or equal to 1/q s , we conclude that the soundness-failure probability
+bound is
+                                                      1
+                          P V ∩ {rank(C) < n} ≤ s .
+                                                       q
+18     M. Grundei, V. A. Vasudevan, K. Konwar, M. Médard
+
+B    Proof of Consistency Theorem
+
+For consistency, any data sample accepted by the verifier must be drawn from
+the same data matrix on which the commitment was formed. For readability, we
+use the following notation:
+ – q: field size |F|.
+ – p: number of vectors used for membership verification, {pi }pi=1 .
+ – C: event that the claimer breaks consistency of a sample, that is, makes an
+   honest verifier accept ω ′ ̸= V c for a data availability challenge c
+Further, we make the following assumption:
+ – An adversary cannot break the inner product argument; that is, they cannot
+   construct an inner product argument << a, b >> that opens to values
+   different from a, b, and a⊤ b.
+Theorem. Let a verifier send p vectors {pi }pi=1 to the claimer as part of the
+membership proof. Then a malicious claimer can violate the consistency of a
+single coded vector with probability at most 1/q p .
+
+Proof. Under the assumption that the inner product argument is unbreakable,
+for the verifier to accept the claimer’s response, a malicious claimer must send a
+vector ω ′ = V c+d with d ̸= 0 ∈ Fm such that it satisfies the same inner-product
+relations with {pi }pi=1 as ω = V c; i.e., p⊤  ′    ⊤
+                                            i ω = pi ω for all i. Therefore,
+
+                    P (C) = P p⊤      ′    ⊤
+                                                                 
+                                  i ω = pi ω ∀i ∈ {1, . . . , p}
+
+                          = P p⊤
+                                                             
+                                  i d = 0 ∀i ∈ {1, . . . , p}   .
+
+   Since d and pi are chosen independently, the quantities p⊤
+                                                            i d are i.i.d. and
+uniformly distributed over F. Consequently,
+                                  p
+                                  Y                        1
+                        P (C) =         P ({p⊤
+                                             i d = 0}) =      .
+                                  i=1
+                                                           qp
+
